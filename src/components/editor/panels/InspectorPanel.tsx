@@ -9,9 +9,11 @@ import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SPEED_PRESETS, TEXT_ANIMS, TEXT_FONTS, fmtTime } from "@/lib/editor/constants";
 import { selectedClip, useEditor } from "@/lib/editor/store";
+import { FramingControls } from "../FramingControls";
 
 export function InspectorPanel() {
   const sel = useEditor(selectedClip);
+  const ratio = useEditor((s) => s.project.ratio);
   const st = useEditor.getState();
 
   if (!sel) {
@@ -43,6 +45,9 @@ export function InspectorPanel() {
           <Trash2 className="h-3 w-3" /> Hapus
         </Button>
       </div>
+
+      {/* Zoom & geser (mode 9:16) */}
+      {ratio === "9:16" && (sel.kind === "video" || sel.kind === "image") && <FramingControls target="selected" />}
 
       {/* Kecepatan */}
       <section className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-2.5">

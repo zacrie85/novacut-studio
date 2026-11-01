@@ -3,7 +3,7 @@
 // NOVACUT Studio - Shell utama
 
 import { useState } from "react";
-import { Clapperboard, Film, ListVideo, Music, Scissors, SlidersHorizontal, Type, Wand2, Wrench, Zap } from "lucide-react";
+import { Clapperboard, Film, ListVideo, Music, RectangleHorizontal, RectangleVertical, Scissors, SlidersHorizontal, Type, Wand2, Wrench, Zap } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -21,10 +21,14 @@ import { ExportPanel } from "./panels/ExportPanel";
 import { totalDuration, useEditor } from "@/lib/editor/store";
 import { fmtTime } from "@/lib/editor/constants";
 
-const RES_OPTIONS = [
-  { id: "720", label: "720p", w: 1280, h: 720 },
-  { id: "1080", label: "1080p", w: 1920, h: 1080 },
-  { id: "vert", label: "9:16", w: 720, h: 1280 },
+const RATIO_OPTIONS = [
+  { id: "16:9" as const, label: "16:9", hint: "Lanskap · YouTube", icon: RectangleHorizontal },
+  { id: "9:16" as const, label: "9:16", hint: "Vertikal · Reels/TikTok", icon: RectangleVertical },
+];
+
+const QUALITY_OPTIONS: { id: 720 | 1080; label: string }[] = [
+  { id: 720, label: "720p" },
+  { id: 1080, label: "1080p" },
 ];
 
 export function EditorShell() {
@@ -33,11 +37,6 @@ export function EditorShell() {
   const project = useEditor((s) => s.project);
   const clips = useEditor((s) => s.clips);
   const duration = totalDuration(clips);
-
-  const setRes = (id: string) => {
-    const opt = RES_OPTIONS.find((r) => r.id === id);
-    if (opt) useEditor.getState().setProject({ width: opt.w, height: opt.h });
-  };
 
   const leftTabs = (
     <Tabs value={leftTab} onValueChange={setLeftTab} className="flex h-full min-h-0 flex-col">
@@ -124,16 +123,46 @@ export function EditorShell() {
           aria-label="Nama proyek"
         />
 
+        {/* pemilih rasio + kualitas */}
         <div className="hidden items-center gap-1.5 lg:flex">
-          {RES_OPTIONS.map((r) => (
+          {RATIO_OPTIONS.map((r) => {
+            const Icon = r.icon;
+            const active = project.ratio === r.id;
+            return (
+              <button
+                key={r.id}
+                onClick={() => useEditor.getState().setRatio(r.id)}
+                title={r.hint}
+                aria-pressed={active}
+                className={`flex items-center gap-1 rounded border px-2 py-1 text-[10px] font-semibold transition ${
+                  active
+                    ? r.id === "9:16"
+                      ? "border-fuchsia-300 bg-fuchsia-400/20 text-fuchsia-200 shadow-[0_0_10px_rgba(232,121,249,0.3)]"
+                      : "border-cyan-300 bg-cyan-400/20 text-cyan-200 shadow-[0_0_10px_rgba(34,211,238,0.3)]"
+                    : "border-white/10 text-gray-500 hover:border-white/25 hover:text-gray-300"
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {r.label}
+              </button>
+            );
+          })}
+          <span className="mx-1 h-4 w-px bg-white/10" />
+          {QUALITY_OPTIONS.map((q) => (
             <button
-              key={r.id}
-              onClick={() => setRes(r.id)}
-              className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold transition ${project.width === r.w ? "border-cyan-300 bg-cyan-400/20 text-cyan-200" : "border-white/10 text-gray-500 hover:text-gray-300"}`}
+              key={q.id}
+              onClick={() => useEditor.getState().setQuality(q.id)}
+              aria-pressed={project.quality === q.id}
+              className={`rounded border px-1.5 py-0.5 font-mono text-[9px] transition ${
+                project.quality === q.id ? "border-white/40 bg-white/10 text-gray-100" : "border-white/10 text-gray-500 hover:text-gray-300"
+              }`}
             >
-              {r.label}
+              {q.label}
             </button>
           ))}
+          <span className="ml-1 font-mono text-[9px] text-gray-600">
+            {project.width}×{project.height}
+          </span>
         </div>
 
         <div className="ml-auto flex items-center gap-2">

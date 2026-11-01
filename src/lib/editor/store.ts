@@ -2,10 +2,28 @@
 
 import { create } from "zustand";
 import { uid } from "./constants";
-import type { Clip, CoverConfig, ExportResult, ExportSettings, ExportState, MediaAsset, ProjectMeta, TextData, TextsConfig, Track, TrackKind } from "./types";
+import type { Clip, CoverConfig, ExportResult, ExportSettings, ExportState, MediaAsset, ProjectMeta, Ratio, TextData, TextsConfig, Track, TrackKind } from "./types";
 
 export function totalDuration(clips: Clip[]): number {
   return clips.reduce((m, c) => Math.max(m, c.start + c.duration), 0);
+}
+
+export function dimsFor(ratio: Ratio, quality: 720 | 1080): { width: number; height: number } {
+  return ratio === "9:16" ? { width: quality, height: Math.round((quality * 16) / 9) } : { width: Math.round((quality * 16) / 9), height: quality };
+}
+
+/** Klip visual paling atas yang aktif pada waktu t (video/gambar) */
+export function activeVisualClipAt(state: { tracks: Track[]; clips: Clip[] }, t: number): Clip | undefined {
+  let found: Clip | undefined;
+  for (const track of state.tracks) {
+    if (track.kind === "audio" || track.kind === "text" || track.hidden) continue;
+    const active = state.clips
+      .filter((c) => c.trackId === track.id && c.start <= t && t < c.start + c.duration)
+      .sort((a, b) => a.start - b.start)
+      .pop();
+    if (active) found = active;
+  }
+  return found;
 }
 
 function makeTrack(kind: TrackKind, name: string): Track {
@@ -34,6 +52,8 @@ export interface EditorState {
   exportState: ExportState;
 
   setProject: (p: Partial<ProjectMeta>) => void;
+  setRatio: (r: Ratio) => void;
+  setQuality: (q: 720 | 1080) => void;
   addAsset: (a: MediaAsset) => void;
   removeAsset: (id: string) => void;
   getAsset: (id?: string) => MediaAsset | undefined;
@@ -52,6 +72,10 @@ export interface EditorState {
   duplicateClip: (id: string) => void;
   setClipSpeed: (id: string, speed: number) => void;
   setClipLoop: (id: string, n: number) => void;
+  setClipZoom: (id: string, zoom: number) => void;
+  nudgeClipPan: (id: string, dx: number, dy: number) => void;
+  setClipPan: (id: string, x: number, y: number) => void;
+  resetClipFraming: (id: string) => void;
   setClipTransition: (id: string, type: string | null, duration?: number) => void;
   toggleClipEffect: (id: string, fx: string) => void;
   clearClipEffects: (id: string) => void;
@@ -72,7 +96,7 @@ export interface EditorState {
 }
 
 export const useEditor = create<EditorState>((set, get) => ({
-  project: { name: "Proyek Tanpa Judul", width: 1280, height: 720 },
+  project: { name: "Proyek Tanpa Judul", width: 1280, height: 720, ratio: "16:9" as Ratio, quality: 720 as 720 | 1080 },
   assets: [],
   tracks: defaultTracks(),
   clips: [],
@@ -96,6 +120,18 @@ export const useEditor = create<EditorState>((set, get) => ({
   exportState: emptyExport,
 
   setProject: (p) => set((s) => ({ project: { ...s.project, ...p } })),
+
+  setRatio: (r) =>
+    set((s) => {
+      const dims = dimsFor(r, s.project.quality);
+      return { project: { ...s.project, ratio: r, ...dims } };
+    }),
+
+  setQuality: (q) =>
+    set((s) => {
+      const dims = dimsFor(s.project.ratio, q);
+      return { project: { ...s.project, quality: q, ...dims } };
+    }),
 
   addAsset: (a) => set((s) => ({ assets: [...s.assets, a] })),
 
@@ -158,6 +194,9 @@ export const useEditor = create<EditorState>((set, get) => ({
       fadeIn: asset.type === "audio" ? 0.4 : 0,
       fadeOut: asset.type === "audio" ? 0.8 : 0,
       effects: [],
+      zoom: 1,
+      panX: 0,
+      panY: 0,
     };
     set((s) => ({ clips: [...s.clips, clip], selectedClipId: clip.id }));
     return clip.id;
@@ -180,6 +219,9 @@ export const useEditor = create<EditorState>((set, get) => ({
       fadeIn: 0,
       fadeOut: 0,
       effects: [],
+      zoom: 1,
+      panX: 0,
+      panY: 0,
       text: {
         content: text.content ?? "Teks Baru",
         sub: text.sub,
@@ -256,6 +298,29 @@ export const useEditor = create<EditorState>((set, get) => ({
         return { ...c, loopCount: nn, duration: newDur };
       }),
     })),
+
+  setClipZoom: (id, zoom) =>
+    set((s) => ({
+      clips: s.clips.map((c) => (c.id === id ? { ...c, zoom: Math.max(1, Math.min(3, Math.round(zoom * 100) / 100)) } : c)),
+    })),
+
+  nudgeClipPan: (id, dx, dy) =>
+    set((s) => ({
+      clips: s.clips.map((c) => {
+        if (c.id !== id) return c;
+        const px = Math.max(-1, Math.min(1, (c.panX ?? 0) + dx));
+        const py = Math.max(-1, Math.min(1, (c.panY ?? 0) + dy));
+        return { ...c, panX: Math.abs(px) < 0.02 ? 0 : px, panY: Math.abs(py) < 0.02 ? 0 : py };
+      }),
+    })),
+
+  setClipPan: (id, x, y) =>
+    set((s) => ({
+      clips: s.clips.map((c) => (c.id === id ? { ...c, panX: Math.max(-1, Math.min(1, x)), panY: Math.max(-1, Math.min(1, y)) } : c)),
+    })),
+
+  resetClipFraming: (id) =>
+    set((s) => ({ clips: s.clips.map((c) => (c.id === id ? { ...c, zoom: 1, panX: 0, panY: 0 } : c)) })),
 
   setClipTransition: (id, type, duration) =>
     set((s) => ({

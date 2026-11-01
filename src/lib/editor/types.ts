@@ -61,6 +61,9 @@ export interface Clip {
   effects: string[]; // id efek klip
   text?: TextData;
   label?: string;
+  zoom: number; // 1 - 3 (perbesaran frame, penting untuk rasio 9:16)
+  panX: number; // -1..1 geser horizontal (kanan = gambar ke kanan)
+  panY: number; // -1..1 geser vertikal (bawah = gambar ke bawah)
 }
 
 export interface TextsConfig {
@@ -110,8 +113,12 @@ export interface ExportState {
   batchIndex: number;
 }
 
+export type Ratio = "16:9" | "9:16";
+
 export interface ProjectMeta {
   name: string;
   width: number;
   height: number;
+  ratio: Ratio; // arah video: lanskap 16:9 atau vertikal 9:16
+  quality: 720 | 1080; // sisi dasar resolusi
 }

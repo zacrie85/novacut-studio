@@ -68,7 +68,7 @@ export function CoverPanel() {
       render();
     };
     draw();
-  }, [frameUrl, template, title, partText]);
+  }, [frameUrl, template, title, partText, project.ratio]);
 
   useEffect(() => {
     if (!showAll) return;
@@ -90,7 +90,7 @@ export function CoverPanel() {
       });
     }, 60);
     return () => clearTimeout(t);
-  }, [showAll, frameUrl, title]);
+  }, [showAll, frameUrl, title, project.ratio]);
 
   const analyze = useCallback(async () => {
     if (!source) return;
@@ -184,7 +184,7 @@ export function CoverPanel() {
 
         {/* pratinjau */}
         <div className="overflow-hidden rounded-lg border border-violet-400/20 shadow-[0_0_24px_rgba(167,139,250,0.12)]">
-          <canvas ref={previewRef} width={640} height={360} className="w-full" />
+          <canvas ref={previewRef} width={project.ratio === "9:16" ? 360 : 640} height={project.ratio === "9:16" ? 640 : 360} className="mx-auto block max-h-72 w-auto max-w-full" />
         </div>
 
         {/* durasi cover */}
@@ -221,7 +221,7 @@ export function CoverPanel() {
             <LayoutGrid className="h-3.5 w-3.5 text-cyan-300" /> SEMUA TEMPLATE ({COVER_TEMPLATES.length}) {showAll ? "▲" : "▼"}
           </button>
           {showAll && (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <div key={project.ratio} className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {COVER_TEMPLATES.map((t, i) => (
                 <button
                   key={t.id}
@@ -232,7 +232,7 @@ export function CoverPanel() {
                   className={`overflow-hidden rounded-md border text-left transition hover:scale-[1.03] ${t.id === cover.templateId ? "border-violet-300 ring-1 ring-violet-300" : t.popular ? "border-amber-400/40" : "border-white/10"}`}
                   title={t.name}
                 >
-                  <canvas width={128} height={72} className="w-full" />
+                  <canvas width={project.ratio === "9:16" ? 72 : 128} height={project.ratio === "9:16" ? 128 : 72} className="w-full" />
                   <div className="flex items-center gap-1 bg-black/60 px-1 py-0.5">
                     {t.id === cover.templateId && <Check className="h-2.5 w-2.5 shrink-0 text-violet-300" />}
                     <span className="truncate text-[8px] text-gray-300">{t.name}</span>

@@ -4,7 +4,7 @@ import { fontStack, fmtTime } from "./constants";
 import { getMusicBuffer, musicDefById } from "./music";
 import { useEditor, totalDuration, type EditorState } from "./store";
 import type { Clip, Track } from "./types";
-import { applyGradeTints, applyOverlays, applyTransition, clipTransform, drawCover, easeOut, gradeFilterString } from "./visual";
+import { applyGradeTints, applyOverlays, applyTransition, clipTransform, drawCover, easeOut, framingLayout, gradeFilterString } from "./visual";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -71,8 +71,9 @@ class EditorEngine {
     if (this.canvas.width !== width || this.canvas.height !== height) {
       this.canvas.width = width;
       this.canvas.height = height;
-      this.requestRender();
     }
+    // selalu render ulang: atribut kanvas bisa saja sudah diubah React (kanvan ter-reset)
+    this.requestRender();
   }
 
   requestRender() {
@@ -326,11 +327,14 @@ class EditorEngine {
       const tr = clipTransform(fx, local, progress, t);
       ctx.save();
       ctx.filter = gradeFilterString(fx);
-      const base = Math.max(w / sw, h / sh) * tr.scale;
-      const dw = sw * base;
-      const dh = sh * base;
+      // kadro: zoom & geser per klip (khususnya untuk kanvas 9:16)
+      const layout = framingLayout(sw, sh, w, h, clip.zoom ?? 1);
+      const panX = Math.max(-1, Math.min(1, clip.panX ?? 0));
+      const panY = Math.max(-1, Math.min(1, clip.panY ?? 0));
+      const dx = (w - layout.dw) / 2 + panX * layout.overX + tr.dx;
+      const dy = (h - layout.dh) / 2 + panY * layout.overY + tr.dy;
       ctx.globalAlpha = 1;
-      ctx.drawImage(src, (w - dw) / 2 + tr.dx, (h - dh) / 2 + tr.dy, dw, dh);
+      ctx.drawImage(src, dx, dy, layout.dw, layout.dh);
       ctx.restore();
       ctx.filter = "none";
       applyGradeTints(ctx, fx, w, h);

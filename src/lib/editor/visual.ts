@@ -32,6 +32,18 @@ export function drawCover(
   ctx.globalAlpha = 1;
 }
 
+/**
+ * Layout kadro (zoom & geser) untuk frame berukuran sw×sh ke kanvas w×h.
+ * zoom 1 = cover-fit; overX/overY = ruang geser tersedia (setengah lebar/tinggi overflow).
+ */
+export function framingLayout(sw: number, sh: number, w: number, h: number, zoom: number): { base: number; dw: number; dh: number; overX: number; overY: number } {
+  const z = Math.max(1, Math.min(3, zoom || 1));
+  const base = Math.max(w / Math.max(1, sw), h / Math.max(1, sh)) * z;
+  const dw = sw * base;
+  const dh = sh * base;
+  return { base, dw, dh, overX: Math.max(0, (dw - w) / 2), overY: Math.max(0, (dh - h) / 2) };
+}
+
 function withAlpha(ctx: CanvasRenderingContext2D, a: number, fn: () => void) {
   const old = ctx.globalAlpha;
   ctx.globalAlpha = a;

@@ -104,6 +104,9 @@ function baseClip(patch: Partial<Clip>): Clip {
     fadeIn: 0,
     fadeOut: 0,
     effects: [],
+    zoom: 1,
+    panX: 0,
+    panY: 0,
     ...patch,
   };
 }
@@ -341,8 +344,9 @@ async function ensureCoverAsset(sourceAsset: MediaAsset | undefined): Promise<st
   const img = new Image();
   img.src = frameUrl;
   await img.decode().catch(() => {});
-  const dataUrl = renderCoverToDataURL({ img, title, template: tpl });
-  const asset: MediaAsset = { id: uid("as"), name: `Cover - ${title}`, type: "image", url: dataUrl, duration: 0, width: 1280, height: 720 };
+  const { width, height } = useEditor.getState().project;
+  const dataUrl = renderCoverToDataURL({ img, title, template: tpl }, width, height);
+  const asset: MediaAsset = { id: uid("as"), name: `Cover - ${title}`, type: "image", url: dataUrl, duration: 0, width, height };
   useEditor.getState().addAsset(asset);
   useEditor.getState().setCover({ coverAssetId: asset.id, previewUrl: dataUrl, frameTime: 0 });
   return asset.id;
