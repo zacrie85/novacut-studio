@@ -2,13 +2,15 @@
 
 // NOVACUT Studio - Panel Export: Export Saja & Export & Split + hasil
 
-import { Download, FileDown, Film, Loader2, Scissors, Trash2, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CheckCircle2, Download, FileDown, Film, FolderOpen, FolderSearch, Loader2, Scissors, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { fmtSize, fmtTime, partLabel, slugify } from "@/lib/editor/constants";
+import { forgetExportDir, isDesktopFS, loadSavedExportDir, openInFolder, pickExportDir, rememberExportDir } from "@/lib/editor/fsBridge";
 import { totalDuration, useEditor } from "@/lib/editor/store";
 import { runExport, triggerDownload } from "@/lib/editor/exporter";
 
@@ -19,6 +21,35 @@ export function ExportPanel() {
   const clips = useEditor((s) => s.clips);
   const st = useEditor.getState();
   const D = totalDuration(clips);
+
+  // folder hasil render (desktop) — sinkron dengan pilihan terakhir yang diingat
+  const desktop = isDesktopFS();
+  const [dir, setDir] = useState(settings.exportDir || "");
+  useEffect(() => {
+    const saved = loadSavedExportDir();
+    if (saved && !useEditor.getState().exportSettings.exportDir) {
+      useEditor.getState().setExportSettings({ exportDir: saved });
+      setDir(saved);
+    }
+  }, []);
+
+  const onPickDir = async () => {
+    const res = await pickExportDir(useEditor.getState().exportSettings.exportDir || undefined);
+    if (!res.canceled && res.path) {
+      useEditor.getState().setExportSettings({ exportDir: res.path });
+      rememberExportDir(res.path);
+      setDir(res.path);
+    }
+  };
+  const onOpenDir = () => {
+    const d = useEditor.getState().exportSettings.exportDir;
+    if (d) void openInFolder(d);
+  };
+  const onClearDir = () => {
+    useEditor.getState().setExportSettings({ exportDir: "" });
+    forgetExportDir();
+    setDir("");
+  };
 
   const estParts = settings.mode === "single" ? 1 : settings.splitBy === "count" ? Math.max(1, Math.min(50, settings.parts)) : Math.max(1, Math.ceil(D / Math.max(1, settings.partSeconds)));
   const estLen = settings.mode === "single" ? D : settings.splitBy === "count" ? D / estParts : Math.max(1, settings.partSeconds);
@@ -117,6 +148,55 @@ export function ExportPanel() {
         )}
       </section>
 
+      {/* folder hasil render */}
+      <section className="space-y-2 rounded-lg border border-emerald-400/20 bg-emerald-400/[0.04] p-2.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold tracking-wider text-gray-300">
+            <FolderSearch className="h-3.5 w-3.5 text-emerald-300" /> FOLDER HASIL RENDER
+          </div>
+          {desktop && (
+            <div className="flex gap-1">
+              <button
+                onClick={() => void onPickDir()}
+                className="rounded border border-emerald-400/40 bg-emerald-400/10 px-2 py-0.5 text-[9px] font-bold text-emerald-200 transition hover:bg-emerald-400/25"
+              >
+                Pilih Folder
+              </button>
+              {dir && (
+                <button
+                  onClick={onOpenDir}
+                  className="rounded border border-white/10 bg-white/5 px-2 py-0.5 text-[9px] font-bold text-gray-300 transition hover:border-emerald-400/40 hover:text-emerald-200"
+                >
+                  Buka
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+        <div
+          className={`truncate rounded border px-2 py-1.5 font-mono text-[10px] ${
+            dir ? "border-emerald-400/25 bg-black/40 text-emerald-300" : "border-white/10 bg-black/30 text-gray-500"
+          }`}
+          title={dir || undefined}
+        >
+          {dir || "Folder Downloads (bawaan)"}
+        </div>
+        <div className="flex items-start justify-between gap-2">
+          <div className="text-[9px] leading-relaxed text-gray-500">
+            {desktop
+              ? dir
+                ? "Hasil render otomatis masuk langsung ke folder ini — tanpa dialog unduh."
+                : "Pilih folder supaya hasil render otomatis tersimpan di sana."
+              : "Fitur pilih folder tersedia di aplikasi desktop — di versi web hasil diunduh ke folder unduhan browser."}
+          </div>
+          {desktop && dir && (
+            <button onClick={onClearDir} className="shrink-0 rounded p-1 text-gray-600 transition hover:text-red-300" title="Kembali ke folder Downloads bawaan">
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      </section>
+
       {/* tombol export */}
       <Button
         disabled={ex.running || D < 0.3}
@@ -144,6 +224,11 @@ export function ExportPanel() {
           <div className="flex items-center justify-between">
             <div className="text-[10px] font-semibold tracking-wider text-gray-400">HASIL ({ex.results.length} FILE)</div>
             <div className="flex gap-1">
+              {desktop && dir && (
+                <Button size="sm" variant="outline" className="h-6 gap-1 border-emerald-400/30 bg-emerald-400/10 px-2 text-[9px] text-emerald-200 hover:bg-emerald-400/20" onClick={onOpenDir}>
+                  <FolderOpen className="h-3 w-3" /> Buka Folder
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"
@@ -167,6 +252,12 @@ export function ExportPanel() {
                     {fmtSize(r.size)} · {fmtTime(r.duration)}
                     {r.total > 1 ? ` · ${r.part}/${r.total}` : ""}
                   </div>
+                  {r.savedPath && (
+                    <div className="flex items-center gap-1 text-[9px] text-emerald-400">
+                      <CheckCircle2 className="h-2.5 w-2.5 shrink-0" />
+                      <span className="truncate" title={r.savedPath}>otomatis tersimpan di folder pilihan</span>
+                    </div>
+                  )}
                 </div>
                 <button className="rounded p-1 text-cyan-300 hover:bg-cyan-400/10" onClick={() => triggerDownload(r.url, r.name)} aria-label="Unduh">
                   <Download className="h-3.5 w-3.5" />

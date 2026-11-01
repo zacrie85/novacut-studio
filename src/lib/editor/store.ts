@@ -116,6 +116,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     coverDuration: 3,
     autoPartText: true,
     showTitleText: false,
+    exportDir: "",
   },
   exportState: emptyExport,
 

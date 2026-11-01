@@ -1,7 +1,7 @@
 // NOVACUT Studio - Electron main process
 // Menyajikan build statis (folder out/) lewat HTTP lokal lalu membukanya di window.
 
-const { app, BrowserWindow, Menu } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require("electron");
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
@@ -40,6 +40,64 @@ const MIME = {
 };
 
 let server = null;
+
+// ---------- IPC: folder hasil render ----------
+// Renderer (NOVACUT Studio) memanggil lewat window.novacutFS (preload.cjs)
+
+/** Bersihkan nama file agar aman untuk Windows & cegah akses di luar folder */
+function safeFileName(name) {
+  let base = path.basename(String(name || "video.webm"));
+  const ext = path.extname(base).toLowerCase() || ".webm";
+  let stem = base.slice(0, base.length - ext.length).replace(/[\\/:*?"<>|]/g, "_").trim();
+  if (!stem) stem = "video";
+  if (stem.length > 140) stem = stem.slice(0, 140);
+  return stem + ext;
+}
+
+function registerFSIpc() {
+  ipcMain.handle("fs:choose-dir", async (event, current) => {
+    const parent = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+    const opts = {
+      title: "Pilih folder untuk hasil render NOVACUT Studio",
+      buttonLabel: "Pilih Folder Ini",
+      properties: ["openDirectory", "createDirectory"],
+    };
+    if (typeof current === "string" && current.length > 0) opts.defaultPath = current;
+    const res = await dialog.showOpenDialog(parent, opts);
+    if (res.canceled || !res.filePaths.length) return { canceled: true };
+    return { canceled: false, path: res.filePaths[0] };
+  });
+
+  ipcMain.handle("fs:save-file", async (_event, payload) => {
+    try {
+      const dir = typeof payload?.dir === "string" ? payload.dir : "";
+      if (!dir) return { ok: false, error: "Folder belum dipilih" };
+      let stat = null;
+      try { stat = await fs.promises.stat(dir); } catch { /* tidak ada */ }
+      if (!stat || !stat.isDirectory()) {
+        await fs.promises.mkdir(dir, { recursive: true });
+      }
+      const target = path.join(dir, safeFileName(payload?.name));
+      const data = Buffer.from(payload?.data ?? []);
+      await fs.promises.writeFile(target, data);
+      return { ok: true, path: target };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err) };
+    }
+  });
+
+  ipcMain.handle("fs:open-folder", async (_event, dir) => {
+    try {
+      if (typeof dir !== "string" || !dir) return { ok: false, error: "Folder tidak valid" };
+      const err = await shell.openPath(dir);
+      return err ? { ok: false, error: err } : { ok: true, path: dir };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err) };
+    }
+  });
+}
+
+registerFSIpc();
 
 function startServer() {
   return new Promise((resolve, reject) => {
@@ -101,6 +159,7 @@ if (!gotLock) {
         contextIsolation: true,
         nodeIntegration: false,
         spellcheck: false,
+        preload: path.join(__dirname, "preload.cjs"),
       },
       ...(fs.existsSync(iconPath) ? { icon: iconPath } : {}),
     });

@@ -95,6 +95,8 @@ export interface ExportSettings {
   coverDuration: number;
   autoPartText: boolean;
   showTitleText: boolean;
+  /** Folder tujuan hasil render (path absolut, mode desktop). "" = folder unduhan bawaan */
+  exportDir: string;
 }
 
 export interface ExportResult {
@@ -105,6 +107,8 @@ export interface ExportResult {
   part: number;
   total: number;
   duration: number;
+  /** Path file di disk bila otomatis tersimpan ke folder pilihan (desktop) */
+  savedPath?: string;
 }
 
 export interface ExportState {

@@ -3,6 +3,7 @@
 import { grabFrame, aiRecommendTemplates, analyzeVideoFrames, loadImage, renderCoverToDataURL } from "./covers";
 import { COVER_TEMPLATES, partLabel, slugify, uid } from "./constants";
 import { engine } from "./engine";
+import { isDesktopFS, saveBlobToDir } from "./fsBridge";
 import { useEditor, totalDuration } from "./store";
 import type { Clip, MediaAsset, Track } from "./types";
 
@@ -252,10 +253,28 @@ export function splitRanges(duration: number, mode: "count" | "duration", parts:
   return ranges;
 }
 
+/** Simpan/unduh satu hasil render.
+ * Mode desktop + folder terpilih -> file langsung ditulis ke folder itu (tanpa dialog unduh).
+ * Selain itu -> unduh otomatis ke folder unduhan bawaan. */
 async function blobResult(blob: Blob, name: string, part: number, total: number, duration: number) {
   const url = URL.createObjectURL(blob);
-  useEditor.getState().addExportResult({ id: uid("exp"), name, url, size: blob.size, part, total, duration });
-  triggerDownload(url, name);
+  let savedPath: string | undefined;
+  const dir = useEditor.getState().exportSettings.exportDir;
+  if (dir && isDesktopFS()) {
+    try {
+      useEditor.getState().patchExportState({ label: `Menyimpan ${name} ke folder...` });
+      savedPath = await saveBlobToDir(dir, name, blob);
+    } catch {
+      savedPath = undefined; // gagal simpan -> fallback unduh
+    }
+  }
+  useEditor.getState().addExportResult({ id: uid("exp"), name, url, size: blob.size, part, total, duration, savedPath });
+  if (!savedPath) triggerDownload(url, name);
+}
+
+/** true bila hasil render otomatis tersimpan ke folder pilihan pengguna */
+export function isAutoSaveActive(): boolean {
+  return !!useEditor.getState().exportSettings.exportDir && isDesktopFS();
 }
 
 export function triggerDownload(url: string, name: string) {
@@ -317,7 +336,8 @@ export async function runExport() {
     useEditor.setState({ clips: snapshot.clips, tracks: snapshot.tracks, assets: snapshot.assets });
     engine.pause();
     engine.seek(0);
-    useEditor.getState().patchExportState({ running: false, label: "Selesai", progress: 1 });
+    const auto = isAutoSaveActive();
+    useEditor.getState().patchExportState({ running: false, label: auto ? "Selesai — semua file tersimpan di folder pilihanmu ✓" : "Selesai", progress: 1 });
   }
 }
 
@@ -425,6 +445,7 @@ export async function runBatchExport(assetIds: string[]) {
     useEditor.setState({ clips: snapshot.clips, tracks: snapshot.tracks, assets: snapshot.assets });
     engine.pause();
     engine.seek(0);
-    useEditor.getState().patchExportState({ running: false, label: "Batch selesai", progress: 1 });
+    const auto = isAutoSaveActive();
+    useEditor.getState().patchExportState({ running: false, label: auto ? "Batch selesai — semua file tersimpan di folder pilihanmu ✓" : "Batch selesai", progress: 1 });
   }
 }
