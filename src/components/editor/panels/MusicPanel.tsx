@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { Music, Pause, Play, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { MUSIC_LIBRARY, fmtTime } from "@/lib/editor/constants";
+import { MUSIC_LIBRARY } from "@/lib/editor/constants";
 import { engine } from "@/lib/editor/engine";
 import { useEditor } from "@/lib/editor/store";
 import { useToast } from "@/hooks/use-toast";
@@ -50,7 +50,7 @@ export function MusicPanel() {
     useEditor.getState().addAsset(asset);
     useEditor.getState().addClipFromAsset(asset.id);
     setLoading(null);
-    toast({ title: "Backsound ditambahkan", description: `${def.name} · ${fmtTime(duration)}` });
+    toast({ title: "Backsound ditambahkan ✔", description: `${def.name} — atur Volume & Fade di panel "Klip" kanan.` });
   };
 
   return (
@@ -63,6 +63,8 @@ export function MusicPanel() {
       </div>
       <p className="text-[10px] leading-relaxed text-gray-500">
         20 backsound <b className="text-gray-400">bebas hak cipta</b> gaya trailer, iklan &amp; vlog — disintesis langsung di browser, aman untuk monetisasi.
+        <br />
+        <span className="text-emerald-300/80">Tips: setelah masuk timeline, klik klip musik lalu atur <b>Volume</b> (0–200%) &amp; fade di panel kanan.</span>
       </p>
 
       <div className="nova-scroll -mr-1 flex-1 space-y-1.5 overflow-y-auto pr-1">

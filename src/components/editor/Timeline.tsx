@@ -44,9 +44,9 @@ export function Timeline() {
   const contentW = Math.max(900, (duration + 12) * zoom);
 
   const snapTargets = useMemo(() => {
-    const t: number[] = [0];
+    const t: { id: string; time: number }[] = [];
     for (const c of clips) {
-      t.push(c.start, c.start + c.duration);
+      t.push({ id: c.id, time: c.start }, { id: c.id, time: c.start + c.duration });
     }
     return t;
   }, [clips]);
@@ -55,7 +55,9 @@ export function Timeline() {
     (t: number, excludeId?: string) => {
       if (!snap) return t;
       const tol = 8 / zoom;
-      const targets = [0, useEditor.getState().playhead, ...snapTargets.filter((_, i) => true)];
+      // batas klip yang sedang digeser dikecualikan agar klip tidak "menempel"
+      // pada posisi asalnya saat mulai ditarik
+      const targets = [0, useEditor.getState().playhead, ...snapTargets.filter((s) => s.id !== excludeId).map((s) => s.time)];
       let best = t;
       let bd = tol;
       for (const tg of targets) {
@@ -65,7 +67,6 @@ export function Timeline() {
           best = tg;
         }
       }
-      void excludeId;
       return best;
     },
     [snap, snapTargets, zoom]
@@ -104,6 +105,31 @@ export function Timeline() {
     window.addEventListener("pointerup", up);
   };
 
+  // auto-scroll area timeline saat pointer menekan tepi kiri/kanan
+  // (agar klip bisa ditarik/dipotong sampai ujung video walau timeline lebih panjang dari layar)
+  const startEdgeScroll = (getX: () => number, onScroll: () => void) => {
+    let raf = 0;
+    const step = () => {
+      const el = scrollRef.current;
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        const edge = 64;
+        const minEdge = rect.left + HEADER_W + edge;
+        const x = getX();
+        let d = 0;
+        if (x > rect.right - edge) d = Math.min(34, 6 + (x - (rect.right - edge)) / 3);
+        else if (x < minEdge) d = -Math.min(34, 6 + (minEdge - x) / 3);
+        if (d !== 0) {
+          el.scrollLeft += d;
+          onScroll();
+        }
+      }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  };
+
   const clipDrag = (e: React.PointerEvent, clip: Clip) => {
     e.stopPropagation();
     useEditor.getState().select(clip.id);
@@ -111,16 +137,18 @@ export function Timeline() {
     const startY = e.clientY;
     const orig = { ...clip };
     let moved = false;
+    let lastX = e.clientX;
+    let lastY = e.clientY;
+    // posisi kiri lane saat mulai drag; dipakai sebagai acuan agar posisi klip
+    // mengikuti koordinat TIMELINE (bukan layar) sehingga tetap jalan saat auto-scroll
+    const laneNow = () => lanesRef.current?.querySelector<HTMLElement>("[data-trackid]")?.getBoundingClientRect().left ?? 0;
+    const laneLeft0 = laneNow();
 
-    const trackIndex = (id: string) => tracks.findIndex((t) => t.id === id);
-
-    const move = (ev: PointerEvent) => {
-      const dx = (ev.clientX - startX) / zoom;
-      if (!moved && Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) < 4) return;
-      moved = true;
+    const apply = (clientX: number, clientY: number) => {
+      const dx = (clientX - laneNow()) / zoom - (startX - laneLeft0) / zoom;
       let newStart = Math.max(0, orig.start + dx);
-      const snapped = snapTime(newStart);
-      const snappedEnd = snapTime(newStart + orig.duration) - orig.duration;
+      const snapped = snapTime(newStart, clip.id);
+      const snappedEnd = snapTime(newStart + orig.duration, clip.id) - orig.duration;
       newStart = Math.abs(snapped - newStart) <= Math.abs(snappedEnd - newStart) ? snapped : Math.max(0, snappedEnd);
       // ganti track vertikal
       const lanes = lanesRef.current;
@@ -129,17 +157,29 @@ export function Timeline() {
         const rows = Array.from(lanes.querySelectorAll<HTMLElement>("[data-trackid]"));
         for (const r of rows) {
           const rect = r.getBoundingClientRect();
-          if (ev.clientY >= rect.top && ev.clientY <= rect.bottom) {
+          if (clientY >= rect.top && clientY <= rect.bottom) {
             const tid = r.dataset.trackid;
             const t = tracks.find((x) => x.id === tid);
             if (t && compatible(t.kind, orig.kind)) trackId = t.id;
           }
         }
       }
-      void trackIndex;
       useEditor.getState().moveClip(clip.id, newStart, trackId);
     };
+
+    const move = (ev: PointerEvent) => {
+      lastX = ev.clientX;
+      lastY = ev.clientY;
+      if (!moved && Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) < 4) return;
+      moved = true;
+      apply(ev.clientX, ev.clientY);
+    };
+    const stopScroll = startEdgeScroll(
+      () => lastX,
+      () => moved && apply(lastX, lastY)
+    );
     const up = () => {
+      stopScroll();
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
@@ -151,15 +191,19 @@ export function Timeline() {
     e.stopPropagation();
     const startX = e.clientX;
     const orig = { ...clip };
+    let lastX = e.clientX;
     const asset = useEditor.getState().getAsset(clip.assetId);
     const maxSrc = asset && asset.duration > 0 ? asset.duration : 600;
-    const move = (ev: PointerEvent) => {
-      const dt = (ev.clientX - startX) / zoom;
+    const laneNow = () => lanesRef.current?.querySelector<HTMLElement>("[data-trackid]")?.getBoundingClientRect().left ?? 0;
+    const laneLeft0 = laneNow();
+
+    const apply = (clientX: number) => {
+      const dt = (clientX - laneNow()) / zoom - (startX - laneLeft0) / zoom;
       if (edge === "l") {
         const minDt = clip.loopCount > 1 ? -orig.start : Math.max(-orig.start, -orig.inPoint / orig.speed - 0.001);
         const maxDt = orig.duration - 0.2;
         const dt2 = Math.max(minDt, Math.min(maxDt, dt));
-        const ns = snapTime(Math.max(0, orig.start + dt2));
+        const ns = snapTime(Math.max(0, orig.start + dt2), clip.id);
         const dd = ns - orig.start;
         useEditor.getState().updateClip(clip.id, {
           start: ns,
@@ -169,13 +213,23 @@ export function Timeline() {
       } else {
         const maxDur = clip.loopCount > 1 ? 600 : (maxSrc - orig.inPoint) / orig.speed + 0.25;
         let nd = Math.max(0.2, Math.min(600, orig.duration + dt));
-        const snappedEnd = snapTime(orig.start + nd);
+        const snappedEnd = snapTime(orig.start + nd, clip.id);
         nd = Math.max(0.2, snappedEnd - orig.start);
         nd = Math.min(nd, maxDur);
         useEditor.getState().updateClip(clip.id, { duration: nd });
       }
     };
+
+    const move = (ev: PointerEvent) => {
+      lastX = ev.clientX;
+      apply(ev.clientX);
+    };
+    const stopScroll = startEdgeScroll(
+      () => lastX,
+      () => apply(lastX)
+    );
     const up = () => {
+      stopScroll();
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
@@ -351,6 +405,7 @@ export function Timeline() {
                                 {clip.speed !== 1 && <span className="text-amber-300">{clip.speed}x</span>}
                                 {clip.loopCount > 1 && <span className="text-fuchsia-300">⟳{clip.loopCount}</span>}
                                 {clip.effects.length > 0 && <span className="text-emerald-300">fx{clip.effects.length}</span>}
+                                {(clip.kind === "audio" || clip.kind === "video") && clip.volume !== 1 && <span className="text-emerald-300">♪{Math.round(clip.volume * 100)}%</span>}
                               </div>
                             </div>
                             {clip.transition && <div className="absolute right-0 top-0 bg-fuchsia-500/70 px-1 text-[8px] text-white">⇄</div>}

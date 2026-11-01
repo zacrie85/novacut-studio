@@ -321,10 +321,10 @@ export async function runExport() {
   }
 }
 
-/** Pastikan cover asset tersedia; buat otomatis dengan AI bila perlu */
-async function ensureCoverAsset(sourceAsset: MediaAsset | undefined): Promise<string | undefined> {
+/** Pastikan cover asset tersedia; buat otomatis dengan AI bila perlu (force = buat ulang walau sudah ada) */
+async function ensureCoverAsset(sourceAsset: MediaAsset | undefined, force = false): Promise<string | undefined> {
   const st = useEditor.getState();
-  if (st.cover.coverAssetId && st.assets.some((a) => a.id === st.cover.coverAssetId)) return st.cover.coverAssetId;
+  if (!force && st.cover.coverAssetId && st.assets.some((a) => a.id === st.cover.coverAssetId)) return st.cover.coverAssetId;
   if (!sourceAsset || sourceAsset.type !== "video") return undefined;
   const title = st.texts.title || sourceAsset.name.replace(/\.[^.]+$/, "");
   let frameUrl: string | null = null;
@@ -364,7 +364,8 @@ export async function runBatchExport(assetIds: string[]) {
       const asset = snapshot.assets.find((a) => a.id === assetIds[vi]);
       if (!asset || asset.type !== "video") continue;
       const title = asset.name.replace(/\.[^.]+$/, "");
-      useEditor.getState().setTexts({ title: useEditor.getState().texts.title || title });
+      // judul tiap video batch = nama video aslinya (dipakai untuk cover & teks part)
+      useEditor.getState().setTexts({ title });
       useEditor.getState().patchExportState({ label: `Playlist ${vi + 1}/${assetIds.length}: ${title}` });
 
       // proyek sementara: satu klip video penuh
@@ -372,11 +373,17 @@ export async function runBatchExport(assetIds: string[]) {
       const clip = baseClip({ trackId: "batch-video", kind: "video", assetId: asset.id, start: 0, duration: asset.duration });
       const tempAssets = [...snapshot.assets];
 
-      // cover otomatis per video (jika diaktifkan & belum ada cover global)
+      // cover otomatis per video (mode manual = cover buatan pengguna dipakai bersama;
+      // mode otomatis = AI ambil adegan terbaik dari masing-masing video)
       let coverAssetId = st0.cover.coverAssetId;
       if (s.includeCover) {
-        if (!coverAssetId || !tempAssets.some((a) => a.id === coverAssetId)) {
-          coverAssetId = await ensureCoverAsset(asset);
+        if (useEditor.getState().cover.mode === "manual") {
+          if (!coverAssetId || !tempAssets.some((a) => a.id === coverAssetId)) {
+            coverAssetId = await ensureCoverAsset(asset);
+          }
+        } else {
+          useEditor.getState().setCover({ coverAssetId: undefined, previewUrl: undefined });
+          coverAssetId = await ensureCoverAsset(asset, true);
         }
       }
       const textTrack: Track = { id: "batch-text", kind: "text", name: "T", muted: false, hidden: false };
@@ -391,7 +398,8 @@ export async function runBatchExport(assetIds: string[]) {
       };
 
       const D = asset.duration;
-      const ranges = splitRanges(D, s.splitBy, s.parts, s.partSeconds);
+      // mode "single" = export saja tanpa dipecah; "split" = ikuti pengaturan Export & Split
+      const ranges = s.mode === "single" ? [{ start: 0, end: D }] : splitRanges(D, s.splitBy, s.parts, s.partSeconds);
       for (let i = 0; i < ranges.length; i++) {
         useEditor.getState().patchExportState({
           label: `${title} — ${partLabel(s.labelStyle, i + 1, ranges.length, true)} (${vi + 1}/${assetIds.length})`,

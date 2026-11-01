@@ -152,7 +152,7 @@ export function MediaPanel() {
 
       <div className="flex items-start gap-2 rounded-lg border border-white/5 bg-white/[0.02] p-2 text-[10px] leading-relaxed text-gray-500">
         <FileVideo className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        Video yang diimpor otomatis masuk ke Playlist & bisa dijadikan cover.
+        Video yang diimpor otomatis masuk ke Playlist — bisa langsung di-Export / Export &amp; Split dari tab <b className="text-gray-400">Playlist</b> tanpa perlu dimasukkan ke timeline.
       </div>
     </div>
   );

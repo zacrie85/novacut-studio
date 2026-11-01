@@ -2,7 +2,7 @@
 
 // NOVACUT Studio - Shell utama
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Clapperboard, Film, ListVideo, Music, RectangleHorizontal, RectangleVertical, Scissors, SlidersHorizontal, Type, Wand2, Wrench, Zap } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -36,7 +36,14 @@ export function EditorShell() {
   const [rightTab, setRightTab] = useState("klip");
   const project = useEditor((s) => s.project);
   const clips = useEditor((s) => s.clips);
+  const selectedClipId = useEditor((s) => s.selectedClipId);
   const duration = totalDuration(clips);
+
+  // saat klip dipilih (mis. musik/gambar/teks baru ditambahkan), langsung tampilkan
+  // panel "Klip" di kanan agar pengaturan Volume / Fade / Teks langsung terlihat
+  useEffect(() => {
+    if (selectedClipId) setRightTab("klip");
+  }, [selectedClipId]);
 
   const leftTabs = (
     <Tabs value={leftTab} onValueChange={setLeftTab} className="flex h-full min-h-0 flex-col">

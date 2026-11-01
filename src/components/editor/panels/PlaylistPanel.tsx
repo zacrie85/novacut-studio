@@ -2,7 +2,7 @@
 
 // NOVACUT Studio - Panel Playlist (daftar video masuk + batch export)
 
-import { ListVideo, Plus, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { ListVideo, Plus, Rocket, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEditor } from "@/lib/editor/store";
 import { fmtTime } from "@/lib/editor/constants";
@@ -14,6 +14,7 @@ export function PlaylistPanel() {
   const assets = useEditor((s) => s.assets);
   const videos = assets.filter((a) => a.type === "video");
   const running = useEditor((s) => s.exportState.running);
+  const exportState = useEditor((s) => s.exportState);
   const { toast } = useToast();
 
   const makeCover = async (assetId: string) => {
@@ -43,8 +44,20 @@ export function PlaylistPanel() {
         Export &amp; Split Semua ({videos.length})
       </Button>
       <p className="-mt-1 text-[10px] leading-relaxed text-gray-500">
-        Setiap video diproses berurutan: cover otomatis + teks part + dipecah sesuai pengaturan di tab Export.
+        <b className="text-gray-400">Tanpa perlu masuk timeline!</b> Setiap video langsung dirender berurutan: cover otomatis + teks part + dipecah sesuai pengaturan di tab Export.
       </p>
+
+      {running && (
+        <div className="space-y-1 rounded-lg border border-cyan-400/25 bg-cyan-400/5 p-2">
+          <div className="flex items-center justify-between gap-2 text-[10px] text-cyan-200">
+            <span className="truncate">{exportState.label || "Memproses..."}</span>
+            <span className="shrink-0 font-mono">{Math.round(exportState.progress * 100)}%</span>
+          </div>
+          <div className="h-1 overflow-hidden rounded bg-white/10">
+            <div className="h-full rounded bg-gradient-to-r from-fuchsia-500 to-cyan-400 transition-all" style={{ width: `${Math.max(2, Math.round(exportState.progress * 100))}%` }} />
+          </div>
+        </div>
+      )}
 
       <div className="nova-scroll -mr-1 flex-1 space-y-2 overflow-y-auto pr-1">
         {videos.length === 0 && (
@@ -74,6 +87,16 @@ export function PlaylistPanel() {
               aria-label="Tambah ke timeline"
             >
               <Plus className="h-4 w-4" />
+            </Button>
+            <Button
+              size="sm"
+              className="h-7 w-7 rounded-full bg-emerald-500/20 p-0 text-emerald-300 hover:bg-emerald-500/30"
+              disabled={running}
+              onClick={() => void runBatchExport([v.id])}
+              aria-label="Export video ini langsung (tanpa timeline)"
+              title="Export video ini langsung — tanpa perlu masuk timeline"
+            >
+              <Rocket className="h-3.5 w-3.5" />
             </Button>
             <Button size="sm" variant="outline" className="h-7 w-7 rounded-full border-violet-400/30 bg-violet-400/10 p-0 text-violet-300 hover:bg-violet-400/20" onClick={() => void makeCover(v.id)} aria-label="Jadikan sumber cover">
               <Wand2 className="h-3.5 w-3.5" />
