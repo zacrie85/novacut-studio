@@ -106,7 +106,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   zoom: 60,
   snap: true,
   texts: { title: "", description: "", labelStyle: "Part", parts: 5 },
-  cover: { frameTime: 0, templateId: "impact--cyber", duration: 3, useAI: true },
+  cover: { frameTime: 0, templateId: "impact--cyber", duration: 3, useAI: true, mode: "auto" as const },
   exportSettings: {
     mode: "split",
     splitBy: "duration",

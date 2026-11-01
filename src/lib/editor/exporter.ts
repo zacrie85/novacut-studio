@@ -1,6 +1,6 @@
 // NOVACUT Studio - Export & Split (MediaRecorder) + cover + teks Part otomatis
 
-import { grabFrame, aiRecommendTemplates, analyzeVideoFrames, renderCoverToDataURL } from "./covers";
+import { grabFrame, aiRecommendTemplates, analyzeVideoFrames, loadImage, renderCoverToDataURL } from "./covers";
 import { COVER_TEMPLATES, partLabel, slugify, uid } from "./constants";
 import { engine } from "./engine";
 import { useEditor, totalDuration } from "./store";
@@ -341,9 +341,8 @@ async function ensureCoverAsset(sourceAsset: MediaAsset | undefined): Promise<st
   if (!frameUrl) frameUrl = await grabFrame(sourceAsset.url, Math.min(sourceAsset.duration - 0.2, sourceAsset.duration * 0.3), 1280);
   if (!frameUrl) return undefined;
   const tpl = aiRecommendTemplates(title, brightness, 1)[0] ?? COVER_TEMPLATES[0];
-  const img = new Image();
-  img.src = frameUrl;
-  await img.decode().catch(() => {});
+  const img = await loadImage(frameUrl).catch(() => null);
+  if (!img) return undefined;
   const { width, height } = useEditor.getState().project;
   const dataUrl = renderCoverToDataURL({ img, title, template: tpl }, width, height);
   const asset: MediaAsset = { id: uid("as"), name: `Cover - ${title}`, type: "image", url: dataUrl, duration: 0, width, height };

@@ -38,6 +38,7 @@ class EditorEngine {
   private grainPattern: CanvasPattern | null = null;
   private els = new Map<string, HTMLVideoElement | HTMLAudioElement | HTMLImageElement>();
   private gains = new Map<string, GainNode>();
+  private mediaSrcs = new Map<string, MediaElementAudioSourceNode>();
   private musicSessions = new Map<string, { src: AudioBufferSourceNode; gain: GainNode; session: number }>();
   private loadingMusic = new Set<string>();
   private musicBuffers = new Map<string, AudioBuffer>();
@@ -91,8 +92,30 @@ class EditorEngine {
       if (!AC) return;
       this.audioCtx = new AC();
       this.recDest = this.audioCtx.createMediaStreamDestination();
+      // sambungkan gain yang sudah ada (dibuat sebelum export) ke perekam agar ikut terekam
+      for (const g of this.gains.values()) {
+        try {
+          g.connect(this.recDest);
+        } catch {
+          /* ignore */
+        }
+      }
     }
     if (this.audioCtx.state === "suspended") void this.audioCtx.resume();
+  }
+
+  /** Rutekan audio elemen video/audio ke graph Web Audio (wajib agar ikut terekam saat export) */
+  private routeElementAudio(clipId: string, el: HTMLVideoElement | HTMLAudioElement) {
+    const ctx = this.audioCtx;
+    if (!ctx || this.mediaSrcs.has(clipId)) return;
+    try {
+      const src = ctx.createMediaElementSource(el);
+      const g = this.gainFor(clipId);
+      if (g) src.connect(g);
+      this.mediaSrcs.set(clipId, src);
+    } catch {
+      /* elemen sudah pernah dirutekan / tidak didukung */
+    }
   }
 
   // ===== elemen media per klip =====
@@ -163,11 +186,20 @@ class EditorEngine {
       }
     }
     const v = this.clipVolume(clip, track, local);
-    const g = this.gainFor(clip.id);
-    if (g) g.gain.value = v;
-    else {
-      el.volume = clamp(v, 0, 1);
-      el.muted = track.muted;
+    if (this.audioCtx) {
+      // via graph: suara tetap terdengar & ikut terekam saat export
+      this.routeElementAudio(clip.id, el);
+      el.volume = 1;
+      el.muted = false;
+      const g = this.gainFor(clip.id);
+      if (g) g.gain.value = v;
+    } else {
+      const g = this.gainFor(clip.id);
+      if (g) g.gain.value = v;
+      else {
+        el.volume = clamp(v, 0, 1);
+        el.muted = track.muted;
+      }
     }
     if (playing) {
       if (el.paused) {
@@ -203,11 +235,19 @@ class EditorEngine {
     const local = t - clip.start;
     const srcTime = clip.inPoint + local * clip.speed;
     const v = this.clipVolume(clip, track, local);
-    const g = this.gainFor(clip.id);
-    if (g) g.gain.value = v;
-    else {
-      el.volume = clamp(v, 0, 1);
-      el.muted = track.muted;
+    if (this.audioCtx) {
+      this.routeElementAudio(clip.id, el);
+      el.volume = 1;
+      el.muted = false;
+      const g = this.gainFor(clip.id);
+      if (g) g.gain.value = v;
+    } else {
+      const g = this.gainFor(clip.id);
+      if (g) g.gain.value = v;
+      else {
+        el.volume = clamp(v, 0, 1);
+        el.muted = track.muted;
+      }
     }
     if (playing) {
       if (el.paused) {

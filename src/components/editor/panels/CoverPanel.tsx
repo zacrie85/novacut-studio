@@ -3,12 +3,13 @@
 // NOVACUT Studio - Cover Studio: frame otomatis dari video + 100 template + AI
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, LayoutGrid, Sparkles, Wand2 } from "lucide-react";
+import { Check, ImageIcon, LayoutGrid, Sparkles, Upload, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { COVER_TEMPLATES, fmtTime, partLabel } from "@/lib/editor/constants";
-import { aiRecommendTemplates, analyzeVideoFrames, grabFrame, renderCover, renderCoverToDataURL } from "@/lib/editor/covers";
+import { aiRecommendTemplates, analyzeVideoFrames, grabFrame, loadImage, plainCoverDataURL, renderCover, renderCoverToDataURL } from "@/lib/editor/covers";
 import { useEditor } from "@/lib/editor/store";
 import { uid } from "@/lib/editor/constants";
 import { useToast } from "@/hooks/use-toast";
@@ -25,19 +26,23 @@ export function CoverPanel() {
   const [showAll, setShowAll] = useState(false);
   const previewRef = useRef<HTMLCanvasElement>(null);
   const gridRef = useRef<HTMLCanvasElement[]>([]);
+  const uploadRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   const source: MediaAsset | undefined = videos.find((v) => v.id === cover.frameAssetId) ?? videos[0];
+  const manualAsset: MediaAsset | undefined = assets.find((a) => a.id === cover.manualAssetId);
+  // latar cover: mode manual = gambar unggahan, mode auto = frame dari video
+  const bgUrl = cover.mode === "manual" ? manualAsset?.url ?? null : frameUrl;
   const title = texts.title || source?.name.replace(/\.[^.]+$/, "") || "Judul Video";
   const partText = partLabel(texts.labelStyle, 1, Math.max(1, texts.parts), true);
 
   const template = useMemo(() => COVER_TEMPLATES.find((t) => t.id === cover.templateId) ?? COVER_TEMPLATES[0], [cover.templateId]);
   const recommended = useMemo(() => aiRecommendTemplates(title, cover.previewUrl ? 128 : 110, 6), [title, cover.previewUrl]);
 
-  // ambil frame saat sumber/waktu berubah
+  // ambil frame saat sumber/waktu berubah (mode otomatis saja)
   useEffect(() => {
     let alive = true;
-    if (!source) {
+    if (!source || cover.mode !== "auto") {
       setFrameUrl(null);
       return;
     }
@@ -47,7 +52,7 @@ export function CoverPanel() {
     return () => {
       alive = false;
     };
-  }, [source, cover.frameTime]);
+  }, [source, cover.frameTime, cover.mode]);
 
   // render pratinjau
   useEffect(() => {
@@ -55,20 +60,28 @@ export function CoverPanel() {
     if (!c) return;
     const ctx = c.getContext("2d");
     if (!ctx) return;
-    const draw = () => {
-      const img = frameUrl ? new Image() : null;
-      const render = () => {
-        renderCover(ctx, { img: img && img.complete ? img : null, title, part: partText, template, w: c.width, h: c.height });
-      };
-      if (img) {
-        img.onload = render;
-        img.onerror = render;
-        img.src = frameUrl!;
-      }
-      render();
+    if (!bgUrl) {
+      renderCover(ctx, { img: null, title, part: partText, template, w: c.width, h: c.height });
+      return;
+    }
+    const drawPlain = (img: HTMLImageElement) => {
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, c.width, c.height);
+      const sw = img.naturalWidth || 2;
+      const sh = img.naturalHeight || 2;
+      const s = Math.max(c.width / sw, c.height / sh);
+      ctx.drawImage(img, (c.width - sw * s) / 2, (c.height - sh * s) / 2, sw * s, sh * s);
     };
-    draw();
-  }, [frameUrl, template, title, partText, project.ratio]);
+    let alive = true;
+    void loadImage(bgUrl).then((img) => {
+      if (!alive) return;
+      if (cover.mode === "manual" && cover.manualPlain) drawPlain(img);
+      else renderCover(ctx, { img, title, part: partText, template, w: c.width, h: c.height });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [bgUrl, cover.mode, cover.manualPlain, template, title, partText]);
 
   useEffect(() => {
     if (!showAll) return;
@@ -79,18 +92,19 @@ export function CoverPanel() {
         const ctx = c.getContext("2d");
         const tpl = COVER_TEMPLATES[i];
         if (!ctx || !tpl) return;
-        const img = frameUrl ? new Image() : null;
-        const render = () => renderCover(ctx, { img: img && img.complete ? img : null, title: title.slice(0, 22), part: "", template: tpl, w: c.width, h: c.height });
-        if (img) {
-          img.onload = render;
-          img.src = frameUrl!;
+        if (!bgUrl) {
+          renderCover(ctx, { img: null, title: title.slice(0, 22), part: "", template: tpl, w: c.width, h: c.height });
+          c.dataset.done = "1";
+          return;
         }
-        render();
+        void loadImage(bgUrl).then((img) => {
+          renderCover(ctx, { img, title: title.slice(0, 22), part: "", template: tpl, w: c.width, h: c.height });
+        });
         c.dataset.done = "1";
       });
     }, 60);
     return () => clearTimeout(t);
-  }, [showAll, frameUrl, title, project.ratio]);
+  }, [showAll, bgUrl, title]);
 
   const analyze = useCallback(async () => {
     if (!source) return;
@@ -111,25 +125,56 @@ export function CoverPanel() {
     useEditor.getState().setCover({ templateId: t.id });
   };
 
-  const saveCover = () => {
-    if (!frameUrl) {
+  const handleCoverUpload = useCallback(
+    async (files: FileList | null) => {
+      const file = files?.[0];
+      if (!file) return;
+      if (!file.type.startsWith("image/")) {
+        toast({ title: "File harus gambar", description: "Gunakan file PNG atau JPG." });
+        return;
+      }
+      const url = URL.createObjectURL(file);
+      const meta = await new Promise<{ w: number; h: number }>((res) => {
+        const img = new Image();
+        img.onload = () => res({ w: img.naturalWidth, h: img.naturalHeight });
+        img.onerror = () => res({ w: 0, h: 0 });
+        img.src = url;
+      });
+      const asset: MediaAsset = { id: uid("as"), name: file.name, type: "image", url, duration: 0, width: meta.w, height: meta.h };
+      useEditor.getState().addAsset(asset);
+      useEditor.getState().setCover({ mode: "manual", manualAssetId: asset.id });
+      toast({ title: "Gambar cover siap ✔", description: `${file.name} — dipakai sebagai cover.` });
+    },
+    [toast]
+  );
+
+  const saveCover = async () => {
+    if (cover.mode === "manual" && !manualAsset) {
+      toast({ title: "Unggah gambar dulu", description: "Pilih file PNG/JPG untuk cover manual." });
+      return;
+    }
+    if (cover.mode === "auto" && !frameUrl) {
       toast({ title: "Pilih video dulu", description: "Impor video di tab Media." });
       return;
     }
-    const dataUrl = renderCoverToDataURL({ img: (() => { const i = new Image(); i.src = frameUrl; return i; })(), title, part: partText, template }, project.width, project.height);
-    const img = new Image();
-    img.onload = () => {
-      const asset: MediaAsset = { id: uid("as"), name: `Cover - ${title}`, type: "image", url: dataUrl, duration: 0, width: project.width, height: project.height };
-      useEditor.getState().addAsset(asset);
-      useEditor.getState().setCover({ coverAssetId: asset.id, previewUrl: dataUrl });
-      toast({ title: "Cover disimpan ✔", description: "Dipakai otomatis di Export & Split." });
-    };
-    img.src = frameUrl;
+    const srcUrl = cover.mode === "manual" ? manualAsset!.url : frameUrl!;
+    const dataUrl =
+      cover.mode === "manual" && cover.manualPlain
+        ? await plainCoverDataURL(srcUrl, project.width, project.height)
+        : renderCoverToDataURL({ img: await loadImage(srcUrl), title, part: partText, template }, project.width, project.height);
+    if (!dataUrl) {
+      toast({ title: "Gagal membuat cover" });
+      return;
+    }
+    const asset: MediaAsset = { id: uid("as"), name: `Cover - ${title}`, type: "image", url: dataUrl, duration: 0, width: project.width, height: project.height };
+    useEditor.getState().addAsset(asset);
+    useEditor.getState().setCover({ coverAssetId: asset.id, previewUrl: dataUrl });
+    toast({ title: "Cover disimpan ✔", description: "Dipakai otomatis di Export & Split." });
   };
 
   const placeCover = () => {
     if (!cover.coverAssetId) {
-      saveCover();
+      void saveCover();
       return;
     }
     const clipId = useEditor.getState().addClipFromAsset(cover.coverAssetId, { duration: cover.duration });
@@ -146,7 +191,50 @@ export function CoverPanel() {
       </div>
 
       <div className="nova-scroll -mr-1 flex-1 space-y-3 overflow-y-auto pr-1">
-        {/* sumber & frame */}
+        {/* sumber cover: otomatis dari video / unggahan manual */}
+        <div className="space-y-2 rounded-lg border border-violet-400/25 bg-violet-400/[0.05] p-2.5">
+          <div className="text-[10px] font-semibold tracking-wider text-gray-400">SUMBER COVER</div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              onClick={() => useEditor.getState().setCover({ mode: "auto" })}
+              className={`rounded-md border px-2 py-1.5 text-[10px] font-medium transition ${cover.mode === "auto" ? "border-violet-300 bg-violet-400/20 text-violet-100" : "border-white/10 bg-white/[0.03] text-gray-300 hover:border-violet-400/40"}`}
+            >
+              Otomatis dari Video
+            </button>
+            <button
+              onClick={() => useEditor.getState().setCover({ mode: "manual" })}
+              className={`rounded-md border px-2 py-1.5 text-[10px] font-medium transition ${cover.mode === "manual" ? "border-violet-300 bg-violet-400/20 text-violet-100" : "border-white/10 bg-white/[0.03] text-gray-300 hover:border-violet-400/40"}`}
+            >
+              Unggah Sendiri (PNG/JPG)
+            </button>
+          </div>
+          {cover.mode === "auto" ? (
+            <div className="text-[9px] leading-relaxed text-gray-500">AI mengambil adegan terbaik dari dalam video, atau geser slider untuk pilih frame manual.</div>
+          ) : (
+            <div className="space-y-2">
+              <input ref={uploadRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => void handleCoverUpload(e.target.files)} />
+              <Button variant="outline" className="h-8 w-full gap-1.5 border-white/10 bg-white/5 text-[11px]" onClick={() => uploadRef.current?.click()}>
+                <Upload className="h-3.5 w-3.5" />
+                <span className="truncate">{manualAsset ? manualAsset.name : "Pilih file PNG / JPG"}</span>
+              </Button>
+              {manualAsset && (
+                <div className="flex items-center gap-2">
+                  <ImageIcon className="h-3.5 w-3.5 shrink-0 text-violet-300" />
+                  <span className="truncate text-[9px] text-gray-500">
+                    {manualAsset.width && manualAsset.height ? `${manualAsset.width}×${manualAsset.height}` : "Gambar siap dipakai"}
+                  </span>
+                </div>
+              )}
+              <label className="flex cursor-pointer items-center gap-1.5 text-[10px] text-gray-400">
+                <Checkbox checked={!!cover.manualPlain} onCheckedChange={(v) => useEditor.getState().setCover({ manualPlain: v === true })} className="h-3.5 w-3.5 border-white/20" />
+                Gambar apa adanya — tanpa teks judul &amp; part
+              </label>
+            </div>
+          )}
+        </div>
+
+        {/* sumber & frame (mode otomatis) */}
+        {cover.mode === "auto" && (
         <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-2.5">
           <div className="text-[10px] font-semibold tracking-wider text-gray-400">SUMBER VIDEO</div>
           <Select value={source?.id ?? ""} onValueChange={(v) => useEditor.getState().setCover({ frameAssetId: v, frameTime: 0 })}>
@@ -181,6 +269,7 @@ export function CoverPanel() {
             </>
           )}
         </div>
+        )}
 
         {/* pratinjau */}
         <div className="overflow-hidden rounded-lg border border-violet-400/20 shadow-[0_0_24px_rgba(167,139,250,0.12)]">
@@ -245,7 +334,7 @@ export function CoverPanel() {
       </div>
 
       <div className="flex shrink-0 gap-2">
-        <Button className="h-9 flex-1 gap-1.5 bg-gradient-to-r from-violet-600 to-fuchsia-500 text-xs font-bold hover:from-violet-500 hover:to-fuchsia-400" onClick={saveCover}>
+        <Button className="h-9 flex-1 gap-1.5 bg-gradient-to-r from-violet-600 to-fuchsia-500 text-xs font-bold hover:from-violet-500 hover:to-fuchsia-400" onClick={() => void saveCover()}>
           <Check className="h-4 w-4" /> Simpan Cover
         </Button>
         <Button variant="outline" className="h-9 flex-1 border-white/10 bg-white/5 text-xs" onClick={placeCover}>

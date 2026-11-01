@@ -79,6 +79,9 @@ export interface CoverConfig {
   templateId: string; // "layout--palette"
   duration: number; // 2 - 5 detik saat export & split
   useAI: boolean;
+  mode: "auto" | "manual"; // auto = ambil adegan dari video; manual = gambar unggahan pengguna
+  manualAssetId?: string; // asset gambar unggahan (PNG/JPG)
+  manualPlain?: boolean; // mode manual: gambar apa adanya tanpa teks template
   coverAssetId?: string; // hasil render cover (image asset)
   previewUrl?: string;
 }

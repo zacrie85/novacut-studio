@@ -318,7 +318,86 @@ export function renderCoverToDataURL(input: Omit<CoverRenderInput, "w" | "h">, w
   return c.toDataURL("image/jpeg", 0.92);
 }
 
+/** Cover polos: gambar unggahan pengguna apa adanya (tanpa teks template) */
+export async function plainCoverDataURL(url: string, w: number, h: number): Promise<string> {
+  const img = await loadImage(url);
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d");
+  if (!ctx) return "";
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, w, h);
+  const sw = img.naturalWidth || 2;
+  const sh = img.naturalHeight || 2;
+  const s = Math.max(w / sw, h / sh);
+  ctx.drawImage(img, (w - sw * s) / 2, (h - sh * s) / 2, sw * s, sh * s);
+  return c.toDataURL("image/jpeg", 0.94);
+}
+
 // ===== AI AUTO-COVER =====
+
+/** Muat gambar dan tunggu sampai benar-benar siap digambar */
+export function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = () => rej(new Error("Gagal memuat gambar"));
+    img.src = url;
+  });
+}
+
+/** Tunggu frame video benar-benar ter-render (mencegah gambar hitam) */
+function waitVideoFrame(video: HTMLVideoElement, timeoutMs = 1200): Promise<void> {
+  type VFCVideo = HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number };
+  const v = video as VFCVideo;
+  if (typeof v.requestVideoFrameCallback === "function") {
+    return new Promise((res) => {
+      let done = false;
+      const finish = () => {
+        if (!done) {
+          done = true;
+          res();
+        }
+      };
+      v.requestVideoFrameCallback(finish);
+      setTimeout(finish, timeoutMs);
+    });
+  }
+  return new Promise((res) => setTimeout(res, 140));
+}
+
+/** Seek video ke waktu t dan tunggu frame siap digambar */
+async function seekVideo(video: HTMLVideoElement, t: number) {
+  await new Promise<void>((res) => {
+    let settled = false;
+    const done = () => {
+      if (!settled) {
+        settled = true;
+        res();
+      }
+    };
+    video.onseeked = done;
+    try {
+      video.currentTime = Math.max(0, t);
+    } catch {
+      done();
+    }
+    setTimeout(done, 3000);
+  });
+  await waitVideoFrame(video);
+}
+
+/** Tunggu video siap (metadata + frame pertama) */
+async function loadVideo(video: HTMLVideoElement): Promise<boolean> {
+  await new Promise<void>((res) => {
+    if (video.readyState >= 2) return res();
+    video.onloadeddata = () => res();
+    video.onerror = () => res();
+    setTimeout(res, 5000);
+  });
+  return !!video.videoWidth;
+}
 
 export interface FrameScore {
   time: number;
@@ -333,34 +412,19 @@ export async function analyzeVideoFrames(url: string, duration: number, count = 
   video.src = url;
   video.muted = true;
   video.preload = "auto";
+  const ok = await loadVideo(video);
   const c = document.createElement("canvas");
   c.width = 160;
   c.height = 90;
   const ctx = c.getContext("2d");
   const scores: FrameScore[] = [];
-  if (!ctx) return { scores, best: null };
-
-  await new Promise<void>((res) => {
-    video.onloadeddata = () => res();
-    video.onerror = () => res();
-    setTimeout(res, 4000);
-  });
-  if (!video.videoWidth) return { scores, best: null };
+  if (!ok || !ctx) return { scores, best: null };
 
   const times: number[] = [];
   for (let i = 0; i < count; i++) times.push(Math.min(duration - 0.1, 0.1 + ((duration - 0.3) * (i + 0.5)) / count));
 
   for (const t of times) {
-    await new Promise<void>((res) => {
-      const done = () => res();
-      video.onseeked = done;
-      try {
-        video.currentTime = Math.max(0, t);
-      } catch {
-        done();
-      }
-      setTimeout(done, 1500);
-    });
+    await seekVideo(video, t);
     ctx.drawImage(video, 0, 0, 160, 90);
     const data = ctx.getImageData(0, 0, 160, 90).data;
     let sum = 0;
@@ -397,21 +461,9 @@ export async function grabFrame(url: string, time: number, maxW = 1280): Promise
   video.src = url;
   video.muted = true;
   video.preload = "auto";
-  await new Promise<void>((res) => {
-    video.onloadeddata = () => res();
-    video.onerror = () => res();
-    setTimeout(res, 4000);
-  });
-  if (!video.videoWidth) return null;
-  await new Promise<void>((res) => {
-    video.onseeked = () => res();
-    try {
-      video.currentTime = Math.max(0, time);
-    } catch {
-      res();
-    }
-    setTimeout(res, 1500);
-  });
+  const ok = await loadVideo(video);
+  if (!ok) return null;
+  await seekVideo(video, time);
   const scale = Math.min(1, maxW / video.videoWidth);
   const c = document.createElement("canvas");
   c.width = Math.round(video.videoWidth * scale);
