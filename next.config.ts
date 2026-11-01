@@ -1,8 +1,10 @@
 import type { NextConfig } from "next";
 
+// DESKTOP=1 -> build static export untuk aplikasi desktop (Electron memakai folder out/)
+const isDesktop = process.env.DESKTOP === "1";
+
 const nextConfig: NextConfig = {
-  output: "standalone",
-  /* config options here */
+  ...(isDesktop ? ({ output: "export" } as const) : ({ output: "standalone" } as const)),
   typescript: {
     ignoreBuildErrors: true,
   },

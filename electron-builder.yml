@@ -1,0 +1,35 @@
+appId: studio.novacut.app
+productName: NOVACUT Studio
+copyright: Copyright © 2026 NOVACUT Studio
+directories:
+  output: release
+  buildResources: build
+files:
+  - electron/**/*
+  - out/**/*
+  - package.json
+  - "!node_modules/**/*"
+  - "!**/*.map"
+asar: true
+npmRebuild: false
+compression: maximum
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: NOVACUT Studio
+  uninstallDisplayName: NOVACUT Studio
+  artifactName: NOVACUT-Studio-Setup-${version}.exe
+portable:
+  artifactName: NOVACUT-Studio-Portable-${version}.exe

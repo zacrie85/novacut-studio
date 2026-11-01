@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     "Editor video dengan timeline multi-layer, 28 transisi gaya trailer Hollywood, efek blockbuster, pembuat cover AI, pustaka backsound bebas hak cipta, dan Export & Split otomatis.",
   keywords: ["editor video", "video editor", "transisi", "trailer", "cover AI", "backsound", "export split"],
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/logo.svg",
   },
 };
 
