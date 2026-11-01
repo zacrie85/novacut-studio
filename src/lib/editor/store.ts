@@ -1,0 +1,298 @@
+// NOVACUT Studio - Zustand store (state proyek editing)
+
+import { create } from "zustand";
+import { uid } from "./constants";
+import type { Clip, CoverConfig, ExportResult, ExportSettings, ExportState, MediaAsset, ProjectMeta, TextData, TextsConfig, Track, TrackKind } from "./types";
+
+export function totalDuration(clips: Clip[]): number {
+  return clips.reduce((m, c) => Math.max(m, c.start + c.duration), 0);
+}
+
+function makeTrack(kind: TrackKind, name: string): Track {
+  return { id: uid("tr"), kind, name, muted: false, hidden: false };
+}
+
+function defaultTracks(): Track[] {
+  return [makeTrack("video", "Video 1"), makeTrack("image", "Gambar 1"), makeTrack("text", "Teks 1"), makeTrack("audio", "Audio 1")];
+}
+
+const emptyExport: ExportState = { running: false, label: "", progress: 0, results: [], batchTotal: 0, batchIndex: 0 };
+
+export interface EditorState {
+  project: ProjectMeta;
+  assets: MediaAsset[];
+  tracks: Track[];
+  clips: Clip[];
+  playhead: number;
+  playing: boolean;
+  selectedClipId: string | null;
+  zoom: number; // px per detik
+  snap: boolean;
+  texts: TextsConfig;
+  cover: CoverConfig;
+  exportSettings: ExportSettings;
+  exportState: ExportState;
+
+  setProject: (p: Partial<ProjectMeta>) => void;
+  addAsset: (a: MediaAsset) => void;
+  removeAsset: (id: string) => void;
+  getAsset: (id?: string) => MediaAsset | undefined;
+
+  addTrack: (kind: TrackKind) => void;
+  removeTrack: (id: string) => void;
+  toggleMute: (id: string) => void;
+  toggleHidden: (id: string) => void;
+
+  addClipFromAsset: (assetId: string, opts?: { trackId?: string; start?: number; duration?: number }) => string | null;
+  addTextClip: (text: Partial<TextData>, opts?: { trackId?: string; start?: number; duration?: number }) => string | null;
+  updateClip: (id: string, patch: Partial<Clip>) => void;
+  moveClip: (id: string, start: number, trackId?: string) => void;
+  splitClip: (id: string, t: number) => void;
+  deleteClip: (id: string) => void;
+  duplicateClip: (id: string) => void;
+  setClipSpeed: (id: string, speed: number) => void;
+  setClipLoop: (id: string, n: number) => void;
+  setClipTransition: (id: string, type: string | null, duration?: number) => void;
+  toggleClipEffect: (id: string, fx: string) => void;
+  clearClipEffects: (id: string) => void;
+
+  setPlayhead: (t: number) => void;
+  setPlaying: (v: boolean) => void;
+  select: (id: string | null) => void;
+  setZoom: (z: number) => void;
+  toggleSnap: () => void;
+
+  setTexts: (p: Partial<TextsConfig>) => void;
+  setCover: (p: Partial<CoverConfig>) => void;
+  setExportSettings: (p: Partial<ExportSettings>) => void;
+  patchExportState: (p: Partial<ExportState>) => void;
+  addExportResult: (r: ExportResult) => void;
+  clearExportResults: () => void;
+  removeExportResult: (id: string) => void;
+}
+
+export const useEditor = create<EditorState>((set, get) => ({
+  project: { name: "Proyek Tanpa Judul", width: 1280, height: 720 },
+  assets: [],
+  tracks: defaultTracks(),
+  clips: [],
+  playhead: 0,
+  playing: false,
+  selectedClipId: null,
+  zoom: 60,
+  snap: true,
+  texts: { title: "", description: "", labelStyle: "Part", parts: 5 },
+  cover: { frameTime: 0, templateId: "impact--cyber", duration: 3, useAI: true },
+  exportSettings: {
+    mode: "split",
+    splitBy: "duration",
+    parts: 5,
+    partSeconds: 30,
+    includeCover: true,
+    coverDuration: 3,
+    autoPartText: true,
+    showTitleText: false,
+  },
+  exportState: emptyExport,
+
+  setProject: (p) => set((s) => ({ project: { ...s.project, ...p } })),
+
+  addAsset: (a) => set((s) => ({ assets: [...s.assets, a] })),
+
+  removeAsset: (id) =>
+    set((s) => ({
+      assets: s.assets.filter((a) => a.id !== id),
+      clips: s.clips.filter((c) => c.assetId !== id),
+    })),
+
+  getAsset: (id) => (id ? get().assets.find((a) => a.id === id) : undefined),
+
+  addTrack: (kind) =>
+    set((s) => {
+      const count = s.tracks.filter((t) => t.kind === kind).length + 1;
+      const labelMap: Record<TrackKind, string> = { video: "Video", image: "Gambar", text: "Teks", audio: "Audio" };
+      const t = makeTrack(kind, `${labelMap[kind]} ${count}`);
+      // track baru untuk video/gambar/teks ditambahkan paling atas render (sebelum track video pertama? paling akhir = paling atas)
+      const idx = s.tracks.findIndex((x) => x.kind === "audio");
+      const arr = [...s.tracks];
+      if (kind === "audio" || idx === -1) arr.push(t);
+      else arr.splice(idx, 0, t);
+      return { tracks: arr };
+    }),
+
+  removeTrack: (id) =>
+    set((s) => ({
+      tracks: s.tracks.filter((t) => t.id !== id),
+      clips: s.clips.filter((c) => c.trackId !== id),
+    })),
+
+  toggleMute: (id) => set((s) => ({ tracks: s.tracks.map((t) => (t.id === id ? { ...t, muted: !t.muted } : t)) })),
+  toggleHidden: (id) => set((s) => ({ tracks: s.tracks.map((t) => (t.id === id ? { ...t, hidden: !t.hidden } : t)) })),
+
+  addClipFromAsset: (assetId, opts) => {
+    const st = get();
+    const asset = st.assets.find((a) => a.id === assetId);
+    if (!asset) return null;
+    const kind: Clip["kind"] = asset.type === "video" ? "video" : asset.type === "audio" ? "audio" : "image";
+    let trackId = opts?.trackId;
+    if (!trackId) {
+      const match = st.tracks.filter((t) => (asset.type === "video" ? t.kind === "video" : asset.type === "audio" ? t.kind === "audio" : t.kind === "image" || t.kind === "video"));
+      const withClips = match.filter((t) => st.clips.some((c) => c.trackId === t.id));
+      trackId = (withClips.length ? withClips[withClips.length - 1] : match[0])?.id;
+    }
+    if (!trackId) return null;
+    const trackClips = st.clips.filter((c) => c.trackId === trackId);
+    const start = opts?.start ?? trackClips.reduce((m, c) => Math.max(m, c.start + c.duration), 0);
+    const duration = opts?.duration ?? (asset.type === "image" ? 5 : Math.max(0.2, asset.duration));
+    const clip: Clip = {
+      id: uid("cl"),
+      trackId,
+      kind,
+      assetId,
+      start,
+      duration,
+      inPoint: 0,
+      speed: 1,
+      loopCount: 1,
+      volume: 1,
+      fadeIn: asset.type === "audio" ? 0.4 : 0,
+      fadeOut: asset.type === "audio" ? 0.8 : 0,
+      effects: [],
+    };
+    set((s) => ({ clips: [...s.clips, clip], selectedClipId: clip.id }));
+    return clip.id;
+  },
+
+  addTextClip: (text, opts) => {
+    const st = get();
+    const trackId = opts?.trackId ?? st.tracks.find((t) => t.kind === "text")?.id;
+    if (!trackId) return null;
+    const clip: Clip = {
+      id: uid("cl"),
+      trackId,
+      kind: "text",
+      start: opts?.start ?? st.playhead,
+      duration: opts?.duration ?? 4,
+      inPoint: 0,
+      speed: 1,
+      loopCount: 1,
+      volume: 1,
+      fadeIn: 0,
+      fadeOut: 0,
+      effects: [],
+      text: {
+        content: text.content ?? "Teks Baru",
+        sub: text.sub,
+        size: text.size ?? 0.09,
+        color: text.color ?? "#ffffff",
+        font: text.font ?? "condensed",
+        anim: text.anim ?? "rise",
+        pos: text.pos ?? "bottom",
+        bg: text.bg ?? "none",
+        stroke: text.stroke ?? true,
+      },
+    };
+    set((s) => ({ clips: [...s.clips, clip], selectedClipId: clip.id }));
+    return clip.id;
+  },
+
+  updateClip: (id, patch) => set((s) => ({ clips: s.clips.map((c) => (c.id === id ? { ...c, ...patch } : c)) })),
+
+  moveClip: (id, start, trackId) =>
+    set((s) => ({
+      clips: s.clips.map((c) => (c.id === id ? { ...c, start: Math.max(0, start), trackId: trackId ?? c.trackId } : c)),
+    })),
+
+  splitClip: (id, t) => {
+    const st = get();
+    const clip = st.clips.find((c) => c.id === id);
+    if (!clip) return;
+    const end = clip.start + clip.duration;
+    if (t <= clip.start + 0.05 || t >= end - 0.05) return;
+    const leftDur = t - clip.start;
+    const srcSeg = (clip.duration * clip.speed) / Math.max(1, clip.loopCount);
+    const rightIn = clip.loopCount > 1 ? clip.inPoint + ((leftDur * clip.speed) % Math.max(0.04, srcSeg)) : clip.inPoint + leftDur * clip.speed;
+    const left: Clip = { ...clip, duration: leftDur, fadeOut: 0 };
+    const right: Clip = {
+      ...clip,
+      id: uid("cl"),
+      start: t,
+      duration: end - t,
+      inPoint: rightIn,
+      transition: undefined,
+      fadeIn: 0,
+      label: clip.label,
+    };
+    set((s) => ({ clips: s.clips.map((c) => (c.id === id ? left : c)).concat(right), selectedClipId: right.id }));
+  },
+
+  deleteClip: (id) => set((s) => ({ clips: s.clips.filter((c) => c.id !== id), selectedClipId: s.selectedClipId === id ? null : s.selectedClipId })),
+
+  duplicateClip: (id) => {
+    const st = get();
+    const clip = st.clips.find((c) => c.id === id);
+    if (!clip) return;
+    const copy: Clip = { ...clip, id: uid("cl"), start: clip.start + clip.duration };
+    set((s) => ({ clips: [...s.clips, copy], selectedClipId: copy.id }));
+  },
+
+  setClipSpeed: (id, speed) =>
+    set((s) => ({
+      clips: s.clips.map((c) => {
+        if (c.id !== id) return c;
+        const sp = Math.max(0.25, Math.min(4, speed));
+        const srcSeg = (c.duration * c.speed) / Math.max(1, c.loopCount);
+        const newDur = Math.max(0.2, Math.min(600, srcSeg / sp));
+        return { ...c, speed: sp, duration: newDur };
+      }),
+    })),
+
+  setClipLoop: (id, n) =>
+    set((s) => ({
+      clips: s.clips.map((c) => {
+        if (c.id !== id) return c;
+        const nn = Math.max(1, Math.min(10, Math.round(n)));
+        const newDur = Math.max(0.2, Math.min(600, c.duration * (nn / Math.max(1, c.loopCount))));
+        return { ...c, loopCount: nn, duration: newDur };
+      }),
+    })),
+
+  setClipTransition: (id, type, duration) =>
+    set((s) => ({
+      clips: s.clips.map((c) =>
+        c.id === id ? { ...c, transition: type ? { type, duration: duration ?? c.transition?.duration ?? 0.6 } : undefined } : c
+      ),
+    })),
+
+  toggleClipEffect: (id, fx) =>
+    set((s) => ({
+      clips: s.clips.map((c) =>
+        c.id === id ? { ...c, effects: c.effects.includes(fx) ? c.effects.filter((e) => e !== fx) : [...c.effects, fx] } : c
+      ),
+    })),
+
+  clearClipEffects: (id) => set((s) => ({ clips: s.clips.map((c) => (c.id === id ? { ...c, effects: [] } : c)) })),
+
+  setPlayhead: (t) => set({ playhead: Math.max(0, t) }),
+  setPlaying: (v) => set({ playing: v }),
+  select: (id) => set({ selectedClipId: id }),
+  setZoom: (z) => set({ zoom: Math.max(10, Math.min(240, z)) }),
+  toggleSnap: () => set((s) => ({ snap: !s.snap })),
+
+  setTexts: (p) => set((s) => ({ texts: { ...s.texts, ...p } })),
+  setCover: (p) => set((s) => ({ cover: { ...s.cover, ...p } })),
+  setExportSettings: (p) => set((s) => ({ exportSettings: { ...s.exportSettings, ...p } })),
+  patchExportState: (p) => set((s) => ({ exportState: { ...s.exportState, ...p } })),
+  addExportResult: (r) => set((s) => ({ exportState: { ...s.exportState, results: [...s.exportState.results, r] } })),
+  clearExportResults: () => set((s) => ({ exportState: { ...s.exportState, results: [] } })),
+  removeExportResult: (id) => set((s) => ({ exportState: { ...s.exportState, results: s.exportState.results.filter((r) => r.id !== id) } })),
+}));
+
+export function selectedClip(state: EditorState): Clip | undefined {
+  return state.clips.find((c) => c.id === state.selectedClipId);
+}
+
+// hook debug/testing di browser console
+if (typeof window !== "undefined") {
+  (window as unknown as Record<string, unknown>).__NOVA__ = useEditor;
+}
