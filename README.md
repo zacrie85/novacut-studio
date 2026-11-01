@@ -32,10 +32,10 @@ Unduh di halaman [**Releases**](../../releases):
 
 | File | Untuk apa |
 | --- | --- |
-| `NOVACUT-Studio-Setup-1.0.0.exe` | **Installer** — instal seperti aplikasi biasa (pilih folder, ikon desktop, uninstall lewat Control Panel) |
-| `NOVACUT-Studio-Portable-1.0.0.exe` | **Portable** — satu file, jalankan langsung tanpa instalasi. Bisa disimpan di flashdisk |
+| `NOVACUT-Studio-Setup-1.0.3.exe` | **Installer** — instal seperti aplikasi biasa (pilih folder, ikon desktop, uninstall lewat Control Panel) |
+| `NOVACUT-Studio-Portable-1.0.3.exe` | **Portable** — satu file, jalankan langsung tanpa instalasi. Bisa disimpan di flashdisk |
 
-> Hasil export (`.webm`) tersimpan di folder **Downloads** kamu, dan juga bisa diunduh ulang dari daftar hasil di dalam aplikasi.
+> Hasil export berformat **MP4 (H.264)** — otomatis tersimpan ke folder pilihanmu (fitur *Pilih Folder* di menu Export), dan juga bisa diunduh ulang dari daftar hasil di dalam aplikasi. Judul/teks panjang otomatis turun ke baris bawah agar seluruhnya terbaca.
 
 ### Catatan antivirus / SmartScreen
 

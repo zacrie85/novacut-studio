@@ -1,4 +1,5 @@
 // NOVACUT Studio - Export & Split (MediaRecorder) + cover + teks Part otomatis
+// Format keluaran: MP4 (H.264) bila didukung, fallback WebM.
 
 import { grabFrame, aiRecommendTemplates, analyzeVideoFrames, loadImage, renderCoverToDataURL } from "./covers";
 import { COVER_TEMPLATES, partLabel, slugify, uid } from "./constants";
@@ -9,15 +10,47 @@ import type { Clip, MediaAsset, Track } from "./types";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function pickMime(): string {
-  const candidates = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
-  for (const c of candidates) {
-    if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(c)) return c;
-  }
-  return "video/webm";
+// MP4 diprioritaskan (H.264 + AAC untuk kompatibilitas terbaik,
+// lalu H.264 + Opus, lalu default bawaan browser)
+const MP4_CANDIDATES = [
+  "video/mp4;codecs=avc1.640028,mp4a.40.2",
+  "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+  "video/mp4;codecs=avc1,mp4a.40.2",
+  "video/mp4;codecs=avc1,opus",
+  "video/mp4",
+];
+const WEBM_CANDIDATES = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+
+export interface ExportFormat {
+  mime: string;
+  ext: ".mp4" | ".webm";
+  label: string;
 }
 
-/** Rekam rentang timeline menjadi blob webm */
+let cachedFormat: ExportFormat | null = null;
+
+/** Pilih format rekaman terbaik: MP4 dulu, WebM sebagai fallback */
+export function pickExportFormat(): ExportFormat {
+  if (cachedFormat) return cachedFormat;
+  if (typeof MediaRecorder !== "undefined") {
+    for (const mime of MP4_CANDIDATES) {
+      if (MediaRecorder.isTypeSupported(mime)) {
+        cachedFormat = { mime, ext: ".mp4", label: "MP4 (H.264)" };
+        return cachedFormat;
+      }
+    }
+    for (const mime of WEBM_CANDIDATES) {
+      if (MediaRecorder.isTypeSupported(mime)) {
+        cachedFormat = { mime, ext: ".webm", label: "WebM (VP9/VP8)" };
+        return cachedFormat;
+      }
+    }
+  }
+  cachedFormat = { mime: "video/webm", ext: ".webm", label: "WebM" };
+  return cachedFormat;
+}
+
+/** Rekam rentang timeline menjadi blob video (MP4/WebM) */
 export async function exportRange(start: number, end: number, onProgress?: (p: number) => void): Promise<Blob> {
   const canvas = engine.canvas;
   if (!canvas) throw new Error("Canvas belum siap");
@@ -25,13 +58,14 @@ export async function exportRange(start: number, end: number, onProgress?: (p: n
   await engine.audioCtx?.resume().catch(() => {});
   await sleep(150);
 
+  const fmt = pickExportFormat();
   const stream = engine.captureStream(30);
   if (!stream) throw new Error("Browser tidak mendukung perekaman canvas");
   if (engine.recDest) {
     for (const tr of engine.recDest.stream.getAudioTracks()) stream.addTrack(tr);
   }
   const rec = new MediaRecorder(stream, {
-    mimeType: pickMime(),
+    mimeType: fmt.mime,
     videoBitsPerSecond: 9_000_000,
     audioBitsPerSecond: 192_000,
   });
@@ -40,7 +74,7 @@ export async function exportRange(start: number, end: number, onProgress?: (p: n
     if (e.data && e.data.size > 0) chunks.push(e.data);
   };
   const stopped = new Promise<Blob>((resolve) => {
-    rec.onstop = () => resolve(new Blob(chunks, { type: "video/webm" }));
+    rec.onstop = () => resolve(new Blob(chunks, { type: fmt.mime }));
   });
 
   engine.pause();
@@ -309,11 +343,13 @@ export async function runExport() {
     }
     if (s.mode === "single") {
       useEditor.getState().patchExportState({ label: "Merender video penuh..." });
+      const fmt = pickExportFormat();
       const blob = await exportRange(0, D, (p) => useEditor.getState().patchExportState({ progress: p }));
-      await blobResult(blob, `${baseName}.webm`, 1, 1, D);
+      await blobResult(blob, `${baseName}${fmt.ext}`, 1, 1, D);
     } else {
       const ranges = splitRanges(D, s.splitBy, s.parts, s.partSeconds);
       const total = ranges.length;
+      const fmt = pickExportFormat();
       for (let i = 0; i < total; i++) {
         const r = ranges[i];
         useEditor.getState().patchExportState({ label: `Merender ${partLabel(s.labelStyle, i + 1, total, true)}...`, batchIndex: i, batchTotal: total });
@@ -327,7 +363,7 @@ export async function runExport() {
           useEditor.getState().patchExportState({ progress: overall });
         });
         const label = partLabel(s.labelStyle, i + 1, total, true);
-        await blobResult(blob, `${baseName}-${slugify(label)}.webm`, i + 1, total, proj.duration);
+        await blobResult(blob, `${baseName}-${slugify(label)}${fmt.ext}`, i + 1, total, proj.duration);
       }
     }
   } catch (e) {
@@ -418,6 +454,7 @@ export async function runBatchExport(assetIds: string[]) {
       };
 
       const D = asset.duration;
+      const fmt = pickExportFormat();
       // mode "single" = export saja tanpa dipecah; "split" = ikuti pengaturan Export & Split
       const ranges = s.mode === "single" ? [{ start: 0, end: D }] : splitRanges(D, s.splitBy, s.parts, s.partSeconds);
       for (let i = 0; i < ranges.length; i++) {
@@ -436,7 +473,7 @@ export async function runBatchExport(assetIds: string[]) {
           useEditor.getState().patchExportState({ progress: overall });
         });
         const label = partLabel(s.labelStyle, i + 1, ranges.length, true);
-        await blobResult(blob, `${slugify(title)}-${slugify(label)}.webm`, i + 1, ranges.length, proj.duration);
+        await blobResult(blob, `${slugify(title)}-${slugify(label)}${fmt.ext}`, i + 1, ranges.length, proj.duration);
       }
     }
   } catch (e) {

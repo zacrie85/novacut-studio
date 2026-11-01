@@ -3,6 +3,7 @@
 import { fontStack, fmtTime } from "./constants";
 import { getMusicBuffer, musicDefById } from "./music";
 import { useEditor, totalDuration, type EditorState } from "./store";
+import { wrapCanvasText } from "./textwrap";
 import type { Clip, Track } from "./types";
 import { applyGradeTints, applyOverlays, applyTransition, clipTransform, drawCover, easeOut, framingLayout, gradeFilterString } from "./visual";
 
@@ -399,29 +400,35 @@ class EditorEngine {
     let scale = 1;
 
     const content = td.content;
-    const size = td.size * h;
-    const subSize = size * 0.42;
     ctx.save();
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = `900 ${size}px ${fontStack(td.font)}`;
 
+    // Word-wrap + auto-shrink: teks/judul panjang otomatis bersambung ke baris
+    // bawah; bila blok teks lebih tinggi dari layar, ukuran font diperkecil
+    // otomatis sampai semuanya muat dan terbaca.
     const maxW = w * 0.86;
-    const lines: string[] = [];
-    for (const raw of content.split("\n")) {
-      const words = raw.split(" ");
-      let cur = "";
-      for (const word of words) {
-        const test = cur ? `${cur} ${word}` : word;
-        if (ctx.measureText(test).width > maxW && cur) {
-          lines.push(cur);
-          cur = word;
-        } else cur = test;
+    const computeLayout = (sz: number) => {
+      ctx.font = `900 ${sz}px ${fontStack(td.font)}`;
+      const ls = wrapCanvasText(ctx, content, maxW);
+      const subSz = sz * 0.42;
+      let subs: string[] = [];
+      if (td.sub) {
+        ctx.font = `600 ${subSz}px ${fontStack("sans")}`;
+        subs = wrapCanvasText(ctx, td.sub, maxW);
       }
-      lines.push(cur);
+      const lh = sz * 1.12;
+      const bh = ls.length * lh + (subs.length ? subs.length * subSz * 1.3 + subSz * 0.25 : 0);
+      return { ls, subs, subSz, lineH: lh, blockH: bh };
+    };
+    let size = td.size * h;
+    let layout = computeLayout(size);
+    for (let guard = 0; layout.blockH > h * 0.8 && guard < 8; guard++) {
+      size *= 0.86;
+      layout = computeLayout(size);
     }
-    const lineH = size * 1.12;
-    const blockH = lines.length * lineH + (td.sub ? subSize * 1.6 : 0);
+    const { ls: lines, subs, subSz: subSize, lineH, blockH } = layout;
+    ctx.font = `900 ${size}px ${fontStack(td.font)}`;
     const posY = td.pos === "top" ? h * 0.16 + blockH / 2 : td.pos === "center" ? h / 2 : h * 0.86 - blockH / 2;
 
     switch (td.anim) {
@@ -585,15 +592,19 @@ class EditorEngine {
         drawLines((ln, i) => paintLine(ln, yFor(i)));
     }
 
-    if (td.sub) {
+    if (subs.length) {
       ctx.font = `600 ${subSize}px ${fontStack("sans")}`;
-      const sy = baseY + lines.length * lineH + subSize * 0.4;
-      if (td.bg === "none" && td.stroke) {
-        ctx.lineWidth = Math.max(2, subSize * 0.14);
-        ctx.strokeText(td.sub, w / 2, sy);
-      }
-      ctx.fillStyle = td.color;
-      ctx.fillText(td.sub, w / 2, sy);
+      const subLineH = subSize * 1.3;
+      const sy0 = baseY + lines.length * lineH + subSize * 0.4;
+      subs.forEach((sl, i) => {
+        const sy = sy0 + i * subLineH;
+        if (td.bg === "none" && td.stroke) {
+          ctx.lineWidth = Math.max(2, subSize * 0.14);
+          ctx.strokeText(sl, w / 2, sy);
+        }
+        ctx.fillStyle = td.color;
+        ctx.fillText(sl, w / 2, sy);
+      });
     }
     ctx.restore();
   }

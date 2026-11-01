@@ -1,6 +1,7 @@
 // NOVACUT Studio - Pembuat cover: 100 template populer + AI auto-cover
 
 import { COVER_TEMPLATES, fontStack, type CoverTemplate } from "./constants";
+import { wrapCanvasText } from "./textwrap";
 
 export interface CoverRenderInput {
   img: CanvasImageSource | null;
@@ -12,24 +13,9 @@ export interface CoverRenderInput {
 }
 
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number): string[] {
-  const words = text.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let cur = "";
-  for (const word of words) {
-    const test = cur ? `${cur} ${word}` : word;
-    if (ctx.measureText(test).width > maxWidth && cur) {
-      lines.push(cur);
-      cur = word;
-      if (lines.length === maxLines - 1 && words.indexOf(word) < words.length - 1) break;
-    } else cur = test;
-  }
-  if (cur) lines.push(cur);
-  if (lines.length > maxLines) {
-    const kept = lines.slice(0, maxLines);
-    kept[maxLines - 1] = kept[maxLines - 1].replace(/\s+\S*$/, "") + "…";
-    return kept;
-  }
-  return lines;
+  // pakai helper bersama: kata panjang tanpa spasi dipecah per karakter
+  // agar judul film yang panjang tetap terbaca (bersambung ke baris bawah)
+  return wrapCanvasText(ctx, text, maxWidth, { maxLines });
 }
 
 function drawBackground(ctx: CanvasRenderingContext2D, input: CoverRenderInput, darken: number) {
@@ -141,10 +127,21 @@ export function renderCover(ctx: CanvasRenderingContext2D, input: CoverRenderInp
       ctx.fillStyle = accent;
       ctx.fillRect(0, h * 0.22, w, h * 0.012);
       ctx.textAlign = "center";
-      ctx.font = `900 ${h * 0.1}px ${fontStack("condensed")}`;
-      const lines = wrapText(ctx, title, w * 0.86, 1);
+      // judul panjang: kecilkan font & turun jadi 2 baris di dalam banner
+      let bsz = h * 0.1;
+      ctx.font = `900 ${bsz}px ${fontStack("condensed")}`;
+      let blines = wrapText(ctx, title, w * 0.86, 1);
+      if (blines.length > 1) {
+        bsz = h * 0.062;
+        ctx.font = `900 ${bsz}px ${fontStack("condensed")}`;
+        blines = wrapText(ctx, title, w * 0.86, 2);
+      }
       ctx.fillStyle = fg;
-      ctx.fillText(lines[0]?.toUpperCase() ?? "", w / 2, h * 0.15);
+      if (blines.length > 1) {
+        blines.forEach((ln, i) => ctx.fillText(ln.toUpperCase(), w / 2, h * 0.095 + i * h * 0.08));
+      } else {
+        ctx.fillText(blines[0]?.toUpperCase() ?? "", w / 2, h * 0.15);
+      }
       if (part) drawPartBadge(ctx, part, pal, w / 2, h * 0.8, h * 0.032, "center");
     },
     side: () => {

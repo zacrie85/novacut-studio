@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { fmtSize, fmtTime, partLabel, slugify } from "@/lib/editor/constants";
 import { forgetExportDir, isDesktopFS, loadSavedExportDir, openInFolder, pickExportDir, rememberExportDir } from "@/lib/editor/fsBridge";
 import { totalDuration, useEditor } from "@/lib/editor/store";
-import { runExport, triggerDownload } from "@/lib/editor/exporter";
+import { pickExportFormat, runExport, triggerDownload } from "@/lib/editor/exporter";
 
 export function ExportPanel() {
   const settings = useEditor((s) => s.exportSettings);
@@ -273,7 +273,7 @@ export function ExportPanel() {
       )}
 
       <div className="rounded-lg border border-white/5 bg-white/[0.02] p-2 text-[9px] leading-relaxed text-gray-600">
-        Format keluaran WebM (VP9/VP8 + Opus) — kompatibel untuk YouTube, TikTok, Instagram &amp; Reels.
+        Format keluaran <span className="font-bold text-cyan-300">{pickExportFormat().label}</span> — kompatibel untuk YouTube, TikTok, Instagram &amp; Reels.
       </div>
     </div>
   );
