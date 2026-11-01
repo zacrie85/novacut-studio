@@ -21,7 +21,6 @@ export function Preview() {
   const clips = useEditor((s) => s.clips);
   const project = useEditor((s) => s.project);
   const duration = totalDuration(clips);
-  const vertical = project.ratio === "9:16";
 
   useEffect(() => {
     if (canvasRef.current) engine.attach(canvasRef.current);
@@ -97,7 +96,7 @@ export function Preview() {
             ref={canvasRef}
             width={project.width}
             height={project.height}
-            className={`max-h-full max-w-full rounded-lg border border-cyan-400/20 shadow-[0_0_40px_rgba(34,211,238,0.12)] ${vertical ? "cursor-grab touch-none active:cursor-grabbing" : ""}`}
+            className="max-h-full max-w-full cursor-grab touch-none rounded-lg border border-cyan-400/20 shadow-[0_0_40px_rgba(34,211,238,0.12)] active:cursor-grabbing"
             style={{ aspectRatio: `${project.width}/${project.height}` }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
@@ -107,11 +106,9 @@ export function Preview() {
           />
         </div>
 
-        {vertical && (
-          <div className="flex w-60 shrink-0 flex-col justify-center lg:w-72">
-            <FramingControls target="active" />
-          </div>
-        )}
+        <div className="flex w-60 shrink-0 flex-col justify-center lg:w-72">
+          <FramingControls target="active" />
+        </div>
       </div>
 
       <div className="flex shrink-0 items-center justify-center gap-2">

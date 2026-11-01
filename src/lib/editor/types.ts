@@ -61,7 +61,7 @@ export interface Clip {
   effects: string[]; // id efek klip
   text?: TextData;
   label?: string;
-  zoom: number; // 1 - 3 (perbesaran frame, penting untuk rasio 9:16)
+  zoom: number; // 1 - 5 (1 = ukuran asli / utuh tanpa potong; >1 = perbesaran manual, penting untuk rasio 9:16)
   panX: number; // -1..1 geser horizontal (kanan = gambar ke kanan)
   panY: number; // -1..1 geser vertikal (bawah = gambar ke bawah)
 }

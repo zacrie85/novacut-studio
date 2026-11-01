@@ -301,7 +301,7 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   setClipZoom: (id, zoom) =>
     set((s) => ({
-      clips: s.clips.map((c) => (c.id === id ? { ...c, zoom: Math.max(1, Math.min(3, Math.round(zoom * 100) / 100)) } : c)),
+      clips: s.clips.map((c) => (c.id === id ? { ...c, zoom: Math.max(1, Math.min(5, Math.round(zoom * 100) / 100)) } : c)),
     })),
 
   nudgeClipPan: (id, dx, dy) =>

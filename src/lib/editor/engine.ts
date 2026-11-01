@@ -109,6 +109,8 @@ class EditorEngine {
       v.preload = "auto";
       v.playsInline = true;
       v.crossOrigin = "anonymous";
+      // render ulang saat frame pertama siap (agar preview tidak hitam)
+      v.addEventListener("loadeddata", () => this.requestRender(), { once: true });
       el = v;
     } else if (clip.kind === "audio") {
       const a = document.createElement("audio");
@@ -119,6 +121,8 @@ class EditorEngine {
     } else {
       const img = new Image();
       img.src = asset.url;
+      // render ulang saat gambar selesai dimuat
+      img.onload = () => this.requestRender();
       el = img;
     }
     this.els.set(clip.id, el);
@@ -327,7 +331,7 @@ class EditorEngine {
       const tr = clipTransform(fx, local, progress, t);
       ctx.save();
       ctx.filter = gradeFilterString(fx);
-      // kadro: zoom & geser per klip (khususnya untuk kanvas 9:16)
+      // kadro: zoom & geser per klip (zoom 1 = ukuran asli / utuh, tanpa zoom otomatis)
       const layout = framingLayout(sw, sh, w, h, clip.zoom ?? 1);
       const panX = Math.max(-1, Math.min(1, clip.panX ?? 0));
       const panY = Math.max(-1, Math.min(1, clip.panY ?? 0));

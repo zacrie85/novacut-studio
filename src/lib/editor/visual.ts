@@ -34,14 +34,24 @@ export function drawCover(
 
 /**
  * Layout kadro (zoom & geser) untuk frame berukuran sw×sh ke kanvas w×h.
- * zoom 1 = cover-fit; overX/overY = ruang geser tersedia (setengah lebar/tinggi overflow).
+ * zoom 1 = ukuran asli (contain-fit): seluruh video terlihat utuh, TANPA zoom otomatis —
+ * bar hitam muncul di sisi yang tidak terisi bila rasio sumber ≠ rasio frame.
+ * Pengguna zoom manual (sampai 5x) untuk memperbesar; overX/overY = ruang geser tersedia.
  */
 export function framingLayout(sw: number, sh: number, w: number, h: number, zoom: number): { base: number; dw: number; dh: number; overX: number; overY: number } {
-  const z = Math.max(1, Math.min(3, zoom || 1));
-  const base = Math.max(w / Math.max(1, sw), h / Math.max(1, sh)) * z;
+  const z = Math.max(1, Math.min(5, zoom || 1));
+  const base = Math.min(w / Math.max(1, sw), h / Math.max(1, sh)) * z;
   const dw = sw * base;
   const dh = sh * base;
   return { base, dw, dh, overX: Math.max(0, (dw - w) / 2), overY: Math.max(0, (dh - h) / 2) };
+}
+
+/** Zoom minimum agar sumber sw×sh mengisi penuh frame w×h (crop). Null bila dimensi tak diketahui. */
+export function fillZoomFor(sw: number, sh: number, w: number, h: number): number | null {
+  if (!sw || !sh) return null;
+  const a = w / sw;
+  const b = h / sh;
+  return Math.round((Math.max(a, b) / Math.min(a, b)) * 100) / 100;
 }
 
 function withAlpha(ctx: CanvasRenderingContext2D, a: number, fn: () => void) {
