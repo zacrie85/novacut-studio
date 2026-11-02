@@ -14,6 +14,8 @@ import { useEditor } from "@/lib/editor/store";
 import { fmtTime, partLabel, LABEL_STYLES } from "@/lib/editor/constants";
 import { runBatchExport } from "@/lib/editor/exporter";
 import { loadPlaylistExportConfig, savePlaylistExportConfig } from "@/lib/editor/playlistExport";
+import { requestApplyTarget } from "../ApplyTargetSwitch";
+import { modelSizeLabel } from "@/lib/editor/subtitles";
 import { engine } from "@/lib/editor/engine";
 import { useToast } from "@/hooks/use-toast";
 import type { PlaylistExportConfig } from "@/lib/editor/types";
@@ -177,6 +179,45 @@ export function PlaylistPanel() {
           </div>
         )}
 
+        {/* jumlah render paralel */}
+        <div className="space-y-1">
+          <Label className="text-[10px] text-gray-300" htmlFor="pl-parallel">Render paralel (video bersamaan)</Label>
+          <Select value={String(pl.parallel ?? 3)} onValueChange={(v) => setPl({ parallel: Math.max(1, Math.min(5, Number(v) || 3)) })}>
+            <SelectTrigger id="pl-parallel" className="h-7 border-white/10 bg-black/30 text-[11px]" aria-label="Render paralel">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="border-white/10 bg-[#0b0d1d] text-xs">
+              <SelectItem value="1">1 video — hemat daya</SelectItem>
+              <SelectItem value="2">2 video bersamaan</SelectItem>
+              <SelectItem value="3">3 video bersamaan (disarankan)</SelectItem>
+              <SelectItem value="4">4 video bersamaan</SelectItem>
+              <SelectItem value="5">5 video bersamaan (tercepat)</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-[9px] leading-relaxed text-gray-500">Mode kilat merender beberapa video SEKALIGUS — makin banyak, makin cepat (memakai lebih banyak CPU/GPU).</p>
+        </div>
+
+        {/* subtitle AI otomatis */}
+        <div className="flex items-center justify-between gap-2">
+          <Label className="text-[10px] leading-snug text-gray-300">Subtitle AI otomatis dari suara (bahasa Indonesia)</Label>
+          <Switch checked={!!pl.autoSub} onCheckedChange={(v) => setPl({ autoSub: v })} className="data-[state=checked]:bg-fuchsia-500" />
+        </div>
+        {!!pl.autoSub && (
+          <div className="space-y-1.5">
+            <Select value={pl.subLevel || "ringan"} onValueChange={(v) => setPl({ subLevel: v as PlaylistExportConfig["subLevel"] })}>
+              <SelectTrigger className="h-7 border-white/10 bg-black/30 text-[11px]" aria-label="Tingkat akurasi subtitle">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="border-white/10 bg-[#0b0d1d] text-xs">
+                <SelectItem value="ringan">Ringan — paling cepat ({modelSizeLabel("ringan")})</SelectItem>
+                <SelectItem value="sedang">Sedang — seimbang ({modelSizeLabel("sedang")})</SelectItem>
+                <SelectItem value="akurat">Akurat — paling teliti ({modelSizeLabel("akurat")})</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[9px] leading-relaxed text-amber-300/80">Model AI diunduh sekali (butuh internet pada pemakaian pertama), setelah itu berjalan offline di perangkatmu. Memahami bahasa Indonesia resmi &amp; gaul.</p>
+          </div>
+        )}
+
         {/* tombol terapkan setelan */}
         <Button
           className="h-8 w-full gap-1.5 bg-emerald-600 text-[11px] font-bold text-white hover:bg-emerald-500"
@@ -209,14 +250,20 @@ export function PlaylistPanel() {
           <Button
             size="sm"
             className="h-7 gap-1 bg-amber-500/15 text-[10px] text-amber-200 hover:bg-amber-500/25"
-            onClick={() => window.dispatchEvent(new CustomEvent("novacut:jump", { detail: "efek" }))}
+            onClick={() => {
+              requestApplyTarget("playlist");
+              window.dispatchEvent(new CustomEvent("novacut:jump", { detail: "efek" }));
+            }}
           >
             <Zap className="h-3 w-3" /> Efek
           </Button>
           <Button
             size="sm"
             className="h-7 gap-1 bg-cyan-500/15 text-[10px] text-cyan-200 hover:bg-cyan-500/25"
-            onClick={() => window.dispatchEvent(new CustomEvent("novacut:jump", { detail: "klip" }))}
+            onClick={() => {
+              requestApplyTarget("playlist");
+              window.dispatchEvent(new CustomEvent("novacut:jump", { detail: "klip" }));
+            }}
           >
             <SlidersHorizontal className="h-3 w-3" /> Klip
           </Button>
@@ -232,7 +279,7 @@ export function PlaylistPanel() {
         Export &amp; Split Semua ({videos.length})
       </Button>
       <p className="-mt-1 shrink-0 text-[10px] leading-relaxed text-gray-500">
-        <b className="text-gray-400">Tanpa perlu masuk timeline!</b> Setiap video langsung dirender berurutan: layar judul di awal + <b className="text-gray-400">judul, deskripsi &amp; part tampil selama video berjalan</b> (sesuai sakelar di menu atas), dipecah sesuai pengaturan di tab Export, dengan rasio 16:9 / 9:16 sesuai pilihan.
+        <b className="text-gray-400">Tanpa perlu masuk timeline!</b> Dirender di latar belakang (mode kilat — video tidak diputar, beberapa video sekaligus): layar judul + <b className="text-gray-400">judul, deskripsi &amp; part selama video</b>, dipecah sesuai tab Export, rasio 16:9 / 9:16 sesuai pilihan.
       </p>
 
       {running && (

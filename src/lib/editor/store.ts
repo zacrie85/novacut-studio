@@ -125,6 +125,9 @@ export const useEditor = create<EditorState>((set, get) => ({
     autoPartText: true,
     showTitleText: false,
     exportDir: "",
+    engineMode: "fast",
+    autoSub: false,
+    subLevel: "ringan",
   },
   exportState: emptyExport,
   playlistExport: {
@@ -138,6 +141,9 @@ export const useEditor = create<EditorState>((set, get) => ({
     ratio: "16:9" as Ratio,
     fitMode: "fill" as const,
     enhance: { ...PLAYLIST_ENHANCE_DEFAULTS },
+    autoSub: false,
+    subLevel: "ringan" as const,
+    parallel: 3,
   },
 
   setProject: (p) => set((s) => ({ project: { ...s.project, ...p } })),

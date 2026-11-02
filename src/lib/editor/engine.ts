@@ -4,7 +4,7 @@ import { fontStack, fmtTime, partLabel } from "./constants";
 import { getMusicBuffer, musicDefById } from "./music";
 import { useEditor, totalDuration, type EditorState } from "./store";
 import { wrapCanvasText } from "./textwrap";
-import type { Clip, TextData, Track } from "./types";
+import type { Clip, MediaAsset, TextData, Track } from "./types";
 import { applyGradeTints, applyOverlays, applyTransition, clipTransform, drawCover, easeOut, framingLayout, gradeFilterString } from "./visual";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -13,6 +13,15 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 /** batasi fraksi geser posisi teks (-0.45..0.45 layar) */
 function clampOff(v?: number): number {
   return typeof v === "number" && isFinite(v) ? Math.max(-0.45, Math.min(0.45, v)) : 0;
+}
+
+/** status render mandiri untuk satu pekerjaan export (dipakai mode paralel:
+ * tiap video punya klip/track/asset sendiri tanpa menyentuh timeline global) */
+export interface RenderState {
+  clips: Clip[];
+  tracks: Track[];
+  assets: MediaAsset[];
+  project: { width: number; height: number };
 }
 
 /**
@@ -383,9 +392,10 @@ class EditorEngine {
     return `${clip.kind}:${clip.assetId ?? clip.id}`;
   }
 
-  private elFor(clip: Clip): HTMLVideoElement | HTMLAudioElement | HTMLImageElement | null {
+  /** (dibuat publik: exporter kilat perlu elemen media untuk pump decode) */
+  elFor(clip: Clip, assets?: MediaAsset[]): HTMLVideoElement | HTMLAudioElement | HTMLImageElement | null {
     const st = useEditor.getState();
-    const asset = st.assets.find((a) => a.id === clip.assetId);
+    const asset = (assets ?? st.assets).find((a) => a.id === clip.assetId);
     if (!asset) return null;
     const key = this.elKey(clip);
     let el = this.els.get(key);
@@ -599,8 +609,9 @@ class EditorEngine {
   }
 
   // ===== menggambar klip =====
-  private drawMediaFrame(ctx: CanvasRenderingContext2D, clip: Clip, t: number, w: number, h: number) {
-    const st = useEditor.getState();
+  private drawMediaFrame(ctx: CanvasRenderingContext2D, clip: Clip, t: number, w: number, h: number, noSync = false, rs?: RenderState) {
+    const stStore = useEditor.getState();
+    const st = rs ? { ...stStore, clips: rs.clips, tracks: rs.tracks, assets: rs.assets } : stStore;
     const track = st.tracks.find((tr) => tr.id === clip.trackId);
     const local = t - clip.start;
     const progress = clamp(local / Math.max(0.01, clip.duration), 0, 1);
@@ -616,14 +627,15 @@ class EditorEngine {
     let sw = 0;
     let sh = 0;
     if (clip.kind === "video") {
-      const el = this.syncMedia(clip, track ?? { id: "", kind: "video", name: "", muted: false, hidden: false }, t, this.playing, true);
+      // noSync: elemen sudah diposisikan exporter (pump/seek) — ambil saja elemennya
+      const el = noSync ? (this.elFor(clip, rs?.assets) as HTMLVideoElement | null) : this.syncMedia(clip, track ?? { id: "", kind: "video", name: "", muted: false, hidden: false }, t, this.playing, true);
       if (el && el.videoWidth) {
         src = el;
         sw = el.videoWidth;
         sh = el.videoHeight;
       }
     } else if (clip.kind === "image") {
-      const el = this.elFor(clip);
+      const el = this.elFor(clip, rs?.assets);
       if (el instanceof HTMLImageElement && el.complete && el.naturalWidth) {
         src = el;
         sw = el.naturalWidth;
@@ -658,11 +670,23 @@ class EditorEngine {
 
   // ===== kompositor utama =====
   renderFrame(t: number) {
-    const ctx = this.ctx;
-    if (!ctx || !this.canvas) return;
-    const st = useEditor.getState();
-    const w = this.canvas.width;
-    const h = this.canvas.height;
+    this.composeFrame(this.ctx, t, false);
+  }
+
+  /**
+   * Komposisi satu frame ke kanvas mana pun.
+   * noSync=false (preview): elemen video/audio ikut disinkronkan seperti biasa.
+   * noSync=true (render kilat offscreen): posisi media DIATUR PANGGIL (pump/seek
+   * oleh exporter) — composeFrame HANYA menggambar, tanpa menyentuh pemutaran.
+   */
+  composeFrame(ctx: CanvasRenderingContext2D | null, t: number, noSync: boolean, rs?: RenderState) {
+    if (!ctx) return;
+    const stStore = useEditor.getState();
+    const st = rs
+      ? { ...stStore, clips: rs.clips, tracks: rs.tracks, assets: rs.assets, textPreview: false, exportState: stStore.exportState }
+      : stStore;
+    const w = rs ? rs.project.width : this.canvas?.width || stStore.project.width;
+    const h = rs ? rs.project.height : this.canvas?.height || stStore.project.height;
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, w, h);
 
@@ -677,6 +701,7 @@ class EditorEngine {
 
     for (const track of st.tracks) {
       if (track.kind === "audio") {
+        if (noSync) continue; // audio dirender terpisah via PCM di exporter kilat
         for (const c of clips) {
           if (c.trackId !== track.id) continue;
           if (tt < c.start || tt >= c.start + c.duration) continue;
@@ -695,7 +720,7 @@ class EditorEngine {
       // salah satunya tidak pernah terlihat di hasil render).
       if (track.kind === "text") {
         const actives = clips.filter((c) => c.trackId === track.id && c.start <= tt && tt < c.start + c.duration).sort((a, b) => a.start - b.start);
-        for (const tc of actives) this.drawMediaFrame(ctx, tc, tt, w, h);
+        for (const tc of actives) this.drawMediaFrame(ctx, tc, tt, w, h, noSync, rs);
         continue;
       }
 
@@ -722,8 +747,8 @@ class EditorEngine {
           aCtx.fillRect(0, 0, w, h);
           bCtx.fillStyle = "#000";
           bCtx.fillRect(0, 0, w, h);
-          this.drawMediaFrame(aCtx, donor, tt, w, h);
-          this.drawMediaFrame(bCtx, active, tt, w, h);
+          this.drawMediaFrame(aCtx, donor, tt, w, h, noSync, rs);
+          this.drawMediaFrame(bCtx, active, tt, w, h, noSync, rs);
           applyTransition(active.transition!.type, ctx, this.tmpA, this.tmpB, transP, w, h, {
             scratch: this.scratch,
             noise: this.tvNoise,
@@ -731,13 +756,13 @@ class EditorEngine {
           });
         }
       } else {
-        this.drawMediaFrame(ctx, active, tt, w, h);
+        this.drawMediaFrame(ctx, active, tt, w, h, noSync, rs);
       }
     }
 
     // pratinjau LANGSUNG tulisan otomatis (judul/deskripsi/part) dari menu Teks —
     // perubahan ukuran/posisi langsung terlihat di preview tanpa perlu export
-    if (st.textPreview && !st.exportState.running) {
+    if (st.textPreview && !st.exportState.running && !noSync) {
       this.drawAutoTextPreview(ctx, w, h, tt);
     }
   }

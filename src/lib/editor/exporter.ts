@@ -1,13 +1,18 @@
-// NOVACUT Studio - Export & Split (MediaRecorder) + cover + teks Part otomatis
-// Format keluaran: MP4 (H.264) bila didukung, fallback WebM.
+// NOVACUT Studio - Export & Split: dua mesin render
+//  1) MODE KILAT (bawaan): WebCodecs offscreen — video TIDAK diputar, 5-10x lebih
+//     cepat, bisa beberapa video sekaligus (paralel). Lihat fastExport.ts.
+//  2) MODE KOMPATIBEL: rekam real-time via MediaRecorder (jalur lama).
+// Fitur: cover otomatis, teks judul/deskripsi/part, subtitle AI (bahasa Indonesia).
 
 import { grabFrame, aiRecommendTemplates, analyzeVideoFrames, loadImage, renderCoverToDataURL } from "./covers";
 import { COVER_TEMPLATES, partLabel, slugify, uid } from "./constants";
 import { engine } from "./engine";
+import { exportRangeFast, fastSupported } from "./fastExport";
 import { ensureAppFonts } from "./fonts";
 import { isDesktopFS, saveBlobToDir } from "./fsBridge";
 import { normalizeEnhance } from "./playlistExport";
 import { dimsFor, useEditor, totalDuration } from "./store";
+import { transcribeAsset, type SubSegment } from "./subtitles";
 import type { Clip, MediaAsset, Track } from "./types";
 import { fillZoomFor } from "./visual";
 
@@ -23,6 +28,84 @@ function clampPct(v: number | undefined, def: number): number {
 function clampOffPct(v: number | undefined): number {
   const n = typeof v === "number" && isFinite(v) ? Math.round(v) : 0;
   return Math.max(-45, Math.min(45, n)) / 100;
+}
+
+/** pool paralel sederhana: jalankan maksimal `limit` tugas bersamaan */
+async function runPool<T>(items: T[], limit: number, fn: (item: T, idx: number) => Promise<void>): Promise<void> {
+  let next = 0;
+  const n = Math.max(1, Math.min(limit, items.length));
+  const workers = Array.from({ length: n }, async () => {
+    while (true) {
+      const idx = next++;
+      if (idx >= items.length) break;
+      try {
+        await fn(items[idx], idx);
+      } catch (e) {
+        console.error("Pekerjaan paralel gagal:", e);
+      }
+    }
+  });
+  await Promise.all(workers);
+}
+
+/**
+ * Petakan segmen subtitle (waktu SUMBER video) ke waktu timeline.
+ * Memakai rumus kebalikan srcTime engine: t = clip.start + ((S - inPoint) % srcSeg) / speed
+ */
+function mapSubsToTimeline(segs: SubSegment[], clips: Clip[]): SubSegment[] {
+  const out: SubSegment[] = [];
+  const videoClips = clips.filter((c) => c.kind === "video").sort((a, b) => a.start - b.start);
+  for (const seg of segs) {
+    const mid = (seg.start + Math.max(seg.start, seg.end - 0.05)) / 2;
+    const clip = videoClips.find((c) => {
+      const srcSeg = (c.duration * c.speed) / Math.max(1, c.loopCount);
+      return mid >= c.inPoint && mid < c.inPoint + Math.max(0.033, srcSeg);
+    });
+    if (!clip) continue;
+    const srcSeg = Math.max(0.033, (clip.duration * clip.speed) / Math.max(1, clip.loopCount));
+    const span = Math.max(0.2, seg.end - seg.start);
+    const local = (t: number) => clip.start + (((t - clip.inPoint) % srcSeg + srcSeg) % srcSeg) / Math.max(0.25, clip.speed);
+    const t0 = local(Math.max(clip.inPoint, seg.start));
+    const t1 = t0 + span / Math.max(0.25, clip.speed);
+    if (t1 - t0 < 0.2) continue;
+    out.push({ start: t0, end: Math.min(t1, clip.start + clip.duration), text: seg.text });
+  }
+  return out.sort((a, b) => a.start - b.start);
+}
+
+/** Sisipkan klip teks SUBTITLE (waktu timeline) ke proyek mentah — dipakai mode
+ * "export saja" (tanpa split) karena proyek itu tidak lewat buildSplitProject. */
+function appendSubtitleClips(
+  clips: Clip[],
+  tracks: Track[],
+  subs: SubSegment[]
+): { clips: Clip[]; tracks: Track[] } {
+  if (!subs.length) return { clips, tracks };
+  const tt = ensureTextTrack(tracks);
+  const fontAuto = useEditor.getState().texts.fontAuto || "condensed";
+  const subSize = 0.028;
+  const extra: Clip[] = subs
+    .filter((s) => s.end - s.start >= 0.25)
+    .map((seg) =>
+      baseClip({
+        trackId: tt.textTrack.id,
+        kind: "text",
+        start: seg.start,
+        duration: seg.end - seg.start,
+        text: {
+          content: seg.text,
+          size: subSize,
+          color: "#ffffff",
+          font: fontAuto,
+          anim: "fade",
+          pos: "bottom",
+          bg: "bar",
+          stroke: true,
+          offY: -0.06,
+        },
+      })
+    );
+  return { clips: [...clips, ...extra], tracks: tt.tracks };
 }
 
 // MP4 diprioritaskan (H.264 + AAC untuk kompatibilitas terbaik,
@@ -204,6 +287,8 @@ export interface SplitProject {
 export interface SplitProjectOptions {
   /** teks judul/deskripsi/part tampil selama SELURUH video berjalan (bukan hanya beberapa detik di awal) */
   persistText?: boolean;
+  /** subtitle AI (waktu TIMELINE, sudah termasuk geser cover) — di-burn-in ke hasil */
+  subs?: SubSegment[];
 }
 
 /** Bangun proyek sementara untuk satu bagian hasil split (dengan cover + teks part) */
@@ -362,6 +447,37 @@ export function buildSplitProject(
     );
   }
 
+  // SUBTITLE AI otomatis — burn-in di bagian bawah layar (di atas teks part)
+  if (opts?.subs?.length) {
+    const tt = ensureTextTrack(tracks);
+    tracks = tt.tracks;
+    const subSize = clampPct(0.028, 0.028);
+    for (const seg of opts.subs) {
+      const s0 = Math.max(seg.start, rangeStart);
+      const s1 = Math.min(seg.end, rangeEnd);
+      if (s1 - s0 < 0.25) continue;
+      clips.push(
+        baseClip({
+          trackId: tt.textTrack.id,
+          kind: "text",
+          start: s0 - rangeStart + shift,
+          duration: s1 - s0,
+          text: {
+            content: seg.text,
+            size: subSize,
+            color: "#ffffff",
+            font: fontAuto,
+            anim: "fade",
+            pos: "bottom",
+            bg: "bar",
+            stroke: true,
+            offY: -0.06,
+          },
+        })
+      );
+    }
+  }
+
   return { clips, tracks, assets, duration: shift + (rangeEnd - rangeStart) };
 }
 
@@ -412,7 +528,8 @@ export function triggerDownload(url: string, name: string) {
   a.remove();
 }
 
-/** Export utama sesuai pengaturan (export saja / export & split) */
+/** Export utama sesuai pengaturan (export saja / export & split).
+ * Mode kilat: offscreen tanpa memutar video. Mode kompatibel: rekam real-time. */
 export async function runExport() {
   const st0 = useEditor.getState();
   if (st0.exportState.running) return;
@@ -428,6 +545,9 @@ export async function runExport() {
   const snapshot = { clips: st0.clips, tracks: st0.tracks, assets: st0.assets };
   const baseName = slugify(st0.texts.title || st0.project.name);
 
+  // mesin render: kilat (WebCodecs offscreen) bila tersedia
+  const fast = s.engineMode === "fast" ? await fastSupported() : null;
+
   try {
     const firstVideo = st0.clips.map((c) => snapshot.assets.find((a) => a.id === c.assetId)).find((a) => a?.type === "video");
     // mode "tiap bagian beda": AI analisis sekali, tiap bagian hasil split pakai adegan berbeda
@@ -436,45 +556,88 @@ export async function runExport() {
       frameTimes = await pickFrameTimes(firstVideo);
       if (frameTimes) useEditor.getState().patchExportState({ label: "AI memilih adegan berbeda untuk tiap bagian..." });
     }
-    // cover otomatis oleh AI bila belum ada / asset cover hilang
-    // (tidak perlu bila tiap bagian akan dibuatkan cover sendiri)
     const coverAssetReady = !!st0.cover.coverAssetId && st0.assets.some((a) => a.id === st0.cover.coverAssetId);
     if (s.includeCover && !coverAssetReady && !frameTimes) {
       useEditor.getState().patchExportState({ label: "AI membuat cover otomatis..." });
       await ensureCoverAsset(firstVideo);
     }
+
+    // SUBTITLE AI: salin suara tiap klip video -> segmen waktu timeline
+    const tlSubs: SubSegment[] = [];
+    if (s.autoSub) {
+      for (const c of st0.clips.filter((x) => x.kind === "video")) {
+        const asset = st0.assets.find((a) => a.id === c.assetId);
+        if (!asset || asset.musicId) continue;
+        useEditor.getState().patchExportState({ label: "AI menyimak suara video (subtitle)..." });
+        try {
+          const segs = await transcribeAsset(asset.url, s.subLevel || "ringan", (p) => {
+            useEditor.getState().patchExportState({ label: p.label || "Subtitle AI..." });
+          });
+          tlSubs.push(...mapSubsToTimeline(segs, st0.clips));
+        } catch (e) {
+          console.warn("Subtitle AI dilewati:", e);
+          useEditor.getState().patchExportState({ label: "Subtitle AI dilewati (model gagal dimuat)" });
+        }
+      }
+    }
+
     if (s.mode === "single") {
-      useEditor.getState().patchExportState({ label: "Merender video penuh..." });
-      const fmt = pickExportFormat();
-      const blob = await exportRange(0, D, (p) => useEditor.getState().patchExportState({ progress: p }));
-      await blobResult(blob, `${baseName}${fmt.ext}`, 1, 1, D);
+      useEditor.getState().patchExportState({ label: fast ? "Merender video penuh (mode kilat)..." : "Merender video penuh..." });
+      // subtitle AI ditempel langsung ke proyek mentah (mode tanpa split)
+      const withSubs = appendSubtitleClips(snapshot.clips, snapshot.tracks, tlSubs);
+      if (fast) {
+        const stNow = useEditor.getState();
+        const rs = { clips: withSubs.clips, tracks: withSubs.tracks, assets: stNow.assets, project: { width: st0.project.width, height: st0.project.height } };
+        const res = await exportRangeFast({ start: 0, end: D, rs, onProgress: (p) => useEditor.getState().patchExportState({ progress: p }) });
+        await blobResult(res.blob, `${baseName}${res.ext}`, 1, 1, D);
+      } else {
+        useEditor.setState({ clips: withSubs.clips, tracks: withSubs.tracks });
+        const fmt = pickExportFormat();
+        const blob = await exportRange(0, D, (p) => useEditor.getState().patchExportState({ progress: p }));
+        await blobResult(blob, `${baseName}${fmt.ext}`, 1, 1, D);
+      }
     } else {
       const ranges = splitRanges(D, s.splitBy, s.parts, s.partSeconds);
       const total = ranges.length;
-      const fmt = pickExportFormat();
       for (let i = 0; i < total; i++) {
         const r = ranges[i];
         useEditor.getState().patchExportState({ label: `Merender ${partLabel(labelStyle, i + 1, total, true)}...`, batchIndex: i, batchTotal: total });
-        // latar "tiap bagian beda" -> cover baru dari adegan yang berbeda untuk bagian ini
-        if (frameTimes && firstVideo) {
-          await ensureCoverAsset(firstVideo, true, frameTimes[i % frameTimes.length]);
-        }
-        // proyek bagian ini selalu dibangun dari timeline ASLI (snapshot),
-        // bukan dari hasil bagian sebelumnya; asset pakai yang TERKINI agar
-        // cover yang baru dibuat ikut terbawa (tidak tertimpa snapshot)
         const stNow = useEditor.getState();
-        const srcState = { ...stNow, clips: snapshot.clips, tracks: snapshot.tracks, assets: stNow.assets };
-        const proj = buildSplitProject(srcState, i + 1, total, r.start, r.end);
-        useEditor.setState({ clips: proj.clips, tracks: proj.tracks, assets: proj.assets });
-        engine.pause();
-        engine.seek(0);
-        await sleep(120);
-        const blob = await exportRange(0, proj.duration, (p) => {
-          const overall = (i + p) / total;
-          useEditor.getState().patchExportState({ progress: overall });
-        });
+        let assets = stNow.assets;
+        let coverForPart = stNow.cover.coverAssetId;
+        // latar "tiap bagian beda" -> cover baru dari adegan berbeda untuk bagian ini
+        if (frameTimes && firstVideo) {
+          if (fast) {
+            const cov = await makeCoverAsset(firstVideo, frameTimes[i % frameTimes.length]);
+            if (cov) {
+              coverForPart = cov.id;
+              assets = [...assets, cov];
+            }
+          } else {
+            await ensureCoverAsset(firstVideo, true, frameTimes[i % frameTimes.length]);
+            coverForPart = useEditor.getState().cover.coverAssetId;
+            assets = useEditor.getState().assets;
+          }
+        }
+        // proyek bagian ini selalu dibangun dari timeline ASLI (snapshot)
+        const srcState = { ...stNow, clips: snapshot.clips, tracks: snapshot.tracks, assets, cover: { ...stNow.cover, coverAssetId: coverForPart } };
+        const proj = buildSplitProject(srcState, i + 1, total, r.start, r.end, { subs: tlSubs });
         const label = partLabel(labelStyle, i + 1, total, true);
-        await blobResult(blob, `${baseName}-${slugify(label)}${fmt.ext}`, i + 1, total, proj.duration);
+        if (fast) {
+          const rs = { clips: proj.clips, tracks: proj.tracks, assets: proj.assets, project: { width: stNow.project.width, height: stNow.project.height } };
+          const res = await exportRangeFast({ start: 0, end: proj.duration, rs, onProgress: (p) => useEditor.getState().patchExportState({ progress: (i + p) / total }) });
+          await blobResult(res.blob, `${baseName}-${slugify(label)}${res.ext}`, i + 1, total, proj.duration);
+        } else {
+          useEditor.setState({ clips: proj.clips, tracks: proj.tracks, assets: proj.assets });
+          engine.pause();
+          engine.seek(0);
+          await sleep(120);
+          const fmt = pickExportFormat();
+          const blob = await exportRange(0, proj.duration, (p) => {
+            useEditor.getState().patchExportState({ progress: (i + p) / total });
+          });
+          await blobResult(blob, `${baseName}-${slugify(label)}${fmt.ext}`, i + 1, total, proj.duration);
+        }
       }
     }
   } catch (e) {
@@ -483,7 +646,6 @@ export async function runExport() {
     useEditor.getState().patchExportState({ label: `Gagal: ${msg}` });
   } finally {
     useEditor.setState({ clips: snapshot.clips, tracks: snapshot.tracks, assets: snapshot.assets });
-    // lepaskan elemen media sisa proyek sementara (hemat memori/dekoder)
     engine.pruneElements();
     engine.pause();
     engine.seek(0);
@@ -500,9 +662,10 @@ export async function runExport() {
 /** Pastikan cover asset tersedia; buat otomatis bila perlu (force = buat ulang walau sudah ada).
  * frameTime opsional: pakai frame spesifik — untuk mode latar "tiap bagian beda".
  * Latar "hitam" tidak butuh frame video sama sekali. */
-async function ensureCoverAsset(sourceAsset: MediaAsset | undefined, force = false, frameTime?: number): Promise<string | undefined> {
+/** Buat asset cover TANPA menyentuh store global (aman dipanggil paralel).
+ * Pemanggil memutuskan: dimasukkan ke store (jalur lama) atau dipakai lokal (mode kilat). */
+async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: number): Promise<MediaAsset | undefined> {
   const st = useEditor.getState();
-  if (!force && st.cover.coverAssetId && st.assets.some((a) => a.id === st.cover.coverAssetId)) return st.cover.coverAssetId;
   if (st.cover.bgStyle !== "hitam" && (!sourceAsset || sourceAsset.type !== "video")) return undefined;
   const title = st.texts.title || sourceAsset?.name.replace(/\.[^.]+$/, "") || "Video";
   const { width, height } = st.project;
@@ -512,10 +675,7 @@ async function ensureCoverAsset(sourceAsset: MediaAsset | undefined, force = fal
     const tpl = aiRecommendTemplates(title, 40, 1)[0] ?? COVER_TEMPLATES[0];
     const dataUrl = renderCoverToDataURL({ img: null, title: "", template: tpl, bgStyle: "hitam" }, width, height);
     if (!dataUrl) return undefined;
-    const asset: MediaAsset = { id: uid("as"), name: `Cover - ${title}`, type: "image", url: dataUrl, duration: 0, width, height };
-    useEditor.getState().addAsset(asset);
-    useEditor.getState().setCover({ coverAssetId: asset.id, previewUrl: dataUrl });
-    return asset.id;
+    return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: dataUrl, duration: 0, width, height };
   }
 
   let frameUrl: string | null = null;
@@ -542,9 +702,16 @@ async function ensureCoverAsset(sourceAsset: MediaAsset | undefined, force = fal
   // cover dibuat TANPA tulisan (latar saja) — judul/deskripsi/part ditulis oleh
   // clip teks di buildSplitProject agar judul panjang otomatis wrap & tak terpotong
   const dataUrl = renderCoverToDataURL({ img, title: "", template: tpl }, width, height);
-  const asset: MediaAsset = { id: uid("as"), name: `Cover - ${title}`, type: "image", url: dataUrl, duration: 0, width, height };
+  return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: dataUrl, duration: 0, width, height };
+}
+
+async function ensureCoverAsset(sourceAsset: MediaAsset | undefined, force = false, frameTime?: number): Promise<string | undefined> {
+  const st = useEditor.getState();
+  if (!force && st.cover.coverAssetId && st.assets.some((a) => a.id === st.cover.coverAssetId)) return st.cover.coverAssetId;
+  const asset = await makeCoverAsset(sourceAsset, frameTime);
+  if (!asset) return undefined;
   useEditor.getState().addAsset(asset);
-  useEditor.getState().setCover({ coverAssetId: asset.id, previewUrl: dataUrl, frameTime: 0 });
+  useEditor.getState().setCover({ coverAssetId: asset.id, previewUrl: asset.url, frameTime: 0 });
   return asset.id;
 }
 
@@ -563,7 +730,10 @@ async function pickFrameTimes(sourceAsset: MediaAsset | undefined): Promise<numb
   }
 }
 
-/** Export & split batch untuk semua video di playlist */
+/** Export & split batch untuk semua video di playlist.
+ * FASE 1 (berurutan): judul, cover, subtitle AI per video.
+ * FASE 2 (mode kilat): beberapa video dirender BERSAMAAN (paralel 1-5);
+ * mode kompatibel: berurutan seperti versi lama (rekam real-time). */
 export async function runBatchExport(assetIds: string[]) {
   const st0 = useEditor.getState();
   if (st0.exportState.running || !assetIds.length) return;
@@ -579,26 +749,77 @@ export async function runBatchExport(assetIds: string[]) {
     const targetDims = dimsFor(pl.ratio, st0.project.quality);
     useEditor.getState().setProject({ ratio: pl.ratio, ...targetDims });
     engine.syncSize();
+    const fast = s.engineMode === "fast" ? await fastSupported() : null;
+    const parallel = Math.max(1, Math.min(5, Math.round(pl.parallel ?? 3)));
+
+    // ========== FASE 1 — PERSIAPAN (berurutan, aman utk store) ==========
+    type BatchJob = {
+      asset: MediaAsset;
+      title: string;
+      coverAssetId?: string;
+      frameTimes: number[] | null;
+      subs: SubSegment[]; // waktu SUMBER video
+    };
+    const jobs: BatchJob[] = [];
     for (let vi = 0; vi < assetIds.length; vi++) {
       const asset = snapshot.assets.find((a) => a.id === assetIds[vi]);
       if (!asset || asset.type !== "video") continue;
-      // bersihkan elemen media video sebelumnya — satu elemen dibuat ulang per
-      // aset, mencegah penumpukan dekoder saat playlist berisi banyak video
-      engine.pruneElements();
       const autoName = asset.name.replace(/\.[^.]+$/, "");
-      // judul tiap video batch: otomatis dari nama video, atau manual dari menu Playlist Export
       const title = pl.autoTitle ? autoName : pl.titleCustom.trim() || autoName;
-      // terapkan setelan teks menu Playlist Export ke semua hasil video ini
       useEditor.getState().setTexts({ title, description: pl.description, labelStyle: pl.labelStyle });
       useEditor.getState().setExportSettings({ includeCover: pl.showTitleScreen, autoPartText: pl.showPartText, showTitleText: pl.titleDuringVideo });
-      useEditor.getState().patchExportState({ label: `Playlist ${vi + 1}/${assetIds.length}: ${title}` });
+      useEditor.getState().patchExportState({ label: `Menyiapkan ${vi + 1}/${assetIds.length}: ${title}` });
 
-      // proyek sementara: satu klip video penuh
-      const vt = ensureVideoTrack([{ ...snapshot.tracks[0], id: "batch-video", kind: "video", name: "V", muted: false, hidden: false }]);
-      // rasio 9:16 mode "fill": video lanskap otomatis diperbesar mengisi penuh layar (tengah dipotong)
-      // mode "fit": video utuh tanpa potong (bar hitam di sisi kosong)
-      const fillZoom = pl.ratio === "9:16" && pl.fitMode === "fill" ? fillZoomFor(asset.width, asset.height, targetDims.width, targetDims.height) ?? 1 : 1;
-      // setelan menu EFEK & KLIP (target "Video Playlist") diterapkan ke video hasil export
+      // latar "tiap bagian beda": AI pilih beberapa adegan berbeda dari video ini
+      let frameTimes: number[] | null = null;
+      if (pl.showTitleScreen) {
+        frameTimes = await pickFrameTimes(asset);
+      }
+      // cover per video (mode manual = cover pengguna dipakai bersama; otomatis = AI)
+      let coverAssetId = st0.cover.coverAssetId;
+      if (pl.showTitleScreen) {
+        if (useEditor.getState().cover.mode === "manual") {
+          if (!coverAssetId || !useEditor.getState().assets.some((a) => a.id === coverAssetId)) {
+            coverAssetId = await ensureCoverAsset(asset);
+          }
+        } else if (!frameTimes) {
+          useEditor.getState().setCover({ coverAssetId: undefined, previewUrl: undefined });
+          coverAssetId = await ensureCoverAsset(asset, true);
+        }
+      }
+      // SUBTITLE AI (unduh model sekali — butuh internet pada pemakaian pertama)
+      let subs: SubSegment[] = [];
+      if (pl.autoSub) {
+        try {
+          subs = await transcribeAsset(asset.url, pl.subLevel || "ringan", (p) => {
+            useEditor.getState().patchExportState({ label: `${title}: ${p.label || "subtitle AI..."}` });
+          });
+        } catch (e) {
+          console.warn("Subtitle AI dilewati:", e);
+          useEditor.getState().patchExportState({ label: `Subtitle AI dilewati: ${title}` });
+        }
+      }
+      // bila video yang SAMA muncul lagi dalam batch paralel, kloning identitas
+      // assetnya (URL tetap sama) supaya tiap pekerjaan punya elemen decode sendiri
+      let jobAsset = asset;
+      if (jobs.some((j) => j.asset.id === asset.id)) {
+        jobAsset = { ...asset, id: `${asset.id}-p${vi}` };
+      }
+      jobs.push({ asset: jobAsset, title, coverAssetId, frameTimes, subs });
+    }
+
+    // ========== FASE 2 — RENDER ==========
+    const jobProgress = new Array(jobs.length).fill(0) as number[];
+    let doneCount = 0;
+    const report = () => {
+      const sum = jobProgress.reduce((a, b) => a + b, 0);
+      useEditor.getState().patchExportState({ progress: Math.min(0.99, sum / Math.max(1, jobs.length)) });
+    };
+
+    /** klip video batch + track utk satu pekerjaan (memakai setelan Efek & Klip "Video Playlist") */
+    const buildBatchClip = (job: BatchJob) => {
+      const vt = ensureVideoTrack([{ id: "batch-video", kind: "video", name: "V", muted: false, hidden: false }]);
+      const fillZoom = pl.ratio === "9:16" && pl.fitMode === "fill" ? fillZoomFor(job.asset.width, job.asset.height, targetDims.width, targetDims.height) ?? 1 : 1;
       const en = normalizeEnhance(pl.enhance);
       const enOn = !!en.enabled;
       const speed = enOn ? en.speed : 1;
@@ -606,10 +827,9 @@ export async function runBatchExport(assetIds: string[]) {
       const clip = baseClip({
         trackId: "batch-video",
         kind: "video",
-        assetId: asset.id,
+        assetId: job.asset.id,
         start: 0,
-        // durasi timeline menyesuaikan kecepatan & jumlah ulang (pembagian part ikut menyesuaikan)
-        duration: (asset.duration / speed) * loop,
+        duration: (job.asset.duration / speed) * loop,
         speed,
         loopCount: loop,
         volume: enOn ? en.volume : 1,
@@ -622,66 +842,120 @@ export async function runBatchExport(assetIds: string[]) {
       });
       if (enOn && en.transitionType) clip.transition = { type: en.transitionType, duration: en.transitionDuration };
       const textTrack: Track = { id: "batch-text", kind: "text", name: "T", muted: false, hidden: false };
-      const tempTracks = [...vt.tracks, textTrack];
+      return { clip, tracks: [...vt.tracks, textTrack] };
+    };
 
-      // latar "tiap bagian beda": AI pilih beberapa adegan berbeda dari video ini
-      let frameTimes: number[] | null = null;
-      if (pl.showTitleScreen) {
-        frameTimes = await pickFrameTimes(asset);
-        if (frameTimes) useEditor.getState().patchExportState({ label: `AI memilih adegan berbeda: ${title}` });
-      }
-
-      // cover per video (mode manual = cover buatan pengguna dipakai bersama;
-      // mode otomatis = AI ambil adegan terbaik / latar hitam sesuai pilihan)
-      let coverAssetId = st0.cover.coverAssetId;
-      if (pl.showTitleScreen) {
-        if (useEditor.getState().cover.mode === "manual") {
-          if (!coverAssetId || !useEditor.getState().assets.some((a) => a.id === coverAssetId)) {
-            coverAssetId = await ensureCoverAsset(asset);
-          }
-        } else if (!frameTimes) {
-          useEditor.getState().setCover({ coverAssetId: undefined, previewUrl: undefined });
-          coverAssetId = await ensureCoverAsset(asset, true);
-        }
-      }
+    const rangesFor = (clip: Clip) => {
       const D = clip.duration;
-      const fmt = pickExportFormat();
-      // mode "single" = export saja tanpa dipecah; "split" = ikuti pengaturan Export & Split
-      const ranges = s.mode === "single" ? [{ start: 0, end: D }] : splitRanges(D, s.splitBy, s.parts, s.partSeconds);
+      return s.mode === "single" ? [{ start: 0, end: D }] : splitRanges(D, s.splitBy, s.parts, s.partSeconds);
+    };
+
+    /** MODE KILAT: render 1 video penuh — TIDAK menyentuh store timeline (aman paralel) */
+    const renderJobFast = async (job: BatchJob, vi: number) => {
+      const { clip, tracks } = buildBatchClip(job);
+      const ranges = rangesFor(clip);
+      // subtitle: waktu sumber -> waktu timeline (satu klip video, start 0)
+      const tlSubs = mapSubsToTimeline(job.subs, [clip]);
       for (let i = 0; i < ranges.length; i++) {
+        const r = ranges[i];
         useEditor.getState().patchExportState({
-          label: `${title} — ${partLabel(useEditor.getState().texts.labelStyle, i + 1, ranges.length, true)} (${vi + 1}/${assetIds.length})`,
+          label: `${job.title} — ${partLabel(pl.labelStyle, i + 1, ranges.length, true)} (${doneCount + 1}/${jobs.length} berjalan)`,
           batchIndex: vi,
-          batchTotal: assetIds.length,
+          batchTotal: jobs.length,
         });
-        // latar berbeda per bagian: render ulang cover dari adegan lain untuk bagian ini
-        if (frameTimes) {
-          await ensureCoverAsset(asset, true, frameTimes[i % frameTimes.length]);
+        // cover bagian ini — asset LOKAL (tanpa race store antar pekerja paralel)
+        let coverAssetId = job.coverAssetId;
+        let assets = useEditor.getState().assets;
+        if (job.frameTimes) {
+          const cov = await makeCoverAsset(job.asset, job.frameTimes[i % job.frameTimes.length]);
+          if (cov) {
+            coverAssetId = cov.id;
+            assets = [...assets, cov];
+          }
+        }
+        const cur = useEditor.getState();
+        const srcState = {
+          ...cur,
+          clips: [clip] as Clip[],
+          tracks,
+          assets,
+          cover: { ...cur.cover, coverAssetId },
+          texts: { ...cur.texts, title: job.title, description: pl.description, labelStyle: pl.labelStyle },
+        };
+        const proj = buildSplitProject(srcState, i + 1, ranges.length, r.start, r.end, {
+          persistText: pl.titleDuringVideo,
+          subs: tlSubs,
+        });
+        const rs = { clips: proj.clips, tracks: proj.tracks, assets: proj.assets, project: { width: targetDims.width, height: targetDims.height } };
+        const res = await exportRangeFast({
+          start: 0,
+          end: proj.duration,
+          rs,
+          onProgress: (p) => {
+            jobProgress[vi] = (i + p) / ranges.length;
+            report();
+          },
+        });
+        const label = partLabel(pl.labelStyle, i + 1, ranges.length, true);
+        await blobResult(res.blob, `${slugify(job.title)}-${slugify(label)}${res.ext}`, i + 1, ranges.length, proj.duration);
+      }
+      jobProgress[vi] = 1;
+      doneCount++;
+      report();
+    };
+
+    /** MODE KOMPATIBEL: jalur lama berurutan (rekam real-time via MediaRecorder) */
+    const renderJobLegacy = async (job: BatchJob, vi: number) => {
+      const { clip, tracks } = buildBatchClip(job);
+      const ranges = rangesFor(clip);
+      const tlSubs = mapSubsToTimeline(job.subs, [clip]);
+      const fmt = pickExportFormat();
+      for (let i = 0; i < ranges.length; i++) {
+        const r = ranges[i];
+        useEditor.getState().patchExportState({
+          label: `${job.title} — ${partLabel(pl.labelStyle, i + 1, ranges.length, true)} (${vi + 1}/${jobs.length})`,
+          batchIndex: vi,
+          batchTotal: jobs.length,
+        });
+        let coverAssetId = job.coverAssetId;
+        if (job.frameTimes) {
+          await ensureCoverAsset(job.asset, true, job.frameTimes[i % job.frameTimes.length]);
           coverAssetId = useEditor.getState().cover.coverAssetId;
         }
         const tempState = {
           ...useEditor.getState(),
-          clips: coverAssetId ? [clip, baseClip({ trackId: "batch-video", kind: "image", assetId: coverAssetId, start: 0, duration: 0, label: "cover-holder" })] : [clip],
-          tracks: tempTracks,
-          // asset TERKINI (bukan snapshot) agar cover yang baru dibuat ikut tersedia saat render
+          clips: coverAssetId ? [clip, baseClip({ trackId: "batch-video", kind: "image", assetId: coverAssetId, start: 0, duration: 0, label: "cover-holder" })] : ([clip] as Clip[]),
+          tracks,
           assets: useEditor.getState().assets,
           cover: { ...useEditor.getState().cover, coverAssetId },
-          texts: { ...useEditor.getState().texts, title: useEditor.getState().texts.title || title },
+          texts: { ...useEditor.getState().texts, title: job.title, description: pl.description, labelStyle: pl.labelStyle },
         };
-        const proj = buildSplitProject(tempState, i + 1, ranges.length, ranges[i].start, ranges[i].end, {
-          // teks judul/deskripsi/part tampil selama video berjalan sesuai setelan menu Playlist
+        const proj = buildSplitProject(tempState, i + 1, ranges.length, r.start, r.end, {
           persistText: pl.titleDuringVideo,
+          subs: tlSubs,
         });
         useEditor.setState({ clips: proj.clips, tracks: proj.tracks, assets: proj.assets });
         engine.pause();
         engine.seek(0);
         await sleep(120);
         const blob = await exportRange(0, proj.duration, (p) => {
-          const overall = (vi + (i + p) / ranges.length) / assetIds.length;
-          useEditor.getState().patchExportState({ progress: overall });
+          jobProgress[vi] = (i + p) / ranges.length;
+          report();
         });
-        const label = partLabel(useEditor.getState().texts.labelStyle, i + 1, ranges.length, true);
-        await blobResult(blob, `${slugify(title)}-${slugify(label)}${fmt.ext}`, i + 1, ranges.length, proj.duration);
+        const label = partLabel(pl.labelStyle, i + 1, ranges.length, true);
+        await blobResult(blob, `${slugify(job.title)}-${slugify(label)}${fmt.ext}`, i + 1, ranges.length, proj.duration);
+      }
+      jobProgress[vi] = 1;
+      doneCount++;
+      // bersihkan elemen antar video pada mode berurutan
+      engine.pruneElements();
+    };
+
+    if (fast) {
+      await runPool(jobs, parallel, renderJobFast);
+    } else {
+      for (let vi = 0; vi < jobs.length; vi++) {
+        await renderJobLegacy(jobs[vi], vi);
       }
     }
   } catch (e) {

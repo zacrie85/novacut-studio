@@ -11,6 +11,7 @@ import { fmtTime } from "@/lib/editor/constants";
 import { framingLayout } from "@/lib/editor/visual";
 import { FramingControls } from "./FramingControls";
 import { runBatchExport, runExport } from "@/lib/editor/exporter";
+import { transcribeAsset } from "@/lib/editor/subtitles";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -28,7 +29,7 @@ export function Preview() {
     // hook verifikasi otomatis (hanya aktif dengan ?__test=1 di URL) —
     // dipakai pengujian export end-to-end, tidak berpengaruh pada pemakaian normal
     if (typeof window !== "undefined" && window.location.search.includes("__test=1")) {
-      (window as unknown as Record<string, unknown>).__novacutTest = { useEditor, engine, runExport, runBatchExport };
+      (window as unknown as Record<string, unknown>).__novacutTest = { useEditor, engine, runExport, runBatchExport, transcribeAsset };
     }
     return () => engine.pause();
   }, []);

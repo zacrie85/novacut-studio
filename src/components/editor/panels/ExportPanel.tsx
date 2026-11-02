@@ -13,6 +13,7 @@ import { fmtSize, fmtTime, partLabel, slugify } from "@/lib/editor/constants";
 import { forgetExportDir, isDesktopFS, loadSavedExportDir, openInFolder, pickExportDir, rememberExportDir } from "@/lib/editor/fsBridge";
 import { totalDuration, useEditor } from "@/lib/editor/store";
 import { pickExportFormat, runExport, triggerDownload } from "@/lib/editor/exporter";
+import { modelSizeLabel } from "@/lib/editor/subtitles";
 
 export function ExportPanel() {
   const settings = useEditor((s) => s.exportSettings);
@@ -154,6 +155,59 @@ export function ExportPanel() {
         )}
       </section>
 
+      {/* mesin render */}
+      <section className="space-y-2 rounded-lg border border-amber-400/20 bg-amber-400/[0.04] p-2.5">
+        <div className="text-[10px] font-semibold tracking-wider text-amber-300">MESIN RENDER</div>
+        <div className="flex gap-1.5">
+          <button
+            onClick={() => st.setExportSettings({ engineMode: "fast" })}
+            className={`flex-1 rounded border px-2 py-1.5 text-left ${settings.engineMode === "fast" ? "border-amber-300 bg-amber-400/20 text-amber-100" : "border-white/10 bg-white/[0.03] text-gray-400 hover:border-amber-400/40"}`}
+          >
+            <div className="text-[10px] font-bold">⚡ Kilat (disarankan)</div>
+            <div className="text-[8px] leading-snug opacity-80">Tanpa memutar video — 5-10x lebih cepat</div>
+          </button>
+          <button
+            onClick={() => st.setExportSettings({ engineMode: "compat" })}
+            className={`flex-1 rounded border px-2 py-1.5 text-left ${settings.engineMode === "compat" ? "border-amber-300 bg-amber-400/20 text-amber-100" : "border-white/10 bg-white/[0.03] text-gray-400 hover:border-amber-400/40"}`}
+          >
+            <div className="text-[10px] font-bold">🛡️ Kompatibel</div>
+            <div className="text-[8px] leading-snug opacity-80">Rekam real-time (video diputar)</div>
+          </button>
+        </div>
+        <p className="text-[9px] leading-relaxed text-gray-500">
+          {settings.engineMode === "fast"
+            ? "Video dirender di latar belakang — layar preview tidak ikut memutar video dan durasi hasil selalu tepat."
+            : "Mode lama: video diputar real-time saat direkam — jangan tutup aplikasi sampai selesai."}
+        </p>
+      </section>
+
+      {/* subtitle AI */}
+      <section className="space-y-2 rounded-lg border border-violet-400/20 bg-violet-400/[0.04] p-2.5">
+        <div className="flex items-center justify-between">
+          <div className="text-[10px] font-semibold tracking-wider text-violet-300">SUBTITLE AI OTOMATIS (INDONESIA)</div>
+          <Switch checked={settings.autoSub} onCheckedChange={(v) => st.setExportSettings({ autoSub: v })} />
+        </div>
+        {settings.autoSub && (
+          <div className="space-y-1.5">
+            <div className="grid grid-cols-3 gap-1">
+              {(["ringan", "sedang", "akurat"] as const).map((lv) => (
+                <button
+                  key={lv}
+                  onClick={() => st.setExportSettings({ subLevel: lv })}
+                  className={`rounded border px-1.5 py-1 text-[9px] font-semibold capitalize ${settings.subLevel === lv ? "border-violet-300 bg-violet-400/20 text-violet-100" : "border-white/10 bg-white/[0.03] text-gray-400 hover:border-violet-400/40"}`}
+                >
+                  {lv}
+                  <div className="text-[7px] font-normal opacity-70">{modelSizeLabel(lv)}</div>
+                </button>
+              ))}
+            </div>
+            <p className="text-[9px] leading-relaxed text-amber-300/80">
+              AI menyimak suara video lalu menuliskan teksnya di layar (burn-in). Memahami bahasa Indonesia resmi &amp; gaul. Model diunduh sekali (butuh internet pada pemakaian pertama), setelah itu offline.
+            </p>
+          </div>
+        )}
+      </section>
+
       {/* folder hasil render */}
       <section className="space-y-2 rounded-lg border border-emerald-400/20 bg-emerald-400/[0.04] p-2.5">
         <div className="flex items-center justify-between">
@@ -219,7 +273,11 @@ export function ExportPanel() {
             <span>{ex.label}</span>
             <span className="font-mono">{Math.round(ex.progress * 100)}%</span>
           </div>
-          <div className="text-[9px] text-amber-400/80">Perekaman berjalan real-time — biarkan tab ini tetap terbuka.</div>
+          <div className="text-[9px] text-amber-400/80">
+            {settings.engineMode === "fast"
+              ? "Mode kilat: rendering berjalan di latar belakang — kamu boleh meminimalkan aplikasi, tapi jangan ditutup."
+              : "Perekaman berjalan real-time — biarkan tab ini tetap terbuka."}
+          </div>
         </div>
       )}
       {!ex.running && ex.label && <div className="text-center text-[10px] text-gray-500">{ex.label}</div>}

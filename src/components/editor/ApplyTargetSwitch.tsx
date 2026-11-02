@@ -34,12 +34,24 @@ export function useApplyTarget(): [ApplyTarget, (t: ApplyTarget) => void] {
   const [target, setTarget] = useState<ApplyTarget>("timeline");
   useEffect(() => {
     setTarget(loadApplyTarget());
+    // ikuti permintaan dari panel lain (mis. tombol akses cepat di Playlist)
+    const h = (e: Event) => setTarget((e as CustomEvent).detail as ApplyTarget);
+    window.addEventListener("novacut:applyTarget", h);
+    return () => window.removeEventListener("novacut:applyTarget", h);
   }, []);
   const change = (t: ApplyTarget) => {
     setTarget(t);
     saveApplyTarget(t);
   };
   return [target, change];
+}
+
+/** minta SEMUA panel Efek/Klip yang terbuka langsung mengganti target
+ * (dipakai tombol "Teks/Efek/Klip" di panel Playlist supaya otomatis
+ * mengarah ke "Video Playlist" — tidak perlu disetel manual) */
+export function requestApplyTarget(t: ApplyTarget) {
+  saveApplyTarget(t);
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("novacut:applyTarget", { detail: t }));
 }
 
 export function ApplyTargetSwitch({ value, onChange }: { value: ApplyTarget; onChange: (t: ApplyTarget) => void }) {

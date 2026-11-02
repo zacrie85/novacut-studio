@@ -5,7 +5,7 @@ import type { PlaylistEnhance, PlaylistExportConfig } from "./types";
 
 const KEY = "novacut.playlistExport";
 /** versi skema setelan — bila berubah, setelan lama dimigrasi otomatis */
-const CFG_VERSION = 3;
+const CFG_VERSION = 4;
 
 /** bawaan efek & klip untuk export playlist (netral: tanpa perubahan) */
 export const PLAYLIST_ENHANCE_DEFAULTS: PlaylistEnhance = {
@@ -47,6 +47,9 @@ export const PLAYLIST_EXPORT_DEFAULTS: PlaylistExportConfig = {
   ratio: "16:9",
   fitMode: "fill",
   enhance: { ...PLAYLIST_ENHANCE_DEFAULTS },
+  autoSub: false,
+  subLevel: "ringan",
+  parallel: 3,
   cfgVersion: CFG_VERSION,
 };
 

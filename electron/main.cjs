@@ -159,6 +159,8 @@ if (!gotLock) {
         contextIsolation: true,
         nodeIntegration: false,
         spellcheck: false,
+        // render kilat harus tetap jalan walau jendela diminimalkan
+        backgroundThrottling: false,
         preload: path.join(__dirname, "preload.cjs"),
       },
       ...(fs.existsSync(iconPath) ? { icon: iconPath } : {}),

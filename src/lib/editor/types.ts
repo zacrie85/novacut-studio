@@ -169,9 +169,18 @@ export interface PlaylistExportConfig {
   fitMode: "fill" | "fit";
   /** efek & klip untuk semua hasil export playlist (dari menu Efek / Klip target "Video Playlist") */
   enhance?: PlaylistEnhance;
+  /** subtitle AI otomatis dari suara video (burn-in ke hasil render) */
+  autoSub?: boolean;
+  /** tingkat akurasi model AI subtitle: ringan (cepat) / sedang / akurat (paling teliti) */
+  subLevel?: SubLevel;
+  /** berapa video dirender BERSAMAAN (paralel) 1–5 */
+  parallel?: number;
   /** versi skema setelan (internal, untuk migrasi setelan lama) */
   cfgVersion?: number;
 }
+
+/** tingkat model AI subtitle */
+export type SubLevel = "ringan" | "sedang" | "akurat";
 
 export interface ExportSettings {
   mode: "single" | "split";
@@ -184,6 +193,12 @@ export interface ExportSettings {
   showTitleText: boolean;
   /** Folder tujuan hasil render (path absolut, mode desktop). "" = folder unduhan bawaan */
   exportDir: string;
+  /** mesin render: "fast" = WebCodecs offscreen (tanpa memutar video, jauh lebih cepat); "compat" = rekam real-time (MediaRecorder) */
+  engineMode: "fast" | "compat";
+  /** subtitle AI otomatis dari suara video pada timeline (burn-in ke hasil render) */
+  autoSub: boolean;
+  /** tingkat akurasi model AI subtitle */
+  subLevel: SubLevel;
 }
 
 export interface ExportResult {
