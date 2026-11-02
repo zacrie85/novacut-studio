@@ -19,6 +19,12 @@ function clampPct(v: number | undefined, def: number): number {
   return Math.max(0.012, Math.min(0.2, n));
 }
 
+/** posisi geser teks (% layar, -45..45) -> fraksi (aman untuk data lama) */
+function clampOffPct(v: number | undefined): number {
+  const n = typeof v === "number" && isFinite(v) ? Math.round(v) : 0;
+  return Math.max(-45, Math.min(45, n)) / 100;
+}
+
 // MP4 diprioritaskan (H.264 + AAC untuk kompatibilitas terbaik,
 // lalu H.264 + Opus, lalu default bawaan browser)
 const MP4_CANDIDATES = [
@@ -117,6 +123,10 @@ export async function exportRange(start: number, end: number, onProgress?: (p: n
   engine.pause();
   engine.seek(start);
   await sleep(450); // beri waktu seek
+  // SIAPKAN frame video sejak SEKARANG (saat cover masih tampil): elemen video
+  // sudah di-seek ke posisi sumber yang benar, jadi begitu cover selesai konten
+  // langsung tampil tanpa layar hitam — detik cover TIDAK memakan detik video.
+  await engine.prepareUpcoming(12);
   rec.start(400);
   await sleep(300); // pre-roll singkat: bingkai pertama & aliran audio terkunci dulu sebelum playback
   const dur = Math.max(0.1, end - start);
@@ -221,19 +231,23 @@ export function buildSplitProject(
   const clips: Clip[] = [];
   for (const clip of st.clips) {
     const cEnd = clip.start + clip.duration;
+    // potong klip HANYA sepanjang rentang bagian ini (interseksi) —
+    // sebelumnya klip tidak dipotong + inPoint diberi offset rentang sehingga
+    // posisi sumber terhitung DOBEL: bagian ke-2 dst. melompati/mengulang isi
+    // video (bagian tidak nyambung) dan bagian akhir layar hitam.
     const os = Math.max(clip.start, rangeStart);
     const oe = Math.min(cEnd, rangeEnd);
     if (oe - os < 0.05) continue;
     const nc = baseClip({
       ...clip,
-      start: clip.start - rangeStart + shift,
-      transition: clip.start >= rangeStart - 0.05 ? clip.transition : undefined,
+      start: os - rangeStart + shift,
+      duration: oe - os,
+      transition: os <= clip.start + 0.05 ? clip.transition : undefined,
     });
-    if (clip.kind === "video" && rangeStart > clip.start + 0.05) {
-      // posisi sumber saat rentang dimulai; modulo menangani klip loop (>1)
-      // agar bagian ke-2 dst. lanjut dari posisi yang benar, bukan mengulang dari awal
+    if ((clip.kind === "video" || clip.kind === "audio") && os > clip.start + 0.001) {
+      // posisi sumber saat konten bagian ini dimulai; modulo menangani klip loop (>1)
       const srcSeg = (clip.duration * clip.speed) / Math.max(1, clip.loopCount);
-      nc.inPoint = clip.inPoint + (((rangeStart - clip.start) * clip.speed) % Math.max(0.04, srcSeg));
+      nc.inPoint = clip.inPoint + (((os - clip.start) * clip.speed) % Math.max(0.04, srcSeg));
     }
     clips.push(nc);
   }
@@ -277,6 +291,11 @@ export function buildSplitProject(
           pos: "center",
           bg: "gradient",
           stroke: true,
+          // posisi dari kolom geser di menu Teks
+          offX: clampOffPct(st.texts.titleX),
+          offY: clampOffPct(st.texts.titleY),
+          subOffX: clampOffPct(st.texts.descX),
+          subOffY: clampOffPct(st.texts.descY),
         },
       })
     );
@@ -303,6 +322,9 @@ export function buildSplitProject(
           pos: "bottom",
           bg: "bar",
           stroke: true,
+          // posisi dari kolom geser Part di menu Teks
+          offX: clampOffPct(st.texts.partX),
+          offY: clampOffPct(st.texts.partY),
         },
       })
     );
@@ -330,6 +352,11 @@ export function buildSplitProject(
           pos: "top",
           bg: "none",
           stroke: true,
+          // posisi dari kolom geser Judul & Deskripsi di menu Teks
+          offX: clampOffPct(st.texts.titleX),
+          offY: clampOffPct(st.texts.titleY),
+          subOffX: clampOffPct(st.texts.descX),
+          subOffY: clampOffPct(st.texts.descY),
         },
       })
     );
@@ -454,6 +481,8 @@ export async function runExport() {
     useEditor.getState().patchExportState({ label: `Gagal: ${msg}` });
   } finally {
     useEditor.setState({ clips: snapshot.clips, tracks: snapshot.tracks, assets: snapshot.assets });
+    // lepaskan elemen media sisa proyek sementara (hemat memori/dekoder)
+    engine.pruneElements();
     engine.pause();
     engine.seek(0);
     const auto = isAutoSaveActive();
@@ -551,6 +580,9 @@ export async function runBatchExport(assetIds: string[]) {
     for (let vi = 0; vi < assetIds.length; vi++) {
       const asset = snapshot.assets.find((a) => a.id === assetIds[vi]);
       if (!asset || asset.type !== "video") continue;
+      // bersihkan elemen media video sebelumnya — satu elemen dibuat ulang per
+      // aset, mencegah penumpukan dekoder saat playlist berisi banyak video
+      engine.pruneElements();
       const autoName = asset.name.replace(/\.[^.]+$/, "");
       // judul tiap video batch: otomatis dari nama video, atau manual dari menu Playlist Export
       const title = pl.autoTitle ? autoName : pl.titleCustom.trim() || autoName;
@@ -656,6 +688,8 @@ export async function runBatchExport(assetIds: string[]) {
     useEditor.getState().patchExportState({ label: `Gagal: ${msg}` });
   } finally {
     useEditor.setState({ clips: snapshot.clips, tracks: snapshot.tracks, assets: snapshot.assets, project: snapshot.project });
+    // lepaskan elemen media sisa batch (hemat memori/dekoder)
+    engine.pruneElements();
     engine.syncSize();
     engine.pause();
     engine.seek(0);

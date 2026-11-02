@@ -245,6 +245,20 @@ export function Timeline() {
     return { arr, step };
   }, [zoom, duration]);
 
+  // KLIK 2x pada klip gambar/teks/audio: otomatis menarik durasinya sampai
+  // ke akhir video yang ada di timeline (tidak perlu tahan-tahan pegang lagi)
+  const stretchClipToEnd = (clip: Clip) => {
+    if (clip.kind !== "image" && clip.kind !== "text" && clip.kind !== "audio") return;
+    const st = useEditor.getState();
+    const videoEnd = st.clips
+      .filter((c) => c.kind === "video")
+      .reduce((m, c) => Math.max(m, c.start + c.duration), 0);
+    const target = videoEnd > 0.2 ? videoEnd : totalDuration(st.clips);
+    const newDur = Math.min(600, Math.round((target - clip.start) * 100) / 100);
+    if (newDur < 0.2 || Math.abs(newDur - clip.duration) < 0.05) return;
+    useEditor.getState().updateClip(clip.id, { duration: newDur });
+  };
+
   const sel = selectedClip(useEditor.getState());
 
   return (
@@ -307,8 +321,9 @@ export function Timeline() {
         <Button size="sm" variant="outline" className="h-7 border-white/10 bg-white/5" onClick={() => useEditor.getState().setZoom(zoom * 1.4)}>
           <ZoomIn className="h-3.5 w-3.5" />
         </Button>
-        <div className="ml-auto pr-1 font-mono text-[11px] text-cyan-300/80">
-          Total: {fmtTime(duration, true)}
+        <div className="ml-auto flex items-center gap-2 pr-1">
+          <span className="hidden text-[9px] text-gray-500 md:inline">Klik 2x klip gambar/teks/audio = tarik otomatis sampai akhir video</span>
+          <span className="font-mono text-[11px] text-cyan-300/80">Total: {fmtTime(duration, true)}</span>
         </div>
       </div>
 
@@ -394,6 +409,11 @@ export function Timeline() {
                               touchAction: "none",
                             }}
                             onPointerDown={(e) => clipDrag(e, clip)}
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              stretchClipToEnd(clip);
+                            }}
+                            title={clip.kind !== "video" ? "Klik 2x = tarik otomatis sampai akhir video" : undefined}
                           >
                             <div className="absolute inset-y-0 left-0 w-1.5 cursor-w-resize bg-white/10 hover:bg-cyan-300/60" onPointerDown={(e) => clipTrim(e, clip, "l")} />
                             <div className="pointer-events-none flex min-w-0 flex-1 flex-col justify-center px-2">

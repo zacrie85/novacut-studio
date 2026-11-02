@@ -48,6 +48,8 @@ export interface EditorState {
   zoom: number; // px per detik
   snap: boolean;
   texts: TextsConfig;
+  /** pratinjau langsung tulisan judul/deskripsi/part di kanvas preview (menu Teks) */
+  textPreview: boolean;
   cover: CoverConfig;
   exportSettings: ExportSettings;
   exportState: ExportState;
@@ -90,6 +92,7 @@ export interface EditorState {
   toggleSnap: () => void;
 
   setTexts: (p: Partial<TextsConfig>) => void;
+  setTextPreview: (v: boolean) => void;
   setCover: (p: Partial<CoverConfig>) => void;
   setExportSettings: (p: Partial<ExportSettings>) => void;
   setPlaylistExport: (p: Partial<PlaylistExportConfig>) => void;
@@ -110,6 +113,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   zoom: 60,
   snap: true,
   texts: { title: "", description: "", labelStyle: "Part", parts: 5 },
+  textPreview: true,
   cover: { frameTime: 0, templateId: "impact--cyber", duration: 3, useAI: true, mode: "auto" as const, bgStyle: "adegan" as const, bgScope: "sama" as const },
   exportSettings: {
     mode: "split",
@@ -362,6 +366,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   toggleSnap: () => set((s) => ({ snap: !s.snap })),
 
   setTexts: (p) => set((s) => ({ texts: { ...s.texts, ...p } })),
+  setTextPreview: (v) => set({ textPreview: v }),
   setCover: (p) => set((s) => ({ cover: { ...s.cover, ...p } })),
   setExportSettings: (p) => set((s) => ({ exportSettings: { ...s.exportSettings, ...p } })),
   setPlaylistExport: (p) => set((s) => ({ playlistExport: { ...s.playlistExport, ...p } })),

@@ -41,6 +41,14 @@ export interface TextData {
   pos: TextPos;
   bg: TextBg;
   stroke: boolean;
+  /** geser horizontal seluruh blok teks (fraksi lebar layar, -0.45..0.45) */
+  offX?: number;
+  /** geser vertikal blok teks (fraksi tinggi layar, -0.45..0.45) */
+  offY?: number;
+  /** geser horizontal baris deskripsi (fraksi lebar layar) */
+  subOffX?: number;
+  /** geser vertikal baris deskripsi (fraksi tinggi layar) */
+  subOffY?: number;
 }
 
 export interface TransitionSpec {
@@ -83,6 +91,15 @@ export interface TextsConfig {
   partSize?: number;
   /** id font untuk tulisan otomatis judul/deskripsi/part */
   fontAuto?: string;
+  /** posisi judul: geser horizontal/vertikal dalam % lebar/tinggi layar (-45..45) */
+  titleX?: number;
+  titleY?: number;
+  /** posisi deskripsi (baris kedua): geser horizontal/vertikal % layar */
+  descX?: number;
+  descY?: number;
+  /** posisi teks part/episode: geser horizontal/vertikal % layar */
+  partX?: number;
+  partY?: number;
 }
 
 export interface CoverConfig {
