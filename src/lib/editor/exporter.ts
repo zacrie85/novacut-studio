@@ -254,7 +254,7 @@ export function buildSplitProject(
 
   // gaya teks part mengikuti pilihan pengguna (Episode/Bagian/Eps/EP/Part);
   // sebelumnya selalu "Part" karena membaca field yang salah
-  const label = partLabel(st.texts?.labelStyle || s.labelStyle || "Part", partIndex, totalParts, true);
+  const label = partLabel(st.texts?.labelStyle || "Part", partIndex, totalParts, true);
 
   if (shift > 0 && st.cover.coverAssetId) {
     const vt = ensureVideoTrack(tracks);
@@ -422,6 +422,8 @@ export async function runExport() {
     return;
   }
   const s = st0.exportSettings;
+  // gaya label (Part/Episode/Bagian/Eps/EP) pilihan pengguna ada di setelan TEKS
+  const labelStyle = st0.texts?.labelStyle || "Part";
   useEditor.getState().patchExportState({ running: true, progress: 0, results: [], label: "Menyiapkan render..." });
   const snapshot = { clips: st0.clips, tracks: st0.tracks, assets: st0.assets };
   const baseName = slugify(st0.texts.title || st0.project.name);
@@ -452,7 +454,7 @@ export async function runExport() {
       const fmt = pickExportFormat();
       for (let i = 0; i < total; i++) {
         const r = ranges[i];
-        useEditor.getState().patchExportState({ label: `Merender ${partLabel(s.labelStyle, i + 1, total, true)}...`, batchIndex: i, batchTotal: total });
+        useEditor.getState().patchExportState({ label: `Merender ${partLabel(labelStyle, i + 1, total, true)}...`, batchIndex: i, batchTotal: total });
         // latar "tiap bagian beda" -> cover baru dari adegan yang berbeda untuk bagian ini
         if (frameTimes && firstVideo) {
           await ensureCoverAsset(firstVideo, true, frameTimes[i % frameTimes.length]);
@@ -471,7 +473,7 @@ export async function runExport() {
           const overall = (i + p) / total;
           useEditor.getState().patchExportState({ progress: overall });
         });
-        const label = partLabel(s.labelStyle, i + 1, total, true);
+        const label = partLabel(labelStyle, i + 1, total, true);
         await blobResult(blob, `${baseName}-${slugify(label)}${fmt.ext}`, i + 1, total, proj.duration);
       }
     }

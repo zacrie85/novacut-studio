@@ -298,6 +298,7 @@ class EditorEngine {
   private musicSessions = new Map<string, { src: AudioBufferSourceNode; gain: GainNode; session: number }>();
   private loadingMusic = new Set<string>();
   private musicBuffers = new Map<string, AudioBuffer>();
+  private previewSource: AudioBufferSourceNode | null = null;
   audioCtx: AudioContext | null = null;
   recDest: MediaStreamAudioDestinationNode | null = null;
   private session = 0;
@@ -423,7 +424,7 @@ class EditorEngine {
       g = this.audioCtx.createGain();
       g.connect(this.audioCtx.destination);
       if (this.recDest) g.connect(this.recDest);
-      this.gains.set(clipId, g);
+      this.gains.set(key, g);
     }
     return g;
   }

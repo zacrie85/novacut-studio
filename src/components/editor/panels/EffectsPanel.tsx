@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { CLIP_EFFECTS, TRANSITIONS, TRANSITION_CATS } from "@/lib/editor/constants";
 import { normalizeEnhance } from "@/lib/editor/playlistExport";
+import type { PlaylistEnhance } from "@/lib/editor/types";
 import { selectedClip, useEditor } from "@/lib/editor/store";
 import { ApplyTargetSwitch, useApplyTarget } from "../ApplyTargetSwitch";
 
@@ -45,7 +46,7 @@ export function EffectsPanel() {
   const trans = playlistMode ? (en.transitionType ? { type: en.transitionType, duration: en.transitionDuration } : null) : sel!.transition;
 
   /** tulis perubahan ke setelan playlist (target Video Playlist) */
-  const patchEn = (p: Parameters<ReturnType<typeof useEditor.getState>["setPlaylistExport"]>[0]) => {
+  const patchEn = (p: Partial<PlaylistEnhance>) => {
     const cur = normalizeEnhance(useEditor.getState().playlistExport.enhance);
     useEditor.getState().setPlaylistExport({ enhance: { ...cur, ...p } });
   };
