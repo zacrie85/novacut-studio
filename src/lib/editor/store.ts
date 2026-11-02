@@ -129,7 +129,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     labelStyle: "Part",
     showTitleScreen: true,
     showPartText: true,
-    titleDuringVideo: false,
+    titleDuringVideo: true,
     ratio: "16:9" as Ratio,
     fitMode: "fill" as const,
   },

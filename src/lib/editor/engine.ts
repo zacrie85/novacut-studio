@@ -643,6 +643,15 @@ class EditorEngine {
       const active = [...clips].filter((c) => c.trackId === track.id && c.start <= tt && tt < c.start + c.duration).sort((a, b) => a.start - b.start).pop();
       if (!active) continue;
 
+      // Track teks: SEMUA klip teks yang aktif digambar bertumpuk (judul di atas
+      // + part di bawah bisa tampil bersamaan; sebelumnya saling menimpa sehingga
+      // salah satunya tidak pernah terlihat di hasil render).
+      if (track.kind === "text") {
+        const actives = clips.filter((c) => c.trackId === track.id && c.start <= tt && tt < c.start + c.duration).sort((a, b) => a.start - b.start);
+        for (const tc of actives) this.drawMediaFrame(ctx, tc, tt, w, h);
+        continue;
+      }
+
       let donor: Clip | null = null;
       let transP = 0;
       if (active.transition && active.start > 0.001) {

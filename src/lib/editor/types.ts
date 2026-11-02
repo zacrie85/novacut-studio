@@ -110,6 +110,8 @@ export interface PlaylistExportConfig {
   ratio: Ratio;
   /** cara pas video ke frame 9:16: "fill" = isi penuh (sisi dilepas/potong); "fit" = video utuh (ada bar hitam) */
   fitMode: "fill" | "fit";
+  /** versi skema setelan (internal, untuk migrasi setelan lama) */
+  cfgVersion?: number;
 }
 
 export interface ExportSettings {

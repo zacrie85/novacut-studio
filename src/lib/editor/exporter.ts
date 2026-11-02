@@ -180,16 +180,25 @@ export interface SplitProject {
   duration: number;
 }
 
+export interface SplitProjectOptions {
+  /** teks judul/deskripsi/part tampil selama SELURUH video berjalan (bukan hanya beberapa detik di awal) */
+  persistText?: boolean;
+}
+
 /** Bangun proyek sementara untuk satu bagian hasil split (dengan cover + teks part) */
 export function buildSplitProject(
   st: ReturnType<typeof useEditor.getState>,
   partIndex: number,
   totalParts: number,
   rangeStart: number,
-  rangeEnd: number
+  rangeEnd: number,
+  opts?: SplitProjectOptions
 ): SplitProject {
   const s = st.exportSettings;
   const shift = s.includeCover && st.cover.coverAssetId ? Math.max(2, Math.min(5, s.coverDuration)) : 0;
+  const persist = !!opts?.persistText;
+  // durasi isi video bagian ini (tanpa cover)
+  const contentLen = Math.max(0.1, rangeEnd - rangeStart);
   let tracks = st.tracks.map((t) => ({ ...t }));
   let assets = [...st.assets];
 
@@ -210,7 +219,9 @@ export function buildSplitProject(
     clips.push(nc);
   }
 
-  const label = partLabel(s.labelStyle, partIndex, totalParts, true);
+  // gaya teks part mengikuti pilihan pengguna (Episode/Bagian/Eps/EP/Part);
+  // sebelumnya selalu "Part" karena membaca field yang salah
+  const label = partLabel(st.texts?.labelStyle || s.labelStyle || "Part", partIndex, totalParts, true);
 
   if (shift > 0 && st.cover.coverAssetId) {
     const vt = ensureVideoTrack(tracks);
@@ -259,10 +270,11 @@ export function buildSplitProject(
         trackId: tt.textTrack.id,
         kind: "text",
         start: contentStart + 0.4,
-        duration: 2.4,
+        // mode persisten: teks part tampil terus sampai video selesai
+        duration: persist ? Math.max(0.8, contentLen - 0.4) : 2.4,
         text: {
           content: label,
-          size: 0.12,
+          size: persist ? 0.075 : 0.12,
           color: "#ffffff",
           font: "impact",
           anim: "slam",
@@ -281,7 +293,8 @@ export function buildSplitProject(
         trackId: tt.textTrack.id,
         kind: "text",
         start: contentStart + 0.3,
-        duration: 3.2,
+        // mode persisten: judul + deskripsi tampil terus sampai video selesai
+        duration: persist ? Math.max(0.8, contentLen - 0.3) : 3.2,
         text: {
           content: st.texts.title,
           sub: st.texts.description || undefined,
@@ -574,7 +587,10 @@ export async function runBatchExport(assetIds: string[]) {
           cover: { ...useEditor.getState().cover, coverAssetId },
           texts: { ...useEditor.getState().texts, title: useEditor.getState().texts.title || title },
         };
-        const proj = buildSplitProject(tempState, i + 1, ranges.length, ranges[i].start, ranges[i].end);
+        const proj = buildSplitProject(tempState, i + 1, ranges.length, ranges[i].start, ranges[i].end, {
+          // teks judul/deskripsi/part tampil selama video berjalan sesuai setelan menu Playlist
+          persistText: pl.titleDuringVideo,
+        });
         useEditor.setState({ clips: proj.clips, tracks: proj.tracks, assets: proj.assets });
         engine.pause();
         engine.seek(0);

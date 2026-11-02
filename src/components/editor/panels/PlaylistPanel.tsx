@@ -136,11 +136,16 @@ export function PlaylistPanel() {
           <Switch checked={pl.showTitleScreen} onCheckedChange={(v) => setPl({ showTitleScreen: v })} className="data-[state=checked]:bg-fuchsia-500" />
         </div>
 
-        {/* judul selama video */}
+        {/* teks tampil selama video */}
         <div className="flex items-center justify-between gap-2">
-          <Label className="text-[10px] leading-snug text-gray-300">Judul tampil selama video</Label>
+          <Label className="text-[10px] leading-snug text-gray-300">Teks tampil selama video (judul, deskripsi &amp; part)</Label>
           <Switch checked={pl.titleDuringVideo} onCheckedChange={(v) => setPl({ titleDuringVideo: v })} className="data-[state=checked]:bg-fuchsia-500" />
         </div>
+        {pl.titleDuringVideo && (
+          <p className="text-[9px] leading-relaxed text-emerald-300/80">
+            ✓ Judul &amp; deskripsi tampil terus di bagian atas, teks part di bagian bawah — sampai video selesai.
+          </p>
+        )}
 
         {/* rasio video hasil */}
         <div className="space-y-1">
@@ -196,7 +201,7 @@ export function PlaylistPanel() {
         Export &amp; Split Semua ({videos.length})
       </Button>
       <p className="-mt-1 shrink-0 text-[10px] leading-relaxed text-gray-500">
-        <b className="text-gray-400">Tanpa perlu masuk timeline!</b> Setiap video langsung dirender berurutan: layar judul (judul + deskripsi + part) + teks part + dipecah sesuai pengaturan di tab Export, dengan rasio sesuai pilihan di menu atas (16:9 / 9:16).
+        <b className="text-gray-400">Tanpa perlu masuk timeline!</b> Setiap video langsung dirender berurutan: layar judul di awal + <b className="text-gray-400">judul, deskripsi &amp; part tampil selama video berjalan</b> (sesuai sakelar di menu atas), dipecah sesuai pengaturan di tab Export, dengan rasio 16:9 / 9:16 sesuai pilihan.
       </p>
 
       {running && (
