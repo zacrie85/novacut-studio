@@ -335,10 +335,18 @@ export async function runExport() {
   const baseName = slugify(st0.texts.title || st0.project.name);
 
   try {
-    // cover otomatis oleh AI bila belum ada
-    if (s.includeCover && !st0.cover.coverAssetId) {
+    const firstVideo = st0.clips.map((c) => snapshot.assets.find((a) => a.id === c.assetId)).find((a) => a?.type === "video");
+    // mode "tiap bagian beda": AI analisis sekali, tiap bagian hasil split pakai adegan berbeda
+    let frameTimes: number[] | null = null;
+    if (s.includeCover) {
+      frameTimes = await pickFrameTimes(firstVideo);
+      if (frameTimes) useEditor.getState().patchExportState({ label: "AI memilih adegan berbeda untuk tiap bagian..." });
+    }
+    // cover otomatis oleh AI bila belum ada / asset cover hilang
+    // (tidak perlu bila tiap bagian akan dibuatkan cover sendiri)
+    const coverAssetReady = !!st0.cover.coverAssetId && st0.assets.some((a) => a.id === st0.cover.coverAssetId);
+    if (s.includeCover && !coverAssetReady && !frameTimes) {
       useEditor.getState().patchExportState({ label: "AI membuat cover otomatis..." });
-      const firstVideo = st0.clips.map((c) => snapshot.assets.find((a) => a.id === c.assetId)).find((a) => a?.type === "video");
       await ensureCoverAsset(firstVideo);
     }
     if (s.mode === "single") {
@@ -353,7 +361,16 @@ export async function runExport() {
       for (let i = 0; i < total; i++) {
         const r = ranges[i];
         useEditor.getState().patchExportState({ label: `Merender ${partLabel(s.labelStyle, i + 1, total, true)}...`, batchIndex: i, batchTotal: total });
-        const proj = buildSplitProject(useEditor.getState(), i + 1, total, r.start, r.end);
+        // latar "tiap bagian beda" -> cover baru dari adegan yang berbeda untuk bagian ini
+        if (frameTimes && firstVideo) {
+          await ensureCoverAsset(firstVideo, true, frameTimes[i % frameTimes.length]);
+        }
+        // proyek bagian ini selalu dibangun dari timeline ASLI (snapshot),
+        // bukan dari hasil bagian sebelumnya; asset pakai yang TERKINI agar
+        // cover yang baru dibuat ikut terbawa (tidak tertimpa snapshot)
+        const stNow = useEditor.getState();
+        const srcState = { ...stNow, clips: snapshot.clips, tracks: snapshot.tracks, assets: stNow.assets };
+        const proj = buildSplitProject(srcState, i + 1, total, r.start, r.end);
         useEditor.setState({ clips: proj.clips, tracks: proj.tracks, assets: proj.assets });
         engine.pause();
         engine.seek(0);
@@ -367,44 +384,87 @@ export async function runExport() {
       }
     }
   } catch (e) {
-    useEditor.getState().patchExportState({ label: `Gagal: ${e instanceof Error ? e.message : "error"}` });
+    const msg = e instanceof Error ? e.message : "error";
+    console.error("Export gagal:", e);
+    useEditor.getState().patchExportState({ label: `Gagal: ${msg}` });
   } finally {
     useEditor.setState({ clips: snapshot.clips, tracks: snapshot.tracks, assets: snapshot.assets });
     engine.pause();
     engine.seek(0);
     const auto = isAutoSaveActive();
-    useEditor.getState().patchExportState({ running: false, label: auto ? "Selesai — semua file tersimpan di folder pilihanmu ✓" : "Selesai", progress: 1 });
+    const stEnd = useEditor.getState();
+    if (!stEnd.exportState.label.startsWith("Gagal")) {
+      stEnd.patchExportState({ running: false, label: auto ? "Selesai — semua file tersimpan di folder pilihanmu ✓" : "Selesai", progress: 1 });
+    } else {
+      stEnd.patchExportState({ running: false, progress: 1 });
+    }
   }
 }
 
-/** Pastikan cover asset tersedia; buat otomatis dengan AI bila perlu (force = buat ulang walau sudah ada) */
-async function ensureCoverAsset(sourceAsset: MediaAsset | undefined, force = false): Promise<string | undefined> {
+/** Pastikan cover asset tersedia; buat otomatis bila perlu (force = buat ulang walau sudah ada).
+ * frameTime opsional: pakai frame spesifik — untuk mode latar "tiap bagian beda".
+ * Latar "hitam" tidak butuh frame video sama sekali. */
+async function ensureCoverAsset(sourceAsset: MediaAsset | undefined, force = false, frameTime?: number): Promise<string | undefined> {
   const st = useEditor.getState();
   if (!force && st.cover.coverAssetId && st.assets.some((a) => a.id === st.cover.coverAssetId)) return st.cover.coverAssetId;
-  if (!sourceAsset || sourceAsset.type !== "video") return undefined;
-  const title = st.texts.title || sourceAsset.name.replace(/\.[^.]+$/, "");
+  if (st.cover.bgStyle !== "hitam" && (!sourceAsset || sourceAsset.type !== "video")) return undefined;
+  const title = st.texts.title || sourceAsset?.name.replace(/\.[^.]+$/, "") || "Video";
+  const { width, height } = st.project;
+
+  // Latar hitam polos — pilihan pengguna, tanpa adegan video
+  if (st.cover.bgStyle === "hitam") {
+    const tpl = aiRecommendTemplates(title, 40, 1)[0] ?? COVER_TEMPLATES[0];
+    const dataUrl = renderCoverToDataURL({ img: null, title: "", template: tpl, bgStyle: "hitam" }, width, height);
+    if (!dataUrl) return undefined;
+    const asset: MediaAsset = { id: uid("as"), name: `Cover - ${title}`, type: "image", url: dataUrl, duration: 0, width, height };
+    useEditor.getState().addAsset(asset);
+    useEditor.getState().setCover({ coverAssetId: asset.id, previewUrl: dataUrl });
+    return asset.id;
+  }
+
   let frameUrl: string | null = null;
   let brightness = 128;
   try {
-    const analysis = await analyzeVideoFrames(sourceAsset.url, sourceAsset.duration, 6);
-    if (analysis.best) {
-      brightness = analysis.best.brightness;
-      frameUrl = await grabFrame(sourceAsset.url, analysis.best.time, 1280);
+    if (typeof frameTime === "number") {
+      // adegan spesifik untuk bagian ini (mode "tiap bagian beda")
+      frameUrl = await grabFrame(sourceAsset!.url, Math.max(0, Math.min(frameTime, sourceAsset!.duration - 0.2)), 1280);
+    } else {
+      const analysis = await analyzeVideoFrames(sourceAsset!.url, sourceAsset!.duration, 6);
+      if (analysis.best) {
+        brightness = analysis.best.brightness;
+        frameUrl = await grabFrame(sourceAsset!.url, analysis.best.time, 1280);
+      }
     }
   } catch {
     /* fallback di bawah */
   }
-  if (!frameUrl) frameUrl = await grabFrame(sourceAsset.url, Math.min(sourceAsset.duration - 0.2, sourceAsset.duration * 0.3), 1280);
+  if (!frameUrl) frameUrl = await grabFrame(sourceAsset!.url, Math.min(sourceAsset!.duration - 0.2, sourceAsset!.duration * 0.3), 1280);
   if (!frameUrl) return undefined;
   const tpl = aiRecommendTemplates(title, brightness, 1)[0] ?? COVER_TEMPLATES[0];
   const img = await loadImage(frameUrl).catch(() => null);
   if (!img) return undefined;
-  const { width, height } = useEditor.getState().project;
-  const dataUrl = renderCoverToDataURL({ img, title, template: tpl }, width, height);
+  // cover dibuat TANPA tulisan (latar saja) — judul/deskripsi/part ditulis oleh
+  // clip teks di buildSplitProject agar judul panjang otomatis wrap & tak terpotong
+  const dataUrl = renderCoverToDataURL({ img, title: "", template: tpl }, width, height);
   const asset: MediaAsset = { id: uid("as"), name: `Cover - ${title}`, type: "image", url: dataUrl, duration: 0, width, height };
   useEditor.getState().addAsset(asset);
   useEditor.getState().setCover({ coverAssetId: asset.id, previewUrl: dataUrl, frameTime: 0 });
   return asset.id;
+}
+
+/** AI pilih beberapa adegan berbeda (waktu frame, diurut dari skor terbaik)
+ * untuk mode latar "tiap bagian beda". Null bila tidak relevan. */
+async function pickFrameTimes(sourceAsset: MediaAsset | undefined): Promise<number[] | null> {
+  const st = useEditor.getState();
+  if (!sourceAsset || sourceAsset.type !== "video") return null;
+  if (st.cover.mode !== "auto" || st.cover.bgStyle !== "adegan" || st.cover.bgScope !== "beda") return null;
+  try {
+    const analysis = await analyzeVideoFrames(sourceAsset.url, sourceAsset.duration, 8);
+    const times = analysis.scores.map((sc) => sc.time);
+    return times.length ? times : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Export & split batch untuk semua video di playlist */
@@ -414,55 +474,71 @@ export async function runBatchExport(assetIds: string[]) {
   useEditor.getState().patchExportState({ running: true, progress: 0, results: [], label: "Menyiapkan batch...", batchTotal: assetIds.length, batchIndex: 0 });
   const snapshot = { clips: st0.clips, tracks: st0.tracks, assets: st0.assets };
   const s = st0.exportSettings;
+  // setelan teks khusus Playlist Export (judul otomatis, deskripsi, teks part)
+  const pl = st0.playlistExport;
 
   try {
     for (let vi = 0; vi < assetIds.length; vi++) {
       const asset = snapshot.assets.find((a) => a.id === assetIds[vi]);
       if (!asset || asset.type !== "video") continue;
-      const title = asset.name.replace(/\.[^.]+$/, "");
-      // judul tiap video batch = nama video aslinya (dipakai untuk cover & teks part)
-      useEditor.getState().setTexts({ title });
+      const autoName = asset.name.replace(/\.[^.]+$/, "");
+      // judul tiap video batch: otomatis dari nama video, atau manual dari menu Playlist Export
+      const title = pl.autoTitle ? autoName : pl.titleCustom.trim() || autoName;
+      // terapkan setelan teks menu Playlist Export ke semua hasil video ini
+      useEditor.getState().setTexts({ title, description: pl.description, labelStyle: pl.labelStyle });
+      useEditor.getState().setExportSettings({ includeCover: pl.showTitleScreen, autoPartText: pl.showPartText, showTitleText: pl.titleDuringVideo });
       useEditor.getState().patchExportState({ label: `Playlist ${vi + 1}/${assetIds.length}: ${title}` });
 
       // proyek sementara: satu klip video penuh
       const vt = ensureVideoTrack([{ ...snapshot.tracks[0], id: "batch-video", kind: "video", name: "V", muted: false, hidden: false }]);
       const clip = baseClip({ trackId: "batch-video", kind: "video", assetId: asset.id, start: 0, duration: asset.duration });
-      const tempAssets = [...snapshot.assets];
+      const textTrack: Track = { id: "batch-text", kind: "text", name: "T", muted: false, hidden: false };
+      const tempTracks = [...vt.tracks, textTrack];
 
-      // cover otomatis per video (mode manual = cover buatan pengguna dipakai bersama;
-      // mode otomatis = AI ambil adegan terbaik dari masing-masing video)
+      // latar "tiap bagian beda": AI pilih beberapa adegan berbeda dari video ini
+      let frameTimes: number[] | null = null;
+      if (pl.showTitleScreen) {
+        frameTimes = await pickFrameTimes(asset);
+        if (frameTimes) useEditor.getState().patchExportState({ label: `AI memilih adegan berbeda: ${title}` });
+      }
+
+      // cover per video (mode manual = cover buatan pengguna dipakai bersama;
+      // mode otomatis = AI ambil adegan terbaik / latar hitam sesuai pilihan)
       let coverAssetId = st0.cover.coverAssetId;
-      if (s.includeCover) {
+      if (pl.showTitleScreen) {
         if (useEditor.getState().cover.mode === "manual") {
-          if (!coverAssetId || !tempAssets.some((a) => a.id === coverAssetId)) {
+          if (!coverAssetId || !useEditor.getState().assets.some((a) => a.id === coverAssetId)) {
             coverAssetId = await ensureCoverAsset(asset);
           }
-        } else {
+        } else if (!frameTimes) {
           useEditor.getState().setCover({ coverAssetId: undefined, previewUrl: undefined });
           coverAssetId = await ensureCoverAsset(asset, true);
         }
       }
-      const textTrack: Track = { id: "batch-text", kind: "text", name: "T", muted: false, hidden: false };
-      const tempTracks = [...vt.tracks, textTrack];
-      const tempState = {
-        ...useEditor.getState(),
-        clips: coverAssetId ? [clip, baseClip({ trackId: "batch-video", kind: "image", assetId: coverAssetId, start: 0, duration: 0, label: "cover-holder" })] : [clip],
-        tracks: tempTracks,
-        assets: tempAssets,
-        cover: { ...st0.cover, coverAssetId },
-        texts: { ...useEditor.getState().texts, title: useEditor.getState().texts.title || title },
-      };
-
       const D = asset.duration;
       const fmt = pickExportFormat();
       // mode "single" = export saja tanpa dipecah; "split" = ikuti pengaturan Export & Split
       const ranges = s.mode === "single" ? [{ start: 0, end: D }] : splitRanges(D, s.splitBy, s.parts, s.partSeconds);
       for (let i = 0; i < ranges.length; i++) {
         useEditor.getState().patchExportState({
-          label: `${title} — ${partLabel(s.labelStyle, i + 1, ranges.length, true)} (${vi + 1}/${assetIds.length})`,
+          label: `${title} — ${partLabel(useEditor.getState().texts.labelStyle, i + 1, ranges.length, true)} (${vi + 1}/${assetIds.length})`,
           batchIndex: vi,
           batchTotal: assetIds.length,
         });
+        // latar berbeda per bagian: render ulang cover dari adegan lain untuk bagian ini
+        if (frameTimes) {
+          await ensureCoverAsset(asset, true, frameTimes[i % frameTimes.length]);
+          coverAssetId = useEditor.getState().cover.coverAssetId;
+        }
+        const tempState = {
+          ...useEditor.getState(),
+          clips: coverAssetId ? [clip, baseClip({ trackId: "batch-video", kind: "image", assetId: coverAssetId, start: 0, duration: 0, label: "cover-holder" })] : [clip],
+          tracks: tempTracks,
+          // asset TERKINI (bukan snapshot) agar cover yang baru dibuat ikut tersedia saat render
+          assets: useEditor.getState().assets,
+          cover: { ...useEditor.getState().cover, coverAssetId },
+          texts: { ...useEditor.getState().texts, title: useEditor.getState().texts.title || title },
+        };
         const proj = buildSplitProject(tempState, i + 1, ranges.length, ranges[i].start, ranges[i].end);
         useEditor.setState({ clips: proj.clips, tracks: proj.tracks, assets: proj.assets });
         engine.pause();
@@ -472,17 +548,24 @@ export async function runBatchExport(assetIds: string[]) {
           const overall = (vi + (i + p) / ranges.length) / assetIds.length;
           useEditor.getState().patchExportState({ progress: overall });
         });
-        const label = partLabel(s.labelStyle, i + 1, ranges.length, true);
+        const label = partLabel(useEditor.getState().texts.labelStyle, i + 1, ranges.length, true);
         await blobResult(blob, `${slugify(title)}-${slugify(label)}${fmt.ext}`, i + 1, ranges.length, proj.duration);
       }
     }
   } catch (e) {
-    useEditor.getState().patchExportState({ label: `Gagal: ${e instanceof Error ? e.message : "error"}` });
+    const msg = e instanceof Error ? e.message : "error";
+    console.error("Batch export gagal:", e);
+    useEditor.getState().patchExportState({ label: `Gagal: ${msg}` });
   } finally {
     useEditor.setState({ clips: snapshot.clips, tracks: snapshot.tracks, assets: snapshot.assets });
     engine.pause();
     engine.seek(0);
     const auto = isAutoSaveActive();
-    useEditor.getState().patchExportState({ running: false, label: auto ? "Batch selesai — semua file tersimpan di folder pilihanmu ✓" : "Batch selesai", progress: 1 });
+    const stEnd = useEditor.getState();
+    if (!stEnd.exportState.label.startsWith("Gagal")) {
+      stEnd.patchExportState({ running: false, label: auto ? "Batch selesai — semua file tersimpan di folder pilihanmu ✓" : "Batch selesai", progress: 1 });
+    } else {
+      stEnd.patchExportState({ running: false, progress: 1 });
+    }
   }
 }

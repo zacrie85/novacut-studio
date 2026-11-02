@@ -20,6 +20,7 @@ import { InspectorPanel } from "./panels/InspectorPanel";
 import { ExportPanel } from "./panels/ExportPanel";
 import { totalDuration, useEditor } from "@/lib/editor/store";
 import { fmtTime } from "@/lib/editor/constants";
+import { loadPlaylistExportConfig } from "@/lib/editor/playlistExport";
 
 const RATIO_OPTIONS = [
   { id: "16:9" as const, label: "16:9", hint: "Lanskap · YouTube", icon: RectangleHorizontal },
@@ -44,6 +45,11 @@ export function EditorShell() {
   useEffect(() => {
     if (selectedClipId) setRightTab("klip");
   }, [selectedClipId]);
+
+  // pulihkan setelan menu Playlist Export yang tersimpan (judul/deskripsi/part)
+  useEffect(() => {
+    useEditor.getState().setPlaylistExport(loadPlaylistExportConfig());
+  }, []);
 
   const leftTabs = (
     <Tabs value={leftTab} onValueChange={setLeftTab} className="flex h-full min-h-0 flex-col">

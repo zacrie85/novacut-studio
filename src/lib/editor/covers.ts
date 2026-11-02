@@ -8,6 +8,8 @@ export interface CoverRenderInput {
   title: string;
   part?: string; // mis. "Part 2/5"
   template: CoverTemplate;
+  /** "hitam" = latar hitam polos (abaikan gambar); "adegan"/default = gambar adegan video */
+  bgStyle?: "adegan" | "hitam";
   w: number;
   h: number;
 }
@@ -20,6 +22,18 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number,
 
 function drawBackground(ctx: CanvasRenderingContext2D, input: CoverRenderInput, darken: number) {
   const { w, h } = input;
+  // latar hitam polos — pilihan pengguna, tanpa gambar adegan
+  if (input.bgStyle === "hitam") {
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, w, h);
+    // sedikit vignette halus agar tetap terlihat sinematik
+    const gv = ctx.createRadialGradient(w / 2, h / 2, h * 0.2, w / 2, h / 2, h * 0.85);
+    gv.addColorStop(0, "rgba(30,30,34,0.35)");
+    gv.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = gv;
+    ctx.fillRect(0, 0, w, h);
+    return;
+  }
   if (input.img) {
     const sw = (input.img as HTMLCanvasElement).width || (input.img as HTMLImageElement).naturalWidth || 2;
     const sh = (input.img as HTMLCanvasElement).height || (input.img as HTMLImageElement).naturalHeight || 2;

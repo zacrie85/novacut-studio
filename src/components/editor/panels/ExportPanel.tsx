@@ -18,6 +18,7 @@ export function ExportPanel() {
   const settings = useEditor((s) => s.exportSettings);
   const ex = useEditor((s) => s.exportState);
   const texts = useEditor((s) => s.texts);
+  const cover = useEditor((s) => s.cover);
   const clips = useEditor((s) => s.clips);
   const st = useEditor.getState();
   const D = totalDuration(clips);
@@ -143,6 +144,11 @@ export function ExportPanel() {
             </div>
             <div className="text-[9px] leading-relaxed text-gray-500">
               {useEditor.getState().cover.coverAssetId ? "✔ Cover siap (dibuat di tab Cover Studio)." : "Belum ada cover — AI akan membuatkan otomatis dari video."}
+            </div>
+            <div className="rounded border border-cyan-400/20 bg-cyan-400/5 px-2 py-1 text-[9px] leading-relaxed text-cyan-200/90">
+              Latar cover: <b>{cover.bgStyle === "hitam" ? "hitam polos" : "adegan dari video"}</b>
+              {cover.bgStyle === "adegan" ? (<> · {cover.bgScope === "sama" ? "semua bagian sama" : "tiap bagian beda"}</>) : null}
+              {cover.mode === "auto" ? " — ubah di tab Cover" : " · gambar pilihanmu"}
             </div>
           </>
         )}

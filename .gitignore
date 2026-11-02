@@ -11,23 +11,10 @@ dist/
 
 # logs
 dev.log
-server.log
-*.log
+
+# sandbox
+skills/
+upload/
 
 # local db
-db/
-
-# env & secrets
-.env*
-*.token
-
-# sandbox artifacts
-agent-ctx/
-tool-results/
-upload/
-download/
-scripts/__pycache__/
-.DS_Store
-
-# internal sandbox skills
-skills/
+db/*.db

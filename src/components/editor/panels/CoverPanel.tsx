@@ -60,8 +60,9 @@ export function CoverPanel() {
     if (!c) return;
     const ctx = c.getContext("2d");
     if (!ctx) return;
+    const bgStyle = cover.mode === "auto" ? cover.bgStyle : undefined;
     if (!bgUrl) {
-      renderCover(ctx, { img: null, title, part: partText, template, w: c.width, h: c.height });
+      renderCover(ctx, { img: null, title, part: partText, template, bgStyle, w: c.width, h: c.height });
       return;
     }
     const drawPlain = (img: HTMLImageElement) => {
@@ -76,12 +77,12 @@ export function CoverPanel() {
     void loadImage(bgUrl).then((img) => {
       if (!alive) return;
       if (cover.mode === "manual" && cover.manualPlain) drawPlain(img);
-      else renderCover(ctx, { img, title, part: partText, template, w: c.width, h: c.height });
+      else renderCover(ctx, { img, title, part: partText, template, bgStyle, w: c.width, h: c.height });
     });
     return () => {
       alive = false;
     };
-  }, [bgUrl, cover.mode, cover.manualPlain, template, title, partText]);
+  }, [bgUrl, cover.mode, cover.manualPlain, cover.bgStyle, template, title, partText]);
 
   useEffect(() => {
     if (!showAll) return;
@@ -93,12 +94,12 @@ export function CoverPanel() {
         const tpl = COVER_TEMPLATES[i];
         if (!ctx || !tpl) return;
         if (!bgUrl) {
-          renderCover(ctx, { img: null, title: title.slice(0, 22), part: "", template: tpl, w: c.width, h: c.height });
+          renderCover(ctx, { img: null, title: title.slice(0, 22), part: "", template: tpl, bgStyle: cover.mode === "auto" ? cover.bgStyle : undefined, w: c.width, h: c.height });
           c.dataset.done = "1";
           return;
         }
         void loadImage(bgUrl).then((img) => {
-          renderCover(ctx, { img, title: title.slice(0, 22), part: "", template: tpl, w: c.width, h: c.height });
+          renderCover(ctx, { img, title: title.slice(0, 22), part: "", template: tpl, bgStyle: cover.mode === "auto" ? cover.bgStyle : undefined, w: c.width, h: c.height });
         });
         c.dataset.done = "1";
       });
@@ -149,11 +150,13 @@ export function CoverPanel() {
   );
 
   const saveCover = async () => {
+    // latar hitam tidak butuh frame video
+    const isBlack = cover.mode === "auto" && cover.bgStyle === "hitam";
     if (cover.mode === "manual" && !manualAsset) {
       toast({ title: "Unggah gambar dulu", description: "Pilih file PNG/JPG untuk cover manual." });
       return;
     }
-    if (cover.mode === "auto" && !frameUrl) {
+    if (cover.mode === "auto" && !isBlack && !frameUrl) {
       toast({ title: "Pilih video dulu", description: "Impor video di tab Media." });
       return;
     }
@@ -161,7 +164,9 @@ export function CoverPanel() {
     const dataUrl =
       cover.mode === "manual" && cover.manualPlain
         ? await plainCoverDataURL(srcUrl, project.width, project.height)
-        : renderCoverToDataURL({ img: await loadImage(srcUrl), title, part: partText, template }, project.width, project.height);
+        : isBlack
+          ? renderCoverToDataURL({ img: null, title, part: partText, template, bgStyle: "hitam" }, project.width, project.height)
+          : renderCoverToDataURL({ img: await loadImage(srcUrl), title, part: partText, template, bgStyle: cover.mode === "auto" ? cover.bgStyle : undefined }, project.width, project.height);
     if (!dataUrl) {
       toast({ title: "Gagal membuat cover" });
       return;
@@ -232,6 +237,53 @@ export function CoverPanel() {
             </div>
           )}
         </div>
+
+        {/* latar cover: adegan video / hitam polos + penyebaran per bagian (mode otomatis) */}
+        {cover.mode === "auto" && (
+          <div className="space-y-2 rounded-lg border border-cyan-400/25 bg-cyan-400/[0.05] p-2.5">
+            <div className="text-[10px] font-semibold tracking-wider text-gray-400">LATAR COVER</div>
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                onClick={() => useEditor.getState().setCover({ bgStyle: "adegan" })}
+                className={`rounded-md border px-2 py-1.5 text-[10px] font-medium transition ${cover.bgStyle === "adegan" ? "border-cyan-300 bg-cyan-400/20 text-cyan-100" : "border-white/10 bg-white/[0.03] text-gray-300 hover:border-cyan-400/40"}`}
+              >
+                Adegan dari Video
+              </button>
+              <button
+                onClick={() => useEditor.getState().setCover({ bgStyle: "hitam" })}
+                className={`rounded-md border px-2 py-1.5 text-[10px] font-medium transition ${cover.bgStyle === "hitam" ? "border-cyan-300 bg-cyan-400/20 text-cyan-100" : "border-white/10 bg-white/[0.03] text-gray-300 hover:border-cyan-400/40"}`}
+              >
+                Hitam Polos
+              </button>
+            </div>
+            {cover.bgStyle === "adegan" ? (
+              <>
+                <div className="text-[9px] text-gray-500">Saat Export &amp; Split, latar untuk tiap bagian hasil:</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    onClick={() => useEditor.getState().setCover({ bgScope: "sama" })}
+                    className={`rounded-md border px-2 py-1.5 text-[10px] font-medium transition ${cover.bgScope === "sama" ? "border-cyan-300 bg-cyan-400/20 text-cyan-100" : "border-white/10 bg-white/[0.03] text-gray-300 hover:border-cyan-400/40"}`}
+                  >
+                    Semua Bagian Sama
+                  </button>
+                  <button
+                    onClick={() => useEditor.getState().setCover({ bgScope: "beda" })}
+                    className={`rounded-md border px-2 py-1.5 text-[10px] font-medium transition ${cover.bgScope === "beda" ? "border-cyan-300 bg-cyan-400/20 text-cyan-100" : "border-white/10 bg-white/[0.03] text-gray-300 hover:border-cyan-400/40"}`}
+                  >
+                    Tiap Bagian Beda
+                  </button>
+                </div>
+                <div className="text-[9px] leading-relaxed text-gray-600">
+                  {cover.bgScope === "sama"
+                    ? "Semua hasil split memakai 1 adegan yang sama."
+                    : "AI memilih adegan yang berbeda untuk setiap hasil split."}
+                </div>
+              </>
+            ) : (
+              <div className="text-[9px] leading-relaxed text-gray-600">Latar hitam polos dengan tulisan judul — seperti gaya trailer klasik.</div>
+            )}
+          </div>
+        )}
 
         {/* sumber & frame (mode otomatis) */}
         {cover.mode === "auto" && (

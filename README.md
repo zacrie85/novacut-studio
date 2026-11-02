@@ -20,6 +20,8 @@ NOVACUT Studio adalah editor video dengan tampilan futuristik (dark neon UI) yan
 | 📦 **Export & Split** | Export penuh atau potong otomatis: per N bagian **atau** per N detik |
 | 📝 **Teks otomatis 3 kolom** | Judul, deskripsi, dan label Part/Episode ditulis otomatis ke setiap bagian hasil split |
 | 🎨 **Cover Studio AI + 100 template** | Cover otomatis dari adegan terbaik video (AI pilih frame) **atau** unggah PNG/JPG sendiri |
+| 🌑 **Pilihan latar cover** | Latar cover bisa **hitam polos** atau **adegan dari video** — satu latar untuk semua bagian, atau **tiap bagian adegan berbeda** (AI) |
+| 📋 **Menu Export Playlist** | Judul otomatis dari nama video, deskripsi, teks Part/Episode — tombol **Terapkan & Simpan** dipakai lagi untuk video berikutnya |
 | 🎵 **20 backsound bebas hak cipta** | Disintesis prosedural (Web Audio) — 100% orisinal, bebas klaim, bekerja offline |
 | 🖼️ **Cover otomatis di awal video** | Durasi 2–5 detik, otomatis jadi frame pertama setiap hasil split |
 | ▶️ **Playlist** | Impor banyak video sekaligus, ekspor batch semua video di playlist |
@@ -32,8 +34,8 @@ Unduh di halaman [**Releases**](../../releases):
 
 | File | Untuk apa |
 | --- | --- |
-| `NOVACUT-Studio-Setup-1.0.3.exe` | **Installer** — instal seperti aplikasi biasa (pilih folder, ikon desktop, uninstall lewat Control Panel) |
-| `NOVACUT-Studio-Portable-1.0.3.exe` | **Portable** — satu file, jalankan langsung tanpa instalasi. Bisa disimpan di flashdisk |
+| `NOVACUT-Studio-Setup-1.0.4.exe` | **Installer** — instal seperti aplikasi biasa (pilih folder, ikon desktop, uninstall lewat Control Panel) |
+| `NOVACUT-Studio-Portable-1.0.4.exe` | **Portable** — satu file, jalankan langsung tanpa instalasi. Bisa disimpan di flashdisk |
 
 > Hasil export berformat **MP4 (H.264)** — otomatis tersimpan ke folder pilihanmu (fitur *Pilih Folder* di menu Export), dan juga bisa diunduh ulang dari daftar hasil di dalam aplikasi. Judul/teks panjang otomatis turun ke baris bawah agar seluruhnya terbaca.
 

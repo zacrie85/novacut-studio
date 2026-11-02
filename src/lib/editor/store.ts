@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { uid } from "./constants";
-import type { Clip, CoverConfig, ExportResult, ExportSettings, ExportState, MediaAsset, ProjectMeta, Ratio, TextData, TextsConfig, Track, TrackKind } from "./types";
+import type { Clip, CoverConfig, ExportResult, ExportSettings, ExportState, MediaAsset, PlaylistExportConfig, ProjectMeta, Ratio, TextData, TextsConfig, Track, TrackKind } from "./types";
 
 export function totalDuration(clips: Clip[]): number {
   return clips.reduce((m, c) => Math.max(m, c.start + c.duration), 0);
@@ -50,6 +50,8 @@ export interface EditorState {
   cover: CoverConfig;
   exportSettings: ExportSettings;
   exportState: ExportState;
+  /** setelan khusus export langsung dari Playlist */
+  playlistExport: PlaylistExportConfig;
 
   setProject: (p: Partial<ProjectMeta>) => void;
   setRatio: (r: Ratio) => void;
@@ -89,6 +91,7 @@ export interface EditorState {
   setTexts: (p: Partial<TextsConfig>) => void;
   setCover: (p: Partial<CoverConfig>) => void;
   setExportSettings: (p: Partial<ExportSettings>) => void;
+  setPlaylistExport: (p: Partial<PlaylistExportConfig>) => void;
   patchExportState: (p: Partial<ExportState>) => void;
   addExportResult: (r: ExportResult) => void;
   clearExportResults: () => void;
@@ -106,7 +109,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   zoom: 60,
   snap: true,
   texts: { title: "", description: "", labelStyle: "Part", parts: 5 },
-  cover: { frameTime: 0, templateId: "impact--cyber", duration: 3, useAI: true, mode: "auto" as const },
+  cover: { frameTime: 0, templateId: "impact--cyber", duration: 3, useAI: true, mode: "auto" as const, bgStyle: "adegan" as const, bgScope: "sama" as const },
   exportSettings: {
     mode: "split",
     splitBy: "duration",
@@ -119,6 +122,15 @@ export const useEditor = create<EditorState>((set, get) => ({
     exportDir: "",
   },
   exportState: emptyExport,
+  playlistExport: {
+    autoTitle: true,
+    titleCustom: "",
+    description: "",
+    labelStyle: "Part",
+    showTitleScreen: true,
+    showPartText: true,
+    titleDuringVideo: false,
+  },
 
   setProject: (p) => set((s) => ({ project: { ...s.project, ...p } })),
 
@@ -348,6 +360,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   setTexts: (p) => set((s) => ({ texts: { ...s.texts, ...p } })),
   setCover: (p) => set((s) => ({ cover: { ...s.cover, ...p } })),
   setExportSettings: (p) => set((s) => ({ exportSettings: { ...s.exportSettings, ...p } })),
+  setPlaylistExport: (p) => set((s) => ({ playlistExport: { ...s.playlistExport, ...p } })),
   patchExportState: (p) => set((s) => ({ exportState: { ...s.exportState, ...p } })),
   addExportResult: (r) => set((s) => ({ exportState: { ...s.exportState, results: [...s.exportState.results, r] } })),
   clearExportResults: () => set((s) => ({ exportState: { ...s.exportState, results: [] } })),

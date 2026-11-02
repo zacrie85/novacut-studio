@@ -82,8 +82,30 @@ export interface CoverConfig {
   mode: "auto" | "manual"; // auto = ambil adegan dari video; manual = gambar unggahan pengguna
   manualAssetId?: string; // asset gambar unggahan (PNG/JPG)
   manualPlain?: boolean; // mode manual: gambar apa adanya tanpa teks template
+  /** Latar cover mode otomatis: "adegan" = gambar dari adegan video; "hitam" = hitam polos */
+  bgStyle: "adegan" | "hitam";
+  /** Penyebaran latar saat export & split: "sama" = 1 latar untuk semua bagian; "beda" = tiap bagian adegan berbeda */
+  bgScope: "sama" | "beda";
   coverAssetId?: string; // hasil render cover (image asset)
   previewUrl?: string;
+}
+
+/** Setelan khusus export langsung dari Playlist (tanpa timeline) */
+export interface PlaylistExportConfig {
+  /** judul otomatis diambil dari nama video tiap batch */
+  autoTitle: boolean;
+  /** judul manual bila autoTitle dimatikan */
+  titleCustom: string;
+  /** deskripsi yang tampil di bawah judul pada layar cover */
+  description: string;
+  /** gaya teks part: Part / Episode / Bagian / Eps / EP */
+  labelStyle: TextsConfig["labelStyle"];
+  /** tampilkan layar judul (cover) di awal setiap hasil */
+  showTitleScreen: boolean;
+  /** tampilkan teks part otomatis di setiap hasil split */
+  showPartText: boolean;
+  /** tampilkan judul overlay selama video berjalan */
+  titleDuringVideo: boolean;
 }
 
 export interface ExportSettings {
