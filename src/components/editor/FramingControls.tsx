@@ -1,12 +1,15 @@
 "use client";
 
 // NOVACUT Studio - Kontrol kadro: zoom + tombol geser atas/bawah/kiri/kanan (mode 9:16)
+// Ada dua varian: klip timeline (FramingControls) & video playlist (PlaylistFramingControls).
 
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Crosshair, Maximize, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
+import { normalizeEnhance } from "@/lib/editor/playlistExport";
 import { useEditor } from "@/lib/editor/store";
 import { fillZoomFor } from "@/lib/editor/visual";
+import type { PlaylistEnhance } from "@/lib/editor/types";
 import { cn } from "@/lib/utils";
 
 const PAN_STEP = 0.15;
@@ -136,6 +139,113 @@ export function FramingControls({ target, className }: { target: "active" | "sel
       <div className="flex items-center gap-1.5 text-[9px] leading-relaxed text-gray-500">
         <Maximize className="h-3 w-3 shrink-0 text-cyan-500/70" />
         1.00x = ukuran asli (video utuh, ada bar hitam bila rasio beda). Zoom manual untuk memperbesar, seret video di preview untuk geser bebas. Tombol ⤢ tengah = pusatkan.
+      </div>
+    </div>
+  );
+}
+
+/** Varian kadro untuk target "Video Playlist" — mengatur zoom & geser yang
+ * diterapkan ke semua video hasil Export & Split langsung dari Playlist. */
+export function PlaylistFramingControls({ className }: { className?: string }) {
+  const plState = useEditor((s) => s.playlistExport);
+  const project = useEditor((s) => s.project);
+  const firstVideo = useEditor((s) => s.assets.find((a) => a.type === "video"));
+  const en = normalizeEnhance(plState.enhance);
+
+  const patch = (p: Partial<PlaylistEnhance>) => useEditor.getState().setPlaylistExport({ enhance: { ...en, ...p } });
+  const nudge = (dx: number, dy: number) => {
+    const px = Math.max(-1, Math.min(1, en.panX + dx));
+    const py = Math.max(-1, Math.min(1, en.panY + dy));
+    patch({ panX: Math.abs(px) < 0.02 ? 0 : px, panY: Math.abs(py) < 0.02 ? 0 : py });
+  };
+
+  const zoom = en.zoom;
+  const panX = en.panX;
+  const panY = en.panY;
+  const fillZoom = firstVideo?.width && firstVideo?.height ? fillZoomFor(firstVideo.width, firstVideo.height, project.width, project.height) : null;
+
+  return (
+    <div className={cn("space-y-2 rounded-lg border border-cyan-400/20 bg-black/40 px-3 py-2.5 shadow-[0_0_18px_rgba(34,211,238,0.08)]", className)}>
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-semibold tracking-widest text-cyan-300">ZOOM &amp; GESER {project.ratio}</span>
+        <div className="flex items-center gap-1">
+          <button
+            className="flex items-center gap-1 rounded border border-fuchsia-400/30 bg-fuchsia-400/10 px-1.5 py-0.5 text-[9px] text-fuchsia-200 transition hover:border-fuchsia-300 hover:bg-fuchsia-400/25 disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={() => fillZoom && patch({ zoom: fillZoom })}
+            disabled={!fillZoom}
+            title="Perbesar tepat sampai video mengisi penuh frame"
+          >
+            <Maximize className="h-3 w-3" /> ISI FRAME
+          </button>
+          <button
+            className="flex items-center gap-1 rounded border border-white/10 px-1.5 py-0.5 text-[9px] text-gray-400 transition hover:border-cyan-400/40 hover:text-cyan-200"
+            onClick={() => patch({ zoom: 1, panX: 0, panY: 0 })}
+            title="Kembali ke ukuran asli (1.00x) & posisi tengah"
+          >
+            <RotateCcw className="h-3 w-3" /> RESET
+          </button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex items-center gap-1.5">
+            <Button size="sm" variant="outline" className={padBtn} onClick={() => patch({ zoom: Math.max(1, zoom - 0.1) })} aria-label="Perkecil" disabled={zoom <= 1}>
+              <ZoomOut className="h-3.5 w-3.5" />
+            </Button>
+            <Slider value={[zoom]} min={1} max={5} step={0.05} onValueChange={([v]) => patch({ zoom: v })} className="flex-1" aria-label="Zoom" />
+            <Button size="sm" variant="outline" className={padBtn} onClick={() => patch({ zoom: Math.min(5, zoom + 0.1) })} aria-label="Perbesar" disabled={zoom >= 5}>
+              <ZoomIn className="h-3.5 w-3.5" />
+            </Button>
+            <span className="w-11 text-right font-mono text-[11px] text-cyan-300">{zoom.toFixed(2)}x</span>
+          </div>
+          <div className="flex items-center justify-between text-[9px] text-gray-500">
+            <span>
+              Posisi X <span className="font-mono text-gray-400">{panX >= 0 ? "+" : ""}{panX.toFixed(2)}</span> · Posisi Y{" "}
+              <span className="font-mono text-gray-400">{panY >= 0 ? "+" : ""}{panY.toFixed(2)}</span>
+            </span>
+            {firstVideo?.width ? <span className="hidden font-mono sm:inline">{firstVideo.width}×{firstVideo.height}</span> : null}
+          </div>
+          <div className={zoom <= 1.001 ? "text-[9px] text-cyan-300/90" : "text-[9px] text-gray-400"}>
+            {zoom <= 1.001
+              ? "Ukuran asli 1.00x — dipakai sebagai dasar untuk semua video playlist."
+              : `Zoom ${zoom.toFixed(2)}x — diterapkan ke semua video playlist.`}
+          </div>
+        </div>
+
+        <div className="grid shrink-0 grid-cols-3 gap-1">
+          <span />
+          <Button size="sm" variant="outline" className={padBtn} onClick={() => nudge(0, -PAN_STEP)} aria-label="Geser ke atas" title="Geser ke atas">
+            <ArrowUp className="h-4 w-4" />
+          </Button>
+          <span />
+          <Button size="sm" variant="outline" className={padBtn} onClick={() => nudge(-PAN_STEP, 0)} aria-label="Geser ke kiri" title="Geser ke kiri">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-white/5 text-gray-300 transition hover:border-cyan-300 hover:text-cyan-200 active:scale-95"
+            onClick={() => patch({ panX: 0, panY: 0 })}
+            aria-label="Tengah"
+            title="Pusatkan"
+          >
+            <Crosshair className="h-4 w-4" />
+          </Button>
+          <Button size="sm" variant="outline" className={padBtn} onClick={() => nudge(PAN_STEP, 0)} aria-label="Geser ke kanan" title="Geser ke kanan">
+            <ArrowRight className="h-4 w-4" />
+          </Button>
+          <span />
+          <Button size="sm" variant="outline" className={padBtn} onClick={() => nudge(0, PAN_STEP)} aria-label="Geser ke bawah" title="Geser ke bawah">
+            <ArrowDown className="h-4 w-4" />
+          </Button>
+          <span />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1.5 text-[9px] leading-relaxed text-gray-500">
+        <Maximize className="h-3 w-3 shrink-0 text-cyan-500/70" />
+        Berlaku ke semua video hasil Export &amp; Split dari Playlist. Mode rasio 9:16 &quot;Isi penuh&quot; tetap otomatis, zoom ini menambahkannya.
       </div>
     </div>
   );

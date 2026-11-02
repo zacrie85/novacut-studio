@@ -3,7 +3,7 @@
 // NOVACUT Studio - Panel Playlist (daftar video masuk + menu export khusus + batch export)
 
 import { useEffect, useState } from "react";
-import { ChevronDown, ListVideo, Plus, Rocket, Save, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { ChevronDown, ListVideo, Plus, Rocket, Save, SlidersHorizontal, Sparkles, Trash2, Type, Wand2, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -190,6 +190,37 @@ export function PlaylistPanel() {
         </p>
           </>
         )}
+      </div>
+
+      {/* ===== AKSES CEPAT MENU TEKS / EFEK / KLIP UNTUK PLAYLIST ===== */}
+      <div className="shrink-0 space-y-1.5 rounded-lg border border-cyan-400/20 bg-cyan-400/[0.04] p-2.5">
+        <div className="text-[10px] font-semibold tracking-wider text-cyan-300">ATUR UNTUK VIDEO PLAYLIST</div>
+        <p className="text-[9px] leading-relaxed text-gray-500">
+          Semua fitur menu <b className="text-gray-400">Teks</b> (ukuran huruf &amp; 16 font sinematik), <b className="text-gray-400">Efek</b> (transisi + 20 efek) dan <b className="text-gray-400">Klip</b> (kecepatan, ulang, volume, fade, zoom) bisa dipakai untuk video playlist — pilih target <b className="text-fuchsia-300">“Video Playlist”</b> di menu Efek &amp; Klip:
+        </p>
+        <div className="grid grid-cols-3 gap-1.5">
+          <Button
+            size="sm"
+            className="h-7 gap-1 bg-fuchsia-500/15 text-[10px] text-fuchsia-200 hover:bg-fuchsia-500/25"
+            onClick={() => window.dispatchEvent(new CustomEvent("novacut:jump", { detail: "teks" }))}
+          >
+            <Type className="h-3 w-3" /> Teks
+          </Button>
+          <Button
+            size="sm"
+            className="h-7 gap-1 bg-amber-500/15 text-[10px] text-amber-200 hover:bg-amber-500/25"
+            onClick={() => window.dispatchEvent(new CustomEvent("novacut:jump", { detail: "efek" }))}
+          >
+            <Zap className="h-3 w-3" /> Efek
+          </Button>
+          <Button
+            size="sm"
+            className="h-7 gap-1 bg-cyan-500/15 text-[10px] text-cyan-200 hover:bg-cyan-500/25"
+            onClick={() => window.dispatchEvent(new CustomEvent("novacut:jump", { detail: "klip" }))}
+          >
+            <SlidersHorizontal className="h-3 w-3" /> Klip
+          </Button>
+        </div>
       </div>
 
       <Button

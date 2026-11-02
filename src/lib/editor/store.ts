@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { uid } from "./constants";
+import { PLAYLIST_ENHANCE_DEFAULTS } from "./playlistExport";
 import type { Clip, CoverConfig, ExportResult, ExportSettings, ExportState, MediaAsset, PlaylistExportConfig, ProjectMeta, Ratio, TextData, TextsConfig, Track, TrackKind } from "./types";
 
 export function totalDuration(clips: Clip[]): number {
@@ -132,6 +133,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     titleDuringVideo: true,
     ratio: "16:9" as Ratio,
     fitMode: "fill" as const,
+    enhance: { ...PLAYLIST_ENHANCE_DEFAULTS },
   },
 
   setProject: (p) => set((s) => ({ project: { ...s.project, ...p } })),

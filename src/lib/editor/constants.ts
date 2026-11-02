@@ -94,12 +94,26 @@ export const TEXT_ANIMS = [
 ];
 
 // ===== FONT =====
+// 16 font: 5 dasar + 11 font sinematik/iklan. Semua TTF dibundel di public/fonts
+// (dimuat offline lewat lib/fonts.ts, jadi tetap tampil tanpa internet).
 export const TEXT_FONTS = [
   { id: "display", name: "Orbitron (Futuristik)", stack: '"Orbitron", "Arial Black", sans-serif' },
   { id: "impact", name: "Anton (Poster)", stack: '"Anton", Impact, sans-serif' },
   { id: "condensed", name: "Bebas Neue (Trailer)", stack: '"Bebas Neue", "Arial Narrow", sans-serif' },
   { id: "sans", name: "Rajdhani (Tech)", stack: '"Rajdhani", "Segoe UI", sans-serif' },
   { id: "serif", name: "Playfair (Elegan)", stack: '"Playfair Display", Georgia, serif' },
+  // --- 11 font sinematik & iklan ---
+  { id: "montserrat", name: "Montserrat (Iklan Modern)", stack: '"Montserrat", Arial, sans-serif' },
+  { id: "oswald", name: "Oswald (Film & Trailer)", stack: '"Oswald", "Arial Narrow", sans-serif' },
+  { id: "archivo", name: "Archivo Black (Poster Tebal)", stack: '"Archivo Black", "Arial Black", sans-serif' },
+  { id: "barlow", name: "Barlow Condensed (Subtitle Film)", stack: '"Barlow Condensed", "Arial Narrow", sans-serif' },
+  { id: "cinzel", name: "Cinzel (Epic Sinematik)", stack: '"Cinzel", Georgia, serif' },
+  { id: "teko", name: "Teko (Judul Sport)", stack: '"Teko", "Arial Narrow", sans-serif' },
+  { id: "russo", name: "Russo One (Aksi)", stack: '"Russo One", "Arial Black", sans-serif' },
+  { id: "michroma", name: "Michroma (Sci-Fi)", stack: '"Michroma", Arial, sans-serif' },
+  { id: "italiana", name: "Italiana (Elegan Klasik)", stack: '"Italiana", Georgia, serif' },
+  { id: "righteous", name: "Righteous (Poster Retro)", stack: '"Righteous", Arial, sans-serif' },
+  { id: "alfaslab", name: "Alfa Slab One (Slab Tebal)", stack: '"Alfa Slab One", Georgia, serif' },
 ];
 
 export function fontStack(id: string): string {

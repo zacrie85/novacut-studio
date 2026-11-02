@@ -1,24 +1,112 @@
 "use client";
 
-// NOVACUT Studio - Inspector klip terpilih: timing, speed, loop, volume, teks
+// NOVACUT Studio - Inspector klip terpilih: timing, speed, loop, volume, teks.
+// Kini juga bisa menarget "Video Playlist": setelan kecepatan/ulang/volume/fade/
+// zoom diterapkan ke semua video hasil Export & Split langsung dari Playlist.
 
-import { Copy, Trash2 } from "lucide-react";
+import { Copy, ListVideo, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SPEED_PRESETS, TEXT_ANIMS, TEXT_FONTS, fmtTime } from "@/lib/editor/constants";
+import { normalizeEnhance } from "@/lib/editor/playlistExport";
 import { selectedClip, useEditor } from "@/lib/editor/store";
-import { FramingControls } from "../FramingControls";
+import type { PlaylistEnhance } from "@/lib/editor/types";
+import { FramingControls, PlaylistFramingControls } from "../FramingControls";
+import { ApplyTargetSwitch, useApplyTarget } from "../ApplyTargetSwitch";
 
 export function InspectorPanel() {
   const sel = useEditor(selectedClip);
   const st = useEditor.getState();
+  const [target, setTarget] = useApplyTarget();
+  const playlistMode = target === "playlist";
+  const en = normalizeEnhance(useEditor((s) => s.playlistExport).enhance);
 
+  /** tulis perubahan ke setelan playlist (target Video Playlist) */
+  const patchEn = (p: Partial<PlaylistEnhance>) => {
+    const cur = normalizeEnhance(useEditor.getState().playlistExport.enhance);
+    useEditor.getState().setPlaylistExport({ enhance: { ...cur, ...p } });
+  };
+
+  // ===== MODE VIDEO PLAYLIST =====
+  if (playlistMode) {
+    return (
+      <div className="nova-scroll h-full space-y-4 overflow-y-auto p-3">
+        <div className="flex items-center gap-2 rounded-lg border border-fuchsia-400/25 bg-fuchsia-400/[0.06] px-2.5 py-2 text-[10px] text-fuchsia-200">
+          <ListVideo className="h-4 w-4 shrink-0" />
+          <span>
+            Mode <b>Video Playlist</b> — setelan di bawah otomatis dipakai saat <b>Export &amp; Split dari Playlist</b> (tanpa timeline).
+          </span>
+        </div>
+        <ApplyTargetSwitch value={target} onChange={setTarget} />
+
+        {/* Zoom & geser */}
+        <PlaylistFramingControls />
+
+        {/* Kecepatan */}
+        <section className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-2.5">
+          <div className="flex items-center justify-between text-[10px]">
+            <span className="font-semibold tracking-wider text-gray-400">KECEPATAN (PERCEPAT / PERLAMBAT)</span>
+            <span className="font-mono text-amber-300">{en.speed}x</span>
+          </div>
+          <Slider value={[en.speed]} min={0.25} max={4} step={0.25} onValueChange={([v]) => patchEn({ speed: v })} />
+          <div className="flex flex-wrap gap-1">
+            {SPEED_PRESETS.map((sp) => (
+              <button
+                key={sp}
+                onClick={() => patchEn({ speed: sp })}
+                className={`rounded border px-1.5 py-0.5 font-mono text-[9px] transition ${en.speed === sp ? "border-amber-300 bg-amber-400/20 text-amber-200" : "border-white/10 bg-white/5 text-gray-400 hover:border-amber-400/40"}`}
+              >
+                {sp}x
+              </button>
+            ))}
+          </div>
+          <div className="text-[9px] text-gray-500">0.5x = slow motion · 2x = cepat · 4x = time-lapse. Pembagian part otomatis menyesuaikan durasi baru.</div>
+        </section>
+
+        {/* Ulang */}
+        <section className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-2.5">
+          <div className="flex items-center justify-between text-[10px]">
+            <span className="font-semibold tracking-wider text-gray-400">MENGULANG POTONGAN (LOOP)</span>
+            <span className="font-mono text-fuchsia-300">{en.loopCount}x</span>
+          </div>
+          <Slider value={[en.loopCount]} min={1} max={10} step={1} onValueChange={([v]) => patchEn({ loopCount: v })} />
+          <div className="text-[9px] text-gray-500">Potongan video diputar ulang {en.loopCount === 1 ? "sekali (normal)" : `${en.loopCount} kali beruntun`} di setiap hasil export.</div>
+        </section>
+
+        {/* Audio */}
+        <section className="space-y-2.5 rounded-lg border border-white/10 bg-white/[0.03] p-2.5">
+          <div className="text-[10px] font-semibold tracking-wider text-gray-400">AUDIO VIDEO PLAYLIST</div>
+          <div className="flex items-center gap-2 text-[10px] text-gray-400">
+            <span className="w-12">Volume</span>
+            <Slider value={[Math.round(en.volume * 100)]} min={0} max={200} step={5} onValueChange={([v]) => patchEn({ volume: v / 100 })} className="flex-1" />
+            <span className="w-9 text-right font-mono text-emerald-300">{Math.round(en.volume * 100)}%</span>
+          </div>
+          <div className="flex items-center gap-2 text-[10px] text-gray-400">
+            <span className="w-12">Fade in</span>
+            <Slider value={[en.fadeIn]} min={0} max={5} step={0.1} onValueChange={([v]) => patchEn({ fadeIn: v })} className="flex-1" />
+            <span className="w-9 text-right font-mono text-emerald-300">{en.fadeIn.toFixed(1)}s</span>
+          </div>
+          <div className="flex items-center gap-2 text-[10px] text-gray-400">
+            <span className="w-12">Fade out</span>
+            <Slider value={[en.fadeOut]} min={0} max={5} step={0.1} onValueChange={([v]) => patchEn({ fadeOut: v })} className="flex-1" />
+            <span className="w-9 text-right font-mono text-emerald-300">{en.fadeOut.toFixed(1)}s</span>
+          </div>
+          <div className="text-[9px] leading-relaxed text-gray-500">Volume &amp; fade mengatur suara asli video. Untuk musik latar, gunakan tab Musik lalu tambahkan ke timeline sebelum export dari playlist.</div>
+        </section>
+      </div>
+    );
+  }
+
+  // ===== MODE KLIP TIMELINE (perilaku lama) =====
   if (!sel) {
     return (
-      <div className="flex h-full items-center justify-center p-6 text-center text-xs text-gray-500">
-        Pilih klip di timeline untuk mengatur detail: kecepatan, ulang, volume, teks.
+      <div className="nova-scroll h-full space-y-3 overflow-y-auto p-3">
+        <ApplyTargetSwitch value={target} onChange={setTarget} />
+        <div className="flex h-40 items-center justify-center p-6 text-center text-xs text-gray-500">
+          Pilih klip di timeline untuk mengatur detail: kecepatan, ulang, volume, teks — atau pilih target <b className="text-fuchsia-300">Video Playlist</b> di atas.
+        </div>
       </div>
     );
   }
@@ -28,6 +116,8 @@ export function InspectorPanel() {
 
   return (
     <div className="nova-scroll h-full space-y-4 overflow-y-auto p-3">
+      <ApplyTargetSwitch value={target} onChange={setTarget} />
+
       <div>
         <div className="text-[10px] font-semibold tracking-widest text-cyan-400">KLIP TERPILIH</div>
         <div className="truncate text-sm font-semibold text-gray-100">{sel.kind === "text" ? sel.text?.content : asset?.name ?? "Klip"}</div>

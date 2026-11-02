@@ -1,6 +1,8 @@
-@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Anton&family=Bebas+Neue&family=Rajdhani:wght@400;500;600;700&family=Playfair+Display:wght@700;900&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
+/* Font sinematik (Orbitron, Anton, Bebas Neue, dst.) dibundel offline di
+   public/fonts dan didaftarkan lewat FontFace API (src/lib/editor/fonts.ts)
+   — bukan @import Google Fonts, agar tetap tampil tanpa internet. */
 
 @custom-variant dark (&:is(.dark *));
 

@@ -21,6 +21,8 @@ import { ExportPanel } from "./panels/ExportPanel";
 import { totalDuration, useEditor } from "@/lib/editor/store";
 import { fmtTime } from "@/lib/editor/constants";
 import { loadPlaylistExportConfig } from "@/lib/editor/playlistExport";
+import { applyTextStyleToStore } from "@/lib/editor/textStyle";
+import { ensureAppFonts } from "@/lib/editor/fonts";
 
 const RATIO_OPTIONS = [
   { id: "16:9" as const, label: "16:9", hint: "Lanskap · YouTube", icon: RectangleHorizontal },
@@ -46,9 +48,27 @@ export function EditorShell() {
     if (selectedClipId) setRightTab("klip");
   }, [selectedClipId]);
 
-  // pulihkan setelan menu Playlist Export yang tersimpan (judul/deskripsi/part)
+  // pulihkan setelan tersimpan saat aplikasi dibuka: menu Playlist Export + gaya
+  // tulisan (ukuran huruf & font) + muat font sinematik bundel (offline)
   useEffect(() => {
     useEditor.getState().setPlaylistExport(loadPlaylistExportConfig());
+    applyTextStyleToStore(useEditor.getState().setTexts);
+    void ensureAppFonts().then(() => {
+      // render ulang preview setelah font siap agar teks memakai font asli
+      window.dispatchEvent(new CustomEvent("novacut:fonts-ready"));
+    });
+  }, []);
+
+  // lompat ke panel tertentu (dipakai tombol pintas di menu Playlist:
+  // "Atur Teks / Efek / Klip untuk Video Playlist")
+  useEffect(() => {
+    const onJump = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail;
+      if (["klip", "efek", "teks", "export"].includes(detail)) setRightTab(detail);
+      else if (["media", "playlist", "musik", "cover"].includes(detail)) setLeftTab(detail);
+    };
+    window.addEventListener("novacut:jump", onJump);
+    return () => window.removeEventListener("novacut:jump", onJump);
   }, []);
 
   const leftTabs = (

@@ -411,10 +411,11 @@ class EditorEngine {
     const computeLayout = (sz: number) => {
       ctx.font = `900 ${sz}px ${fontStack(td.font)}`;
       const ls = wrapCanvasText(ctx, content, maxW);
-      const subSz = sz * 0.42;
+      // ukuran & font baris kedua (deskripsi) bisa diatur sendiri (menu Teks)
+      const subSz = td.subSize && td.subSize > 0 ? td.subSize * h : sz * 0.42;
       let subs: string[] = [];
       if (td.sub) {
-        ctx.font = `600 ${subSz}px ${fontStack("sans")}`;
+        ctx.font = `600 ${subSz}px ${fontStack(td.subFont || "sans")}`;
         subs = wrapCanvasText(ctx, td.sub, maxW);
       }
       const lh = sz * 1.12;
@@ -593,7 +594,7 @@ class EditorEngine {
     }
 
     if (subs.length) {
-      ctx.font = `600 ${subSize}px ${fontStack("sans")}`;
+      ctx.font = `600 ${subSize}px ${fontStack(td.subFont || "sans")}`;
       const subLineH = subSize * 1.3;
       const sy0 = baseY + lines.length * lineH + subSize * 0.4;
       subs.forEach((sl, i) => {
@@ -811,6 +812,11 @@ class EditorEngine {
 }
 
 export const engine = new EditorEngine();
+
+if (typeof window !== "undefined") {
+  // gambar ulang saat font bundel selesai dimuat (preview memakai font asli)
+  window.addEventListener("novacut:fonts-ready", () => engine.requestRender());
+}
 
 export function projectDuration(st: EditorState): number {
   return totalDuration(st.clips);

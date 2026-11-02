@@ -4,12 +4,20 @@
 import { grabFrame, aiRecommendTemplates, analyzeVideoFrames, loadImage, renderCoverToDataURL } from "./covers";
 import { COVER_TEMPLATES, partLabel, slugify, uid } from "./constants";
 import { engine } from "./engine";
+import { ensureAppFonts } from "./fonts";
 import { isDesktopFS, saveBlobToDir } from "./fsBridge";
+import { normalizeEnhance } from "./playlistExport";
 import { dimsFor, useEditor, totalDuration } from "./store";
 import type { Clip, MediaAsset, Track } from "./types";
 import { fillZoomFor } from "./visual";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** batasi ukuran huruf relatif (0.012–0.2) dengan bawaan aman */
+function clampPct(v: number | undefined, def: number): number {
+  const n = typeof v === "number" && isFinite(v) ? v : def;
+  return Math.max(0.012, Math.min(0.2, n));
+}
 
 // MP4 diprioritaskan (H.264 + AAC untuk kompatibilitas terbaik,
 // lalu H.264 + Opus, lalu default bawaan browser)
@@ -55,8 +63,11 @@ export function pickExportFormat(): ExportFormat {
 export async function exportRange(start: number, end: number, onProgress?: (p: number) => void): Promise<Blob> {
   const canvas = engine.canvas;
   if (!canvas) throw new Error("Canvas belum siap");
+  await ensureAppFonts(); // pastikan font sinematik bundel siap sebelum merekam
   engine.ensureAudio();
-  await engine.audioCtx?.resume().catch(() => {});
+  // Tunggu AudioContext siap MAKSIMAL 0.9 detik — di perangkat tanpa output audio
+  // resume() bisa menggantung selamanya sehingga export macet di awal.
+  await Promise.race([engine.audioCtx?.resume().catch(() => {}), sleep(900)]);
   await sleep(150);
 
   const fmt = pickExportFormat();
@@ -199,6 +210,11 @@ export function buildSplitProject(
   const persist = !!opts?.persistText;
   // durasi isi video bagian ini (tanpa cover)
   const contentLen = Math.max(0.1, rangeEnd - rangeStart);
+  // gaya tulisan otomatis dari menu Teks (ukuran huruf & font, bisa diatur pengguna)
+  const titleSize = clampPct(st.texts.titleSize, 0.042);
+  const descSize = clampPct(st.texts.descSize, 0.026);
+  const partSize = clampPct(st.texts.partSize, 0.052);
+  const fontAuto = st.texts.fontAuto || "condensed";
   let tracks = st.tracks.map((t) => ({ ...t }));
   let assets = [...st.assets];
 
@@ -213,8 +229,11 @@ export function buildSplitProject(
       start: clip.start - rangeStart + shift,
       transition: clip.start >= rangeStart - 0.05 ? clip.transition : undefined,
     });
-    if (clip.loopCount <= 1 && rangeStart > clip.start + 0.05 && clip.kind === "video") {
-      nc.inPoint = clip.inPoint + (rangeStart - clip.start) * clip.speed;
+    if (clip.kind === "video" && rangeStart > clip.start + 0.05) {
+      // posisi sumber saat rentang dimulai; modulo menangani klip loop (>1)
+      // agar bagian ke-2 dst. lanjut dari posisi yang benar, bukan mengulang dari awal
+      const srcSeg = (clip.duration * clip.speed) / Math.max(1, clip.loopCount);
+      nc.inPoint = clip.inPoint + (((rangeStart - clip.start) * clip.speed) % Math.max(0.04, srcSeg));
     }
     clips.push(nc);
   }
@@ -249,9 +268,11 @@ export function buildSplitProject(
         text: {
           content: st.texts.title || st.project.name,
           sub: `${st.texts.description ? st.texts.description + "  ·  " : ""}${label}`,
-          size: 0.085,
+          size: clampPct(titleSize * 1.5, 0.063),
+          subSize: clampPct(descSize * 1.15, 0.03),
           color: "#ffffff",
-          font: "condensed",
+          font: fontAuto,
+          subFont: fontAuto,
           anim: "slam",
           pos: "center",
           bg: "gradient",
@@ -274,9 +295,10 @@ export function buildSplitProject(
         duration: persist ? Math.max(0.8, contentLen - 0.4) : 2.4,
         text: {
           content: label,
-          size: persist ? 0.075 : 0.12,
+          // ukuran part mengikuti kolom "Ukuran Part" di menu Teks (default 5.2% layar)
+          size: partSize,
           color: "#ffffff",
-          font: "impact",
+          font: fontAuto,
           anim: "slam",
           pos: "bottom",
           bg: "bar",
@@ -298,9 +320,12 @@ export function buildSplitProject(
         text: {
           content: st.texts.title,
           sub: st.texts.description || undefined,
-          size: 0.07,
+          // ukuran judul & deskripsi mengikuti kolom di menu Teks (default 4.2% / 2.6%)
+          size: titleSize,
+          subSize: descSize,
           color: "#ffffff",
-          font: "display",
+          font: fontAuto,
+          subFont: fontAuto,
           anim: "rise",
           pos: "top",
           bg: "none",
@@ -539,7 +564,29 @@ export async function runBatchExport(assetIds: string[]) {
       // rasio 9:16 mode "fill": video lanskap otomatis diperbesar mengisi penuh layar (tengah dipotong)
       // mode "fit": video utuh tanpa potong (bar hitam di sisi kosong)
       const fillZoom = pl.ratio === "9:16" && pl.fitMode === "fill" ? fillZoomFor(asset.width, asset.height, targetDims.width, targetDims.height) ?? 1 : 1;
-      const clip = baseClip({ trackId: "batch-video", kind: "video", assetId: asset.id, start: 0, duration: asset.duration, zoom: fillZoom });
+      // setelan menu EFEK & KLIP (target "Video Playlist") diterapkan ke video hasil export
+      const en = normalizeEnhance(pl.enhance);
+      const enOn = !!en.enabled;
+      const speed = enOn ? en.speed : 1;
+      const loop = enOn ? en.loopCount : 1;
+      const clip = baseClip({
+        trackId: "batch-video",
+        kind: "video",
+        assetId: asset.id,
+        start: 0,
+        // durasi timeline menyesuaikan kecepatan & jumlah ulang (pembagian part ikut menyesuaikan)
+        duration: (asset.duration / speed) * loop,
+        speed,
+        loopCount: loop,
+        volume: enOn ? en.volume : 1,
+        fadeIn: enOn ? en.fadeIn : 0,
+        fadeOut: enOn ? en.fadeOut : 0,
+        effects: enOn ? [...en.effects] : [],
+        zoom: Math.min(8, (enOn ? en.zoom : 1) * fillZoom),
+        panX: enOn ? en.panX : 0,
+        panY: enOn ? en.panY : 0,
+      });
+      if (enOn && en.transitionType) clip.transition = { type: en.transitionType, duration: en.transitionDuration };
       const textTrack: Track = { id: "batch-text", kind: "text", name: "T", muted: false, hidden: false };
       const tempTracks = [...vt.tracks, textTrack];
 
@@ -563,7 +610,7 @@ export async function runBatchExport(assetIds: string[]) {
           coverAssetId = await ensureCoverAsset(asset, true);
         }
       }
-      const D = asset.duration;
+      const D = clip.duration;
       const fmt = pickExportFormat();
       // mode "single" = export saja tanpa dipecah; "split" = ikuti pengaturan Export & Split
       const ranges = s.mode === "single" ? [{ start: 0, end: D }] : splitRanges(D, s.splitBy, s.parts, s.partSeconds);

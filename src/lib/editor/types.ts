@@ -31,8 +31,12 @@ export interface TextData {
   content: string;
   sub?: string;
   size: number; // relatif tinggi canvas (mis. 0.08 = 8% tinggi)
+  /** ukuran baris kedua (sub/deskripsi); default = size * 0.42 */
+  subSize?: number;
   color: string;
   font: string; // font id
+  /** font id untuk baris kedua; default "sans" */
+  subFont?: string;
   anim: string; // text anim id
   pos: TextPos;
   bg: TextBg;
@@ -71,6 +75,14 @@ export interface TextsConfig {
   description: string;
   labelStyle: "Part" | "Episode" | "Bagian" | "Eps" | "EP";
   parts: number;
+  /** ukuran huruf JUDUL (relatif tinggi layar, 0.02–0.2) — dipakai export playlist & tombol tambah teks */
+  titleSize?: number;
+  /** ukuran huruf DESKRIPSI (relatif tinggi layar) */
+  descSize?: number;
+  /** ukuran huruf PART/EPISODE/BAGIAN (relatif tinggi layar) */
+  partSize?: number;
+  /** id font untuk tulisan otomatis judul/deskripsi/part */
+  fontAuto?: string;
 }
 
 export interface CoverConfig {
@@ -88,6 +100,34 @@ export interface CoverConfig {
   bgScope: "sama" | "beda";
   coverAssetId?: string; // hasil render cover (image asset)
   previewUrl?: string;
+}
+
+/** Setelan efek & klip yang diterapkan ke setiap video hasil export langsung dari Playlist
+ * (diatur lewat menu Efek & menu Klip dengan target "Video Playlist") */
+export interface PlaylistEnhance {
+  /** master: terapkan setelan ini ke hasil export playlist */
+  enabled: boolean;
+  /** kecepatan 0.25–4 (1 = normal) */
+  speed: number;
+  /** ulang potongan 1–10 (1 = sekali) */
+  loopCount: number;
+  /** volume audio video 0–2 (1 = normal) */
+  volume: number;
+  /** fade in audio+visual (detik) */
+  fadeIn: number;
+  /** fade out (detik) */
+  fadeOut: number;
+  /** id efek visual/color grading (lihat CLIP_EFFECTS) */
+  effects: string[];
+  /** transisi masuk (id) bila ada cover di depan */
+  transitionType: string | null;
+  transitionDuration: number;
+  /** zoom manual 1–5 (1 = sesuai mode rasio) */
+  zoom: number;
+  /** geser horizontal -1..1 */
+  panX: number;
+  /** geser vertikal -1..1 */
+  panY: number;
 }
 
 /** Setelan khusus export langsung dari Playlist (tanpa timeline) */
@@ -110,6 +150,8 @@ export interface PlaylistExportConfig {
   ratio: Ratio;
   /** cara pas video ke frame 9:16: "fill" = isi penuh (sisi dilepas/potong); "fit" = video utuh (ada bar hitam) */
   fitMode: "fill" | "fit";
+  /** efek & klip untuk semua hasil export playlist (dari menu Efek / Klip target "Video Playlist") */
+  enhance?: PlaylistEnhance;
   /** versi skema setelan (internal, untuk migrasi setelan lama) */
   cfgVersion?: number;
 }
