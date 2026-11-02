@@ -1,25 +1,30 @@
 ; NOVACUT Studio - Windows Installer (NSIS)
 ; Kompilasi: NSISDIR=<nsis-data> makensis setup.nsi
+;
+; INSTALASI PER-USER — TANPA IZIN ADMINISTRATOR:
+; - RequestExecutionLevel user  : installer tidak meminta password admin (tanpa UAC)
+; - Dipasang ke $LOCALAPPDATA\Programs (folder milik user, seperti Chrome/VS Code)
+; - Pintasan & registry ditulis ke HKCU (hanya milik user ini)
 
 Unicode true
 !define APPNAME "NOVACUT Studio"
 !define COMPANY "NOVACUT"
-!define VERSION "1.0.5"
+!define VERSION "1.0.6"
 !define EXENAME "NOVACUT Studio.exe"
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\NOVACUTStudio"
 
-VIProductVersion "1.0.4.0"
+VIProductVersion "1.0.6.0"
 VIAddVersionKey /LANG=1033 "ProductName" "NOVACUT Studio"
 VIAddVersionKey /LANG=1033 "FileDescription" "NOVACUT Studio Installer"
-VIAddVersionKey /LANG=1033 "FileVersion" "1.0.4.0"
-VIAddVersionKey /LANG=1033 "ProductVersion" "1.0.4.0"
+VIAddVersionKey /LANG=1033 "FileVersion" "1.0.6.0"
+VIAddVersionKey /LANG=1033 "ProductVersion" "1.0.6.0"
 VIAddVersionKey /LANG=1033 "LegalCopyright" "Copyright 2026 NOVACUT Studio"
 
 Name "${APPNAME} ${VERSION}"
 OutFile "/home/z/my-project/release/NOVACUT-Studio-Setup-${VERSION}.exe"
-InstallDir "$PROGRAMFILES64\${APPNAME}"
-InstallDirRegKey HKLM "${UNINSTKEY}" "InstallLocation"
-RequestExecutionLevel admin
+InstallDir "$LOCALAPPDATA\Programs\${APPNAME}"
+InstallDirRegKey HKCU "${UNINSTKEY}" "InstallLocation"
+RequestExecutionLevel user
 SetCompressor /SOLID lzma
 
 !include "MUI2.nsh"
@@ -42,11 +47,11 @@ SetCompressor /SOLID lzma
 !insertmacro MUI_LANGUAGE "English"
 
 Section "Install"
-  SetShellVarContext all
+  SetShellVarContext current
   SetOutPath "$INSTDIR"
   File /r "/home/z/my-project/release/win-unpacked\*.*"
 
-  ; shortcut desktop + start menu
+  ; shortcut desktop + start menu (milik user ini saja, tanpa admin)
   CreateDirectory "$SMPROGRAMS\${APPNAME}"
   CreateShortCut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\${EXENAME}" "" "$INSTDIR\${EXENAME}" 0
   CreateShortCut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\${EXENAME}" "" "$INSTDIR\${EXENAME}" 0
@@ -55,26 +60,26 @@ Section "Install"
   ; uninstaller
   WriteUninstaller "$INSTDIR\Uninstall ${APPNAME}.exe"
 
-  ; registry Add/Remove Programs
-  WriteRegStr HKLM "${UNINSTKEY}" "DisplayName" "${APPNAME} ${VERSION}"
-  WriteRegStr HKLM "${UNINSTKEY}" "DisplayVersion" "${VERSION}"
-  WriteRegStr HKLM "${UNINSTKEY}" "Publisher" "${COMPANY}"
-  WriteRegStr HKLM "${UNINSTKEY}" "DisplayIcon" "$INSTDIR\${EXENAME}"
-  WriteRegStr HKLM "${UNINSTKEY}" "InstallLocation" "$INSTDIR"
-  WriteRegStr HKLM "${UNINSTKEY}" "UninstallString" "$INSTDIR\Uninstall ${APPNAME}.exe"
-  WriteRegDWORD HKLM "${UNINSTKEY}" "NoModify" 0x00000001
-  WriteRegDWORD HKLM "${UNINSTKEY}" "NoRepair" 0x00000001
+  ; registry Add/Remove Programs — HKCU (tidak butuh izin admin)
+  WriteRegStr HKCU "${UNINSTKEY}" "DisplayName" "${APPNAME} ${VERSION}"
+  WriteRegStr HKCU "${UNINSTKEY}" "DisplayVersion" "${VERSION}"
+  WriteRegStr HKCU "${UNINSTKEY}" "Publisher" "${COMPANY}"
+  WriteRegStr HKCU "${UNINSTKEY}" "DisplayIcon" "$INSTDIR\${EXENAME}"
+  WriteRegStr HKCU "${UNINSTKEY}" "InstallLocation" "$INSTDIR"
+  WriteRegStr HKCU "${UNINSTKEY}" "UninstallString" "$INSTDIR\Uninstall ${APPNAME}.exe"
+  WriteRegDWORD HKCU "${UNINSTKEY}" "NoModify" 0x00000001
+  WriteRegDWORD HKCU "${UNINSTKEY}" "NoRepair" 0x00000001
 
   ; estimasi ukuran instalasi (KB)
   ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
   IntFmt $0 "0x%08X" $0
-  WriteRegDWORD HKLM "${UNINSTKEY}" "EstimatedSize" "$0"
+  WriteRegDWORD HKCU "${UNINSTKEY}" "EstimatedSize" "$0"
 SectionEnd
 
 Section "Uninstall"
-  SetShellVarContext all
+  SetShellVarContext current
   RMDir /r "$INSTDIR"
   Delete "$DESKTOP\${APPNAME}.lnk"
   RMDir /r "$SMPROGRAMS\${APPNAME}"
-  DeleteRegKey HKLM "${UNINSTKEY}"
+  DeleteRegKey HKCU "${UNINSTKEY}"
 SectionEnd
