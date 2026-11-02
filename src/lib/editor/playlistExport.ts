@@ -13,6 +13,8 @@ export const PLAYLIST_EXPORT_DEFAULTS: PlaylistExportConfig = {
   showTitleScreen: true,
   showPartText: true,
   titleDuringVideo: false,
+  ratio: "16:9",
+  fitMode: "fill",
 };
 
 /** Muat setelan tersimpan (gabung dengan bawaan agar selalu lengkap) */

@@ -5,8 +5,9 @@ import { grabFrame, aiRecommendTemplates, analyzeVideoFrames, loadImage, renderC
 import { COVER_TEMPLATES, partLabel, slugify, uid } from "./constants";
 import { engine } from "./engine";
 import { isDesktopFS, saveBlobToDir } from "./fsBridge";
-import { useEditor, totalDuration } from "./store";
+import { dimsFor, useEditor, totalDuration } from "./store";
 import type { Clip, MediaAsset, Track } from "./types";
+import { fillZoomFor } from "./visual";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -61,6 +62,23 @@ export async function exportRange(start: number, end: number, onProgress?: (p: n
   const fmt = pickExportFormat();
   const stream = engine.captureStream(30);
   if (!stream) throw new Error("Browser tidak mendukung perekaman canvas");
+  // Sumber audio senyap: WAJIB agar track audio mengalir sejak detik pertama rekaman.
+  // Tanpa ini muxer MP4 baru "mengunci" timeline saat sampel audio pertama benar-benar
+  // masuk (mis. video tanpa musik: suara baru ada setelah layar cover) sehingga
+  // beberapa detik pertama hasil render bisa hilang.
+  let silent: OscillatorNode | null = null;
+  if (engine.recDest && engine.audioCtx) {
+    try {
+      silent = engine.audioCtx.createOscillator();
+      const sg = engine.audioCtx.createGain();
+      sg.gain.value = 0;
+      silent.connect(sg);
+      sg.connect(engine.recDest);
+      silent.start();
+    } catch {
+      silent = null;
+    }
+  }
   if (engine.recDest) {
     for (const tr of engine.recDest.stream.getAudioTracks()) stream.addTrack(tr);
   }
@@ -74,13 +92,22 @@ export async function exportRange(start: number, end: number, onProgress?: (p: n
     if (e.data && e.data.size > 0) chunks.push(e.data);
   };
   const stopped = new Promise<Blob>((resolve) => {
-    rec.onstop = () => resolve(new Blob(chunks, { type: fmt.mime }));
+    rec.onstop = () => {
+      try {
+        silent?.stop();
+        silent?.disconnect();
+      } catch {
+        /* ignore */
+      }
+      resolve(new Blob(chunks, { type: fmt.mime }));
+    };
   });
 
   engine.pause();
   engine.seek(start);
   await sleep(450); // beri waktu seek
   rec.start(400);
+  await sleep(300); // pre-roll singkat: bingkai pertama & aliran audio terkunci dulu sebelum playback
   const dur = Math.max(0.1, end - start);
   engine.play({
     stopAt: end,
@@ -472,12 +499,17 @@ export async function runBatchExport(assetIds: string[]) {
   const st0 = useEditor.getState();
   if (st0.exportState.running || !assetIds.length) return;
   useEditor.getState().patchExportState({ running: true, progress: 0, results: [], label: "Menyiapkan batch...", batchTotal: assetIds.length, batchIndex: 0 });
-  const snapshot = { clips: st0.clips, tracks: st0.tracks, assets: st0.assets };
+  const snapshot = { clips: st0.clips, tracks: st0.tracks, assets: st0.assets, project: st0.project };
   const s = st0.exportSettings;
   // setelan teks khusus Playlist Export (judul otomatis, deskripsi, teks part)
   const pl = st0.playlistExport;
 
   try {
+    // rasio video hasil (pilihan di Menu Export Playlist): ganti ukuran proyek sementara
+    // 16:9 = seperti aslinya; 9:16 = vertikal untuk Shorts/TikTok/Reels
+    const targetDims = dimsFor(pl.ratio, st0.project.quality);
+    useEditor.getState().setProject({ ratio: pl.ratio, ...targetDims });
+    engine.syncSize();
     for (let vi = 0; vi < assetIds.length; vi++) {
       const asset = snapshot.assets.find((a) => a.id === assetIds[vi]);
       if (!asset || asset.type !== "video") continue;
@@ -491,7 +523,10 @@ export async function runBatchExport(assetIds: string[]) {
 
       // proyek sementara: satu klip video penuh
       const vt = ensureVideoTrack([{ ...snapshot.tracks[0], id: "batch-video", kind: "video", name: "V", muted: false, hidden: false }]);
-      const clip = baseClip({ trackId: "batch-video", kind: "video", assetId: asset.id, start: 0, duration: asset.duration });
+      // rasio 9:16 mode "fill": video lanskap otomatis diperbesar mengisi penuh layar (tengah dipotong)
+      // mode "fit": video utuh tanpa potong (bar hitam di sisi kosong)
+      const fillZoom = pl.ratio === "9:16" && pl.fitMode === "fill" ? fillZoomFor(asset.width, asset.height, targetDims.width, targetDims.height) ?? 1 : 1;
+      const clip = baseClip({ trackId: "batch-video", kind: "video", assetId: asset.id, start: 0, duration: asset.duration, zoom: fillZoom });
       const textTrack: Track = { id: "batch-text", kind: "text", name: "T", muted: false, hidden: false };
       const tempTracks = [...vt.tracks, textTrack];
 
@@ -557,7 +592,8 @@ export async function runBatchExport(assetIds: string[]) {
     console.error("Batch export gagal:", e);
     useEditor.getState().patchExportState({ label: `Gagal: ${msg}` });
   } finally {
-    useEditor.setState({ clips: snapshot.clips, tracks: snapshot.tracks, assets: snapshot.assets });
+    useEditor.setState({ clips: snapshot.clips, tracks: snapshot.tracks, assets: snapshot.assets, project: snapshot.project });
+    engine.syncSize();
     engine.pause();
     engine.seek(0);
     const auto = isAutoSaveActive();

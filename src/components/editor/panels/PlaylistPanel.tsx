@@ -142,6 +142,36 @@ export function PlaylistPanel() {
           <Switch checked={pl.titleDuringVideo} onCheckedChange={(v) => setPl({ titleDuringVideo: v })} className="data-[state=checked]:bg-fuchsia-500" />
         </div>
 
+        {/* rasio video hasil */}
+        <div className="space-y-1">
+          <Label className="text-[10px] text-gray-300" htmlFor="pl-ratio">Rasio video hasil</Label>
+          <Select value={pl.ratio} onValueChange={(v) => setPl({ ratio: v as PlaylistExportConfig["ratio"] })}>
+            <SelectTrigger id="pl-ratio" className="h-7 border-white/10 bg-black/30 text-[11px]" aria-label="Rasio video hasil">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="border-white/10 bg-[#0b0d1d] text-xs">
+              <SelectItem value="16:9">16:9 — Lanskap (seperti video asli)</SelectItem>
+              <SelectItem value="9:16">9:16 — Vertikal (Shorts/TikTok/Reels)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* cara pas video ke frame vertikal */}
+        {pl.ratio === "9:16" && (
+          <div className="space-y-1">
+            <Label className="text-[10px] text-gray-300" htmlFor="pl-fit">Cara pas video ke layar vertikal</Label>
+            <Select value={pl.fitMode} onValueChange={(v) => setPl({ fitMode: v as PlaylistExportConfig["fitMode"] })}>
+              <SelectTrigger id="pl-fit" className="h-7 border-white/10 bg-black/30 text-[11px]" aria-label="Cara pas video ke layar vertikal">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="border-white/10 bg-[#0b0d1d] text-xs">
+                <SelectItem value="fill">Isi penuh — sisi kiri &amp; kanan dipotong otomatis</SelectItem>
+                <SelectItem value="fit">Video utuh — tanpa potong (ada bar hitam)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         {/* tombol terapkan setelan */}
         <Button
           className="h-8 w-full gap-1.5 bg-emerald-600 text-[11px] font-bold text-white hover:bg-emerald-500"
@@ -166,7 +196,7 @@ export function PlaylistPanel() {
         Export &amp; Split Semua ({videos.length})
       </Button>
       <p className="-mt-1 shrink-0 text-[10px] leading-relaxed text-gray-500">
-        <b className="text-gray-400">Tanpa perlu masuk timeline!</b> Setiap video langsung dirender berurutan: layar judul (judul + deskripsi + part) + teks part + dipecah sesuai pengaturan di tab Export.
+        <b className="text-gray-400">Tanpa perlu masuk timeline!</b> Setiap video langsung dirender berurutan: layar judul (judul + deskripsi + part) + teks part + dipecah sesuai pengaturan di tab Export, dengan rasio sesuai pilihan di menu atas (16:9 / 9:16).
       </p>
 
       {running && (

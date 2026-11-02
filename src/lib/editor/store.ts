@@ -130,6 +130,8 @@ export const useEditor = create<EditorState>((set, get) => ({
     showTitleScreen: true,
     showPartText: true,
     titleDuringVideo: false,
+    ratio: "16:9" as Ratio,
+    fitMode: "fill" as const,
   },
 
   setProject: (p) => set((s) => ({ project: { ...s.project, ...p } })),

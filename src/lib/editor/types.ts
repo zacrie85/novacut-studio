@@ -106,6 +106,10 @@ export interface PlaylistExportConfig {
   showPartText: boolean;
   /** tampilkan judul overlay selama video berjalan */
   titleDuringVideo: boolean;
+  /** rasio video hasil: "16:9" lanskap (seperti aslinya) atau "9:16" vertikal (Shorts/TikTok/Reels) */
+  ratio: Ratio;
+  /** cara pas video ke frame 9:16: "fill" = isi penuh (sisi dilepas/potong); "fit" = video utuh (ada bar hitam) */
+  fitMode: "fill" | "fit";
 }
 
 export interface ExportSettings {

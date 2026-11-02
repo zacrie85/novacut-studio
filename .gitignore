@@ -18,3 +18,7 @@ upload/
 
 # local db
 db/*.db
+
+# hasil build & artefak sesi
+download/*.exe
+tool-results/

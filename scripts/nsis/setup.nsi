@@ -4,7 +4,7 @@
 Unicode true
 !define APPNAME "NOVACUT Studio"
 !define COMPANY "NOVACUT"
-!define VERSION "1.0.4"
+!define VERSION "1.0.5"
 !define EXENAME "NOVACUT Studio.exe"
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\NOVACUTStudio"
 
