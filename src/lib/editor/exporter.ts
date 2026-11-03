@@ -13,7 +13,7 @@ import { isDesktopFS, saveBlobToDir } from "./fsBridge";
 import { normalizeEnhance } from "./playlistExport";
 import { dimsFor, useEditor, totalDuration } from "./store";
 import { transcribeAsset, type SubSegment } from "./subtitles";
-import type { Clip, MediaAsset, Track } from "./types";
+import type { BatchJobView, Clip, MediaAsset, Track } from "./types";
 import { fillZoomFor } from "./visual";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -743,6 +743,14 @@ export async function runBatchExport(assetIds: string[]) {
   // setelan teks khusus Playlist Export (judul otomatis, deskripsi, teks part)
   const pl = st0.playlistExport;
 
+  // status per video (progres per baris di panel) — diinisialisasi dari daftar video
+  const initJobs: BatchJobView[] = assetIds
+    .map((id) => ({ id, asset: snapshot.assets.find((a) => a.id === id) }))
+    .filter((x): x is { id: string; asset: MediaAsset } => !!x.asset && x.asset.type === "video")
+    .map(({ id, asset }) => ({ id, name: asset.name, status: "antre" as const, progress: 0 }));
+  useEditor.getState().setBatchJobs(initJobs);
+  const markJob = (id: string, p: Partial<BatchJobView>) => useEditor.getState().patchBatchJob(id, p);
+
   try {
     // rasio video hasil (pilihan di Menu Export Playlist): ganti ukuran proyek sementara
     // 16:9 = seperti aslinya; 9:16 = vertikal untuk Shorts/TikTok/Reels
@@ -755,6 +763,8 @@ export async function runBatchExport(assetIds: string[]) {
     // ========== FASE 1 — PERSIAPAN (berurutan, aman utk store) ==========
     type BatchJob = {
       asset: MediaAsset;
+      /** id asset ASLI (asset bisa dikloning utk batch paralel) */
+      origId: string;
       title: string;
       coverAssetId?: string;
       frameTimes: number[] | null;
@@ -769,6 +779,7 @@ export async function runBatchExport(assetIds: string[]) {
       useEditor.getState().setTexts({ title, description: pl.description, labelStyle: pl.labelStyle });
       useEditor.getState().setExportSettings({ includeCover: pl.showTitleScreen, autoPartText: pl.showPartText, showTitleText: pl.titleDuringVideo });
       useEditor.getState().patchExportState({ label: `Menyiapkan ${vi + 1}/${assetIds.length}: ${title}` });
+      markJob(asset.id, { status: "jalan", label: "Menyiapkan..." });
 
       // latar "tiap bagian beda": AI pilih beberapa adegan berbeda dari video ini
       let frameTimes: number[] | null = null;
@@ -793,6 +804,7 @@ export async function runBatchExport(assetIds: string[]) {
         try {
           subs = await transcribeAsset(asset.url, pl.subLevel || "ringan", (p) => {
             useEditor.getState().patchExportState({ label: `${title}: ${p.label || "subtitle AI..."}` });
+            markJob(asset.id, { label: p.label || "Subtitle AI..." });
           });
         } catch (e) {
           console.warn("Subtitle AI dilewati:", e);
@@ -805,7 +817,8 @@ export async function runBatchExport(assetIds: string[]) {
       if (jobs.some((j) => j.asset.id === asset.id)) {
         jobAsset = { ...asset, id: `${asset.id}-p${vi}` };
       }
-      jobs.push({ asset: jobAsset, title, coverAssetId, frameTimes, subs });
+      jobs.push({ asset: jobAsset, origId: asset.id, title, coverAssetId, frameTimes, subs });
+      markJob(asset.id, { status: "antre", label: "Menunggu giliran render..." });
     }
 
     // ========== FASE 2 — RENDER ==========
@@ -852,103 +865,129 @@ export async function runBatchExport(assetIds: string[]) {
 
     /** MODE KILAT: render 1 video penuh — TIDAK menyentuh store timeline (aman paralel) */
     const renderJobFast = async (job: BatchJob, vi: number) => {
-      const { clip, tracks } = buildBatchClip(job);
-      const ranges = rangesFor(clip);
-      // subtitle: waktu sumber -> waktu timeline (satu klip video, start 0)
-      const tlSubs = mapSubsToTimeline(job.subs, [clip]);
-      for (let i = 0; i < ranges.length; i++) {
-        const r = ranges[i];
-        useEditor.getState().patchExportState({
-          label: `${job.title} — ${partLabel(pl.labelStyle, i + 1, ranges.length, true)} (${doneCount + 1}/${jobs.length} berjalan)`,
-          batchIndex: vi,
-          batchTotal: jobs.length,
-        });
-        // cover bagian ini — asset LOKAL (tanpa race store antar pekerja paralel)
-        let coverAssetId = job.coverAssetId;
-        let assets = useEditor.getState().assets;
-        if (job.frameTimes) {
-          const cov = await makeCoverAsset(job.asset, job.frameTimes[i % job.frameTimes.length]);
-          if (cov) {
-            coverAssetId = cov.id;
-            assets = [...assets, cov];
+      const jid = job.origId;
+      try {
+        markJob(jid, { status: "jalan", progress: 0, label: "Merender..." });
+        const { clip, tracks } = buildBatchClip(job);
+        const ranges = rangesFor(clip);
+        // subtitle: waktu sumber -> waktu timeline (satu klip video, start 0)
+        const tlSubs = mapSubsToTimeline(job.subs, [clip]);
+        for (let i = 0; i < ranges.length; i++) {
+          const r = ranges[i];
+          const partTxt = partLabel(pl.labelStyle, i + 1, ranges.length, true);
+          useEditor.getState().patchExportState({
+            label: `${job.title} — ${partTxt} (${doneCount + 1}/${jobs.length} berjalan)`,
+            batchIndex: vi,
+            batchTotal: jobs.length,
+          });
+          markJob(jid, { label: ranges.length > 1 ? partTxt : "Merender..." });
+          // cover bagian ini — asset LOKAL (tanpa race store antar pekerja paralel)
+          let coverAssetId = job.coverAssetId;
+          let assets = useEditor.getState().assets;
+          if (job.frameTimes) {
+            const cov = await makeCoverAsset(job.asset, job.frameTimes[i % job.frameTimes.length]);
+            if (cov) {
+              coverAssetId = cov.id;
+              assets = [...assets, cov];
+            }
           }
+          const cur = useEditor.getState();
+          const srcState = {
+            ...cur,
+            clips: [clip] as Clip[],
+            tracks,
+            assets,
+            cover: { ...cur.cover, coverAssetId },
+            texts: { ...cur.texts, title: job.title, description: pl.description, labelStyle: pl.labelStyle },
+          };
+          const proj = buildSplitProject(srcState, i + 1, ranges.length, r.start, r.end, {
+            persistText: pl.titleDuringVideo,
+            subs: tlSubs,
+          });
+          const rs = { clips: proj.clips, tracks: proj.tracks, assets: proj.assets, project: { width: targetDims.width, height: targetDims.height } };
+          const res = await exportRangeFast({
+            start: 0,
+            end: proj.duration,
+            rs,
+            onProgress: (p) => {
+              jobProgress[vi] = (i + p) / ranges.length;
+              report();
+              markJob(jid, { progress: (i + p) / ranges.length });
+            },
+          });
+          const label = partLabel(pl.labelStyle, i + 1, ranges.length, true);
+          await blobResult(res.blob, `${slugify(job.title)}-${slugify(label)}${res.ext}`, i + 1, ranges.length, proj.duration);
         }
-        const cur = useEditor.getState();
-        const srcState = {
-          ...cur,
-          clips: [clip] as Clip[],
-          tracks,
-          assets,
-          cover: { ...cur.cover, coverAssetId },
-          texts: { ...cur.texts, title: job.title, description: pl.description, labelStyle: pl.labelStyle },
-        };
-        const proj = buildSplitProject(srcState, i + 1, ranges.length, r.start, r.end, {
-          persistText: pl.titleDuringVideo,
-          subs: tlSubs,
-        });
-        const rs = { clips: proj.clips, tracks: proj.tracks, assets: proj.assets, project: { width: targetDims.width, height: targetDims.height } };
-        const res = await exportRangeFast({
-          start: 0,
-          end: proj.duration,
-          rs,
-          onProgress: (p) => {
-            jobProgress[vi] = (i + p) / ranges.length;
-            report();
-          },
-        });
-        const label = partLabel(pl.labelStyle, i + 1, ranges.length, true);
-        await blobResult(res.blob, `${slugify(job.title)}-${slugify(label)}${res.ext}`, i + 1, ranges.length, proj.duration);
+        jobProgress[vi] = 1;
+        doneCount++;
+        report();
+        markJob(jid, { status: "selesai", progress: 1, label: "Selesai ✓" });
+      } catch (e) {
+        const m = e instanceof Error ? e.message : "error";
+        console.error(`Export gagal: ${job.title}`, e);
+        markJob(jid, { status: "gagal", label: `Gagal: ${m}` });
+        throw e;
       }
-      jobProgress[vi] = 1;
-      doneCount++;
-      report();
     };
 
     /** MODE KOMPATIBEL: jalur lama berurutan (rekam real-time via MediaRecorder) */
     const renderJobLegacy = async (job: BatchJob, vi: number) => {
-      const { clip, tracks } = buildBatchClip(job);
-      const ranges = rangesFor(clip);
-      const tlSubs = mapSubsToTimeline(job.subs, [clip]);
-      const fmt = pickExportFormat();
-      for (let i = 0; i < ranges.length; i++) {
-        const r = ranges[i];
-        useEditor.getState().patchExportState({
-          label: `${job.title} — ${partLabel(pl.labelStyle, i + 1, ranges.length, true)} (${vi + 1}/${jobs.length})`,
-          batchIndex: vi,
-          batchTotal: jobs.length,
-        });
-        let coverAssetId = job.coverAssetId;
-        if (job.frameTimes) {
-          await ensureCoverAsset(job.asset, true, job.frameTimes[i % job.frameTimes.length]);
-          coverAssetId = useEditor.getState().cover.coverAssetId;
+      const jid = job.origId;
+      try {
+        markJob(jid, { status: "jalan", progress: 0, label: "Merender..." });
+        const { clip, tracks } = buildBatchClip(job);
+        const ranges = rangesFor(clip);
+        const tlSubs = mapSubsToTimeline(job.subs, [clip]);
+        const fmt = pickExportFormat();
+        for (let i = 0; i < ranges.length; i++) {
+          const r = ranges[i];
+          const partTxt = partLabel(pl.labelStyle, i + 1, ranges.length, true);
+          useEditor.getState().patchExportState({
+            label: `${job.title} — ${partTxt} (${vi + 1}/${jobs.length})`,
+            batchIndex: vi,
+            batchTotal: jobs.length,
+          });
+          markJob(jid, { label: ranges.length > 1 ? partTxt : "Merender..." });
+          let coverAssetId = job.coverAssetId;
+          if (job.frameTimes) {
+            await ensureCoverAsset(job.asset, true, job.frameTimes[i % job.frameTimes.length]);
+            coverAssetId = useEditor.getState().cover.coverAssetId;
+          }
+          const tempState = {
+            ...useEditor.getState(),
+            clips: coverAssetId ? [clip, baseClip({ trackId: "batch-video", kind: "image", assetId: coverAssetId, start: 0, duration: 0, label: "cover-holder" })] : ([clip] as Clip[]),
+            tracks,
+            assets: useEditor.getState().assets,
+            cover: { ...useEditor.getState().cover, coverAssetId },
+            texts: { ...useEditor.getState().texts, title: job.title, description: pl.description, labelStyle: pl.labelStyle },
+          };
+          const proj = buildSplitProject(tempState, i + 1, ranges.length, r.start, r.end, {
+            persistText: pl.titleDuringVideo,
+            subs: tlSubs,
+          });
+          useEditor.setState({ clips: proj.clips, tracks: proj.tracks, assets: proj.assets });
+          engine.pause();
+          engine.seek(0);
+          await sleep(120);
+          const blob = await exportRange(0, proj.duration, (p) => {
+            jobProgress[vi] = (i + p) / ranges.length;
+            report();
+            markJob(jid, { progress: (i + p) / ranges.length });
+          });
+          const label = partLabel(pl.labelStyle, i + 1, ranges.length, true);
+          await blobResult(blob, `${slugify(job.title)}-${slugify(label)}${fmt.ext}`, i + 1, ranges.length, proj.duration);
         }
-        const tempState = {
-          ...useEditor.getState(),
-          clips: coverAssetId ? [clip, baseClip({ trackId: "batch-video", kind: "image", assetId: coverAssetId, start: 0, duration: 0, label: "cover-holder" })] : ([clip] as Clip[]),
-          tracks,
-          assets: useEditor.getState().assets,
-          cover: { ...useEditor.getState().cover, coverAssetId },
-          texts: { ...useEditor.getState().texts, title: job.title, description: pl.description, labelStyle: pl.labelStyle },
-        };
-        const proj = buildSplitProject(tempState, i + 1, ranges.length, r.start, r.end, {
-          persistText: pl.titleDuringVideo,
-          subs: tlSubs,
-        });
-        useEditor.setState({ clips: proj.clips, tracks: proj.tracks, assets: proj.assets });
-        engine.pause();
-        engine.seek(0);
-        await sleep(120);
-        const blob = await exportRange(0, proj.duration, (p) => {
-          jobProgress[vi] = (i + p) / ranges.length;
-          report();
-        });
-        const label = partLabel(pl.labelStyle, i + 1, ranges.length, true);
-        await blobResult(blob, `${slugify(job.title)}-${slugify(label)}${fmt.ext}`, i + 1, ranges.length, proj.duration);
+        jobProgress[vi] = 1;
+        doneCount++;
+        markJob(jid, { status: "selesai", progress: 1, label: "Selesai ✓" });
+        // bersihkan elemen antar video pada mode berurutan
+        engine.pruneElements();
+      } catch (e) {
+        const m = e instanceof Error ? e.message : "error";
+        console.error(`Export gagal: ${job.title}`, e);
+        markJob(jid, { status: "gagal", label: `Gagal: ${m}` });
+        throw e;
       }
-      jobProgress[vi] = 1;
-      doneCount++;
-      // bersihkan elemen antar video pada mode berurutan
-      engine.pruneElements();
     };
 
     if (fast) {
@@ -969,6 +1008,10 @@ export async function runBatchExport(assetIds: string[]) {
     engine.syncSize();
     engine.pause();
     engine.seek(0);
+    // tandai pekerjaan yang tak sempat selesai (batch berhenti karena error)
+    for (const j of useEditor.getState().batchJobs) {
+      if (j.status === "jalan" || j.status === "antre") useEditor.getState().patchBatchJob(j.id, { status: "gagal", label: "Terhenti" });
+    }
     const auto = isAutoSaveActive();
     const stEnd = useEditor.getState();
     if (!stEnd.exportState.label.startsWith("Gagal")) {

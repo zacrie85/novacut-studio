@@ -262,16 +262,16 @@ export function Timeline() {
   const sel = selectedClip(useEditor.getState());
 
   return (
-    <div className="flex h-full flex-col bg-[#070812]">
+    <div className="flex h-full flex-col bg-card">
       {/* Toolbar timeline */}
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-white/10 px-2 py-1.5">
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-white/[0.07] px-2 py-1.5">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button size="sm" variant="outline" className="h-7 gap-1 border-cyan-400/40 bg-cyan-400/10 text-xs text-cyan-300 hover:bg-cyan-400/20">
+            <Button size="sm" variant="outline" className="h-8 gap-1 border-white/10 bg-white/[0.04] text-xs text-gray-200 hover:bg-white/[0.08]">
               <Layers className="h-3.5 w-3.5" /> Tambah Layer
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="border-white/10 bg-[#0b0d1d] text-gray-200">
+          <DropdownMenuContent className="border-white/10 bg-popover text-gray-200">
             {(["video", "image", "text", "audio"] as TrackKind[]).map((k) => (
               <DropdownMenuItem key={k} onClick={() => useEditor.getState().addTrack(k)} className="gap-2 text-xs">
                 {kindIcon(k)} Layer {TRACK_STYLE[k].label}
@@ -285,28 +285,43 @@ export function Timeline() {
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 border-white/10 bg-white/5 text-xs"
+                className="h-8 border-white/10 bg-white/[0.04] text-xs hover:bg-white/[0.08]"
                 disabled={!sel}
                 onClick={() => sel && useEditor.getState().splitClip(sel.id, useEditor.getState().playhead)}
               >
-                <Scissors className="h-3.5 w-3.5 text-amber-300" /> Potong
+                <Scissors className="h-3.5 w-3.5 text-blue-400" /> Potong
               </Button>
             </TooltipTrigger>
             <TooltipContent className="text-xs">Potong klip terpilih di posisi playhead (S)</TooltipContent>
           </Tooltip>
         </TooltipProvider>
-        <Button size="sm" variant="outline" className="h-7 border-white/10 bg-white/5 text-xs" disabled={!sel} onClick={() => sel && useEditor.getState().duplicateClip(sel.id)}>
-          <Copy className="h-3.5 w-3.5" />
-        </Button>
-        <Button size="sm" variant="outline" className="h-7 border-white/10 bg-white/5 text-xs hover:border-red-400/40 hover:text-red-300" disabled={!sel} onClick={() => sel && useEditor.getState().deleteClip(sel.id)}>
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button size="sm" variant="outline" className="h-8 border-white/10 bg-white/[0.04] hover:bg-white/[0.08]" disabled={!sel} onClick={() => sel && useEditor.getState().duplicateClip(sel.id)} aria-label="Duplikat klip">
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent className="text-xs">Duplikat klip terpilih</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button size="sm" variant="outline" className="h-8 border-white/10 bg-white/[0.04] hover:border-red-400/40 hover:text-red-300" disabled={!sel} onClick={() => sel && useEditor.getState().deleteClip(sel.id)} aria-label="Hapus klip">
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent className="text-xs">Hapus klip terpilih (Del)</TooltipContent>
+        </Tooltip>
         <div className="mx-1 h-5 w-px bg-white/10" />
-        <Button size="sm" variant={snap ? "default" : "outline"} className={`h-7 text-xs ${snap ? "bg-fuchsia-500/20 text-fuchsia-300 hover:bg-fuchsia-500/30" : "border-white/10 bg-white/5"}`} onClick={() => useEditor.getState().toggleSnap()}>
-          <Magnet className="h-3.5 w-3.5" /> Snap
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button size="sm" variant={snap ? "default" : "outline"} className={`h-8 text-xs ${snap ? "bg-blue-500/20 text-blue-300 hover:bg-blue-500/30" : "border-white/10 bg-white/[0.04]"}`} onClick={() => useEditor.getState().toggleSnap()}>
+              <Magnet className="h-3.5 w-3.5" /> Snap
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent className="text-xs">Klip menempel otomatis ke tepi klip lain &amp; playhead</TooltipContent>
+        </Tooltip>
         <div className="mx-1 h-5 w-px bg-white/10" />
-        <Button size="sm" variant="outline" className="h-7 border-white/10 bg-white/5" onClick={() => useEditor.getState().setZoom(zoom / 1.4)}>
+        <Button size="sm" variant="outline" className="h-8 border-white/10 bg-white/[0.04] hover:bg-white/[0.08]" onClick={() => useEditor.getState().setZoom(zoom / 1.4)} aria-label="Perkecil tampilan timeline">
           <ZoomOut className="h-3.5 w-3.5" />
         </Button>
         <input
@@ -315,15 +330,14 @@ export function Timeline() {
           max={240}
           value={zoom}
           onChange={(e) => useEditor.getState().setZoom(Number(e.target.value))}
-          className="h-1 w-24 accent-cyan-400"
+          className="h-1 w-24 accent-blue-500"
           aria-label="Zoom timeline"
         />
-        <Button size="sm" variant="outline" className="h-7 border-white/10 bg-white/5" onClick={() => useEditor.getState().setZoom(zoom * 1.4)}>
+        <Button size="sm" variant="outline" className="h-8 border-white/10 bg-white/[0.04] hover:bg-white/[0.08]" onClick={() => useEditor.getState().setZoom(zoom * 1.4)} aria-label="Perbesar tampilan timeline">
           <ZoomIn className="h-3.5 w-3.5" />
         </Button>
         <div className="ml-auto flex items-center gap-2 pr-1">
-          <span className="hidden text-[9px] text-gray-500 md:inline">Klik 2x klip gambar/teks/audio = tarik otomatis sampai akhir video</span>
-          <span className="font-mono text-[11px] text-cyan-300/80">Total: {fmtTime(duration, true)}</span>
+          <span className="font-mono text-[11px] text-gray-400">Total: {fmtTime(duration, true)}</span>
         </div>
       </div>
 
@@ -331,8 +345,8 @@ export function Timeline() {
       <div ref={scrollRef} className="relative flex-1 overflow-auto nova-scroll">
         <div style={{ width: HEADER_W + contentW }}>
           {/* Ruler */}
-          <div className="sticky top-0 z-20 flex h-8 bg-[#0a0c1a]/95 backdrop-blur">
-            <div className="sticky left-0 z-30 flex shrink-0 items-center border-r border-white/10 bg-[#0a0c1a] px-2 text-[10px] font-semibold tracking-widest text-cyan-500/80" style={{ width: HEADER_W }}>
+          <div className="sticky top-0 z-20 flex h-8 bg-[#17191c]/95 backdrop-blur">
+            <div className="sticky left-0 z-30 flex shrink-0 items-center border-r border-white/10 bg-[#17191c] px-2 text-[10px] font-bold tracking-widest text-gray-500" style={{ width: HEADER_W }}>
               TIMELINE
             </div>
             <div className="relative h-8" style={{ width: contentW }} onPointerDown={startScrub}>
@@ -350,7 +364,7 @@ export function Timeline() {
               const st = TRACK_STYLE[track.kind];
               return (
                 <div key={track.id} className="flex border-b border-white/5" style={{ height: TRACK_H[track.kind] }}>
-                  <div className="sticky left-0 z-10 flex shrink-0 items-center gap-1 border-r border-white/10 bg-[#0a0c1a] px-2" style={{ width: HEADER_W }}>
+                  <div className="sticky left-0 z-10 flex shrink-0 items-center gap-1 border-r border-white/10 bg-[#17191c] px-2" style={{ width: HEADER_W }}>
                     <span style={{ color: st.color }}>{kindIcon(track.kind)}</span>
                     <span className="flex-1 truncate text-[11px] text-gray-300">{track.name}</span>
                     {track.kind !== "text" && (
@@ -393,13 +407,13 @@ export function Timeline() {
                       .filter((c) => c.trackId === track.id)
                       .map((clip) => {
                         const isSel = clip.id === selectedId;
-                        const c = clip.kind === "text" ? "#e879f9" : clip.kind === "audio" ? "#4ade80" : clip.kind === "image" ? "#a78bfa" : "#22d3ee";
+                        const c = clip.kind === "text" ? "#f5a623" : clip.kind === "audio" ? "#34c77b" : clip.kind === "image" ? "#b08bf5" : "#4d9bf5";
                         const asset = useEditor.getState().getAsset(clip.assetId);
                         const name = clip.kind === "text" ? clip.text?.content : asset?.name ?? clip.label ?? "Klip";
                         return (
                           <div
                             key={clip.id}
-                            className={`group absolute top-1 flex overflow-hidden rounded-md border text-[10px] ${isSel ? "border-white shadow-[0_0_12px_rgba(34,211,238,0.5)]" : "border-white/20"}`}
+                            className={`group absolute top-1 flex overflow-hidden rounded-md border text-[10px] ${isSel ? "border-blue-300 shadow-[0_0_0_1px_rgba(77,155,245,0.6)]" : "border-white/15"}`}
                             style={{
                               left: clip.start * zoom,
                               width: Math.max(14, clip.duration * zoom),
@@ -415,7 +429,7 @@ export function Timeline() {
                             }}
                             title={clip.kind !== "video" ? "Klik 2x = tarik otomatis sampai akhir video" : undefined}
                           >
-                            <div className="absolute inset-y-0 left-0 w-1.5 cursor-w-resize bg-white/10 hover:bg-cyan-300/60" onPointerDown={(e) => clipTrim(e, clip, "l")} />
+                            <div className="absolute inset-y-0 left-0 w-1.5 cursor-w-resize bg-white/10 hover:bg-blue-400/70" onPointerDown={(e) => clipTrim(e, clip, "l")} />
                             <div className="pointer-events-none flex min-w-0 flex-1 flex-col justify-center px-2">
                               <div className="truncate font-medium" style={{ color: c }}>
                                 {name || "Teks"}
@@ -428,8 +442,8 @@ export function Timeline() {
                                 {(clip.kind === "audio" || clip.kind === "video") && clip.volume !== 1 && <span className="text-emerald-300">♪{Math.round(clip.volume * 100)}%</span>}
                               </div>
                             </div>
-                            {clip.transition && <div className="absolute right-0 top-0 bg-fuchsia-500/70 px-1 text-[8px] text-white">⇄</div>}
-                            <div className="absolute inset-y-0 right-0 w-1.5 cursor-e-resize bg-white/10 hover:bg-cyan-300/60" onPointerDown={(e) => clipTrim(e, clip, "r")} />
+                            {clip.transition && <div className="absolute right-0 top-0 bg-blue-500/80 px-1 text-[8px] text-white">⇄</div>}
+                            <div className="absolute inset-y-0 right-0 w-1.5 cursor-e-resize bg-white/10 hover:bg-blue-400/70" onPointerDown={(e) => clipTrim(e, clip, "r")} />
                           </div>
                         );
                       })}
@@ -450,8 +464,8 @@ function PlayheadLine({ zoom }: { zoom: number }) {
   const playhead = useEditor((s) => s.playhead);
   return (
     <div className="pointer-events-none absolute inset-y-0 z-30 w-0" style={{ left: HEADER_W + playhead * zoom }}>
-      <div className="absolute inset-y-0 w-px bg-cyan-300 shadow-[0_0_8px_#22d3ee]" />
-      <div className="absolute -left-1.5 top-0 h-2.5 w-3.5 rounded-b-sm bg-cyan-300" />
+      <div className="absolute inset-y-0 w-px bg-white/90" />
+      <div className="absolute -left-1.5 top-0 h-2.5 w-3.5 rounded-b-sm bg-white" />
     </div>
   );
 }

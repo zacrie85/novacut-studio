@@ -224,6 +224,24 @@ export interface ExportState {
 
 export type Ratio = "16:9" | "9:16";
 
+/** mode tampilan aplikasi: layar sambutan / mode sederhana (wizard) / mode pro */
+export type UiMode = "welcome" | "simple" | "pro";
+/** dua daftar playlist terpisah: "editor" = antrean editing timeline,
+ * "export" = antrean export & split langsung tanpa edit */
+export type AssetListName = "editor" | "export";
+
+/** status satu video dalam batch export paralel (ditampilkan per baris) */
+export interface BatchJobView {
+  /** sama dengan assetId video */
+  id: string;
+  name: string;
+  status: "antre" | "jalan" | "selesai" | "gagal";
+  /** 0..1 */
+  progress: number;
+  /** keterangan singkat (menyiapkan / part 2/5 / selesai / gagal) */
+  label?: string;
+}
+
 export interface ProjectMeta {
   name: string;
   width: number;

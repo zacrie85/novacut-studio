@@ -56,15 +56,15 @@ export function MusicPanel() {
   return (
     <div className="flex h-full flex-col gap-3 p-3">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-[11px] font-semibold tracking-wider text-gray-400">
+        <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-gray-400">
           <Music className="h-4 w-4 text-emerald-300" /> PUSTAKA BACKSOUND
         </div>
-        <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-bold text-emerald-300">{MUSIC_LIBRARY.length} trek</span>
+        <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] font-bold text-gray-300">{MUSIC_LIBRARY.length} trek</span>
       </div>
-      <p className="text-[10px] leading-relaxed text-gray-500">
+      <p className="text-[11px] leading-relaxed text-gray-500">
         20 backsound <b className="text-gray-400">bebas hak cipta</b> gaya trailer, iklan &amp; vlog — disintesis langsung di browser, aman untuk monetisasi.
         <br />
-        <span className="text-emerald-300/80">Tips: setelah masuk timeline, klik klip musik lalu atur <b>Volume</b> (0–200%) &amp; fade di panel kanan.</span>
+        <span className="text-gray-400">Tips: setelah masuk timeline, klik klip musik lalu atur <b>Volume</b> (0–200%) &amp; fade di panel kanan.</span>
       </p>
 
       <div className="nova-scroll -mr-1 flex-1 space-y-1.5 overflow-y-auto pr-1">
@@ -75,18 +75,18 @@ export function MusicPanel() {
               onClick={() => void togglePreview(m.id)}
               aria-label={previewing === m.id ? "Hentikan pratinjau" : "Pratinjau musik"}
             >
-              {loading === m.id ? <span className="h-3 w-3 animate-spin rounded-full border border-cyan-300 border-t-transparent" /> : previewing === m.id ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+              {loading === m.id ? <span className="h-3 w-3 animate-spin rounded-full border border-blue-400 border-t-transparent" /> : previewing === m.id ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
             </button>
             <div className="min-w-0 flex-1">
               <div className="truncate text-xs text-gray-200">{m.name}</div>
-              <div className="flex items-center gap-1.5 text-[9px]">
+              <div className="flex items-center gap-1.5 text-[11px]">
                 <span className="rounded px-1 py-px font-semibold" style={{ background: `${m.color}22`, color: m.color }}>
                   {m.genre}
                 </span>
                 <span className="text-gray-500">{m.bpm} BPM · {(m.bars * 4 * 60) / m.bpm >= 60 ? `${Math.round((m.bars * 4 * 60) / m.bpm / 60)} mnt` : `${Math.round((m.bars * 4 * 60) / m.bpm)} dtk`}</span>
               </div>
             </div>
-            <Button size="sm" className="h-7 w-7 rounded-full bg-emerald-500/20 p-0 text-emerald-300 hover:bg-emerald-500/30" onClick={() => void addToTimeline(m.id)} aria-label="Tambah ke timeline">
+            <Button size="sm" className="h-7 w-7 rounded-full bg-blue-500/15 p-0 text-blue-400 hover:bg-blue-500/25" onClick={() => void addToTimeline(m.id)} aria-label="Tambah ke timeline">
               <Plus className="h-4 w-4" />
             </Button>
           </div>

@@ -232,10 +232,10 @@ export const SPEED_PRESETS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4];
 export const LABEL_STYLES = ["Part", "Episode", "Bagian", "Eps", "EP"] as const;
 
 export const TRACK_STYLE: Record<string, { color: string; label: string }> = {
-  video: { color: "#22d3ee", label: "Video" },
-  image: { color: "#a78bfa", label: "Gambar" },
-  text: { color: "#e879f9", label: "Teks" },
-  audio: { color: "#4ade80", label: "Audio" },
+  video: { color: "#4d9bf5", label: "Video" },
+  image: { color: "#b08bf5", label: "Gambar" },
+  text: { color: "#f5a623", label: "Teks" },
+  audio: { color: "#34c77b", label: "Audio" },
 };
 
 export function fmtTime(t: number, withMs = false): string {

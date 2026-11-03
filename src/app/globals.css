@@ -10,24 +10,27 @@
   font-family: "Orbitron", "Arial Black", sans-serif;
 }
 
+/* Gaya antarmuka netral ala aplikasi video profesional (CapCut/Premiere):
+   latar gelap netral, satu aksen biru, teks mudah dibaca. */
 body {
-  font-family: "Rajdhani", "Segoe UI", system-ui, sans-serif;
+  font-family: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  letter-spacing: 0.01em;
 }
 
-/* scrollbar futuristik */
+/* scrollbar halus & netral */
 .nova-scroll::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 .nova-scroll::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.03);
+  background: transparent;
 }
 .nova-scroll::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(34, 211, 238, 0.45), rgba(232, 121, 249, 0.45));
+  background: rgba(255, 255, 255, 0.14);
   border-radius: 8px;
 }
 .nova-scroll::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, rgba(34, 211, 238, 0.7), rgba(232, 121, 249, 0.7));
+  background: rgba(255, 255, 255, 0.24);
 }
 
 @theme inline {
@@ -71,38 +74,39 @@ body {
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(0.09 0.02 280);
-  --foreground: oklch(0.96 0.01 200);
-  --card: oklch(0.13 0.02 280);
-  --card-foreground: oklch(0.96 0.01 200);
-  --popover: oklch(0.13 0.02 280);
-  --popover-foreground: oklch(0.96 0.01 200);
-  --primary: oklch(0.78 0.14 195);
-  --primary-foreground: oklch(0.14 0.02 280);
-  --secondary: oklch(0.2 0.03 280);
-  --secondary-foreground: oklch(0.96 0.01 200);
-  --muted: oklch(0.2 0.02 280);
-  --muted-foreground: oklch(0.62 0.02 260);
-  --accent: oklch(0.24 0.04 300);
-  --accent-foreground: oklch(0.96 0.01 200);
-  --destructive: oklch(0.62 0.22 25);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 14%);
-  --ring: oklch(0.78 0.14 195);
-  --chart-1: oklch(0.78 0.14 195);
-  --chart-2: oklch(0.72 0.2 330);
-  --chart-3: oklch(0.76 0.18 145);
-  --chart-4: oklch(0.8 0.16 85);
-  --chart-5: oklch(0.66 0.22 300);
-  --sidebar: oklch(0.11 0.02 280);
-  --sidebar-foreground: oklch(0.96 0.01 200);
-  --sidebar-primary: oklch(0.78 0.14 195);
-  --sidebar-primary-foreground: oklch(0.14 0.02 280);
-  --sidebar-accent: oklch(0.22 0.03 280);
-  --sidebar-accent-foreground: oklch(0.96 0.01 200);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.78 0.14 195);
+  --radius: 0.55rem;
+  /* tema gelap netral (gaya CapCut) */
+  --background: #101113;
+  --foreground: #e9ebee;
+  --card: #17191c;
+  --card-foreground: #e9ebee;
+  --popover: #1a1c20;
+  --popover-foreground: #e9ebee;
+  --primary: #2f7df6;
+  --primary-foreground: #ffffff;
+  --secondary: #1f2126;
+  --secondary-foreground: #e9ebee;
+  --muted: #1c1e22;
+  --muted-foreground: #9aa1ab;
+  --accent: #212429;
+  --accent-foreground: #e9ebee;
+  --destructive: #ef4444;
+  --border: rgba(255, 255, 255, 0.07);
+  --input: rgba(255, 255, 255, 0.1);
+  --ring: #2f7df6;
+  --chart-1: #2f7df6;
+  --chart-2: #34c77b;
+  --chart-3: #f5a623;
+  --chart-4: #b08bf5;
+  --chart-5: #f472b6;
+  --sidebar: #131417;
+  --sidebar-foreground: #e9ebee;
+  --sidebar-primary: #2f7df6;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1f2126;
+  --sidebar-accent-foreground: #e9ebee;
+  --sidebar-border: rgba(255, 255, 255, 0.07);
+  --sidebar-ring: #2f7df6;
 }
 
 @layer base {
@@ -111,5 +115,27 @@ body {
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  /* judul seksi kecil di dalam panel */
+  .nv-title {
+    @apply text-[11px] font-bold uppercase tracking-wider text-gray-400;
+  }
+  /* kartu seksi di dalam panel */
+  .nv-card {
+    @apply rounded-xl border border-white/[0.07] bg-card;
+  }
+  /* tombol ikon bulat netral */
+  .nv-icon-btn {
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-gray-300 transition hover:border-white/25 hover:bg-white/[0.08] hover:text-gray-100 disabled:opacity-40;
+  }
+  /* pilihan segmen (rasio, kualitas, level) */
+  .nv-seg {
+    @apply inline-flex items-center justify-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold text-gray-400 transition hover:border-white/25 hover:text-gray-200;
+  }
+  .nv-seg-active {
+    @apply border-blue-500/70 bg-blue-500/15 text-blue-300;
   }
 }

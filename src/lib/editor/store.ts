@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { uid } from "./constants";
 import { PLAYLIST_ENHANCE_DEFAULTS } from "./playlistExport";
-import type { Clip, CoverConfig, ExportResult, ExportSettings, ExportState, MediaAsset, PlaylistExportConfig, ProjectMeta, Ratio, TextData, TextsConfig, Track, TrackKind } from "./types";
+import type { AssetListName, BatchJobView, Clip, CoverConfig, ExportResult, ExportSettings, ExportState, MediaAsset, PlaylistExportConfig, ProjectMeta, Ratio, TextData, TextsConfig, Track, TrackKind, UiMode } from "./types";
 
 export function totalDuration(clips: Clip[]): number {
   return clips.reduce((m, c) => Math.max(m, c.start + c.duration), 0);
@@ -55,6 +55,26 @@ export interface EditorState {
   exportState: ExportState;
   /** setelan khusus export langsung dari Playlist */
   playlistExport: PlaylistExportConfig;
+
+  /** ==== DUA DAFTAR PLAYLIST TERPISAH ====
+   * "editor" = video yang akan dikelola di timeline (video editor),
+   * "export" = video yang langsung di Export & Split tanpa lewat editor */
+  editorList: string[];
+  exportList: string[];
+  /** status per-video saat batch export paralel berjalan (progres per baris) */
+  batchJobs: BatchJobView[];
+  /** mode tampilan aplikasi: layar sambutan / mode sederhana / mode pro */
+  uiMode: UiMode;
+
+  setUiMode: (m: UiMode) => void;
+  addToAssetList: (list: AssetListName, ids: string[]) => void;
+  removeFromAssetList: (list: AssetListName, id: string) => void;
+  moveInAssetList: (list: AssetListName, from: number, to: number) => void;
+  transferAsset: (from: AssetListName, id: string) => void;
+  clearAssetList: (list: AssetListName) => void;
+  setBatchJobs: (jobs: BatchJobView[]) => void;
+  patchBatchJob: (id: string, p: Partial<BatchJobView>) => void;
+  clearBatchJobs: () => void;
 
   setProject: (p: Partial<ProjectMeta>) => void;
   setRatio: (r: Ratio) => void;
@@ -145,6 +165,51 @@ export const useEditor = create<EditorState>((set, get) => ({
     subLevel: "ringan" as const,
     parallel: 3,
   },
+  editorList: [],
+  exportList: [],
+  batchJobs: [],
+  uiMode: "welcome",
+
+  setUiMode: (m) => set({ uiMode: m }),
+
+  addToAssetList: (list, ids) =>
+    set((s) => {
+      const cur = list === "editor" ? s.editorList : s.exportList;
+      const add = ids.filter((id) => !cur.includes(id));
+      return list === "editor" ? { editorList: [...cur, ...add] } : { exportList: [...cur, ...add] };
+    }),
+
+  removeFromAssetList: (list, id) =>
+    set((s) =>
+      list === "editor"
+        ? { editorList: s.editorList.filter((x) => x !== id) }
+        : { exportList: s.exportList.filter((x) => x !== id) }
+    ),
+
+  moveInAssetList: (list, from, to) =>
+    set((s) => {
+      const cur = [...(list === "editor" ? s.editorList : s.exportList)];
+      if (from < 0 || from >= cur.length || to < 0 || to >= cur.length || from === to) return {};
+      const [item] = cur.splice(from, 1);
+      cur.splice(to, 0, item);
+      return list === "editor" ? { editorList: cur } : { exportList: cur };
+    }),
+
+  transferAsset: (from, id) =>
+    set((s) => {
+      if (from === "editor") {
+        if (!s.editorList.includes(id)) return {};
+        return { editorList: s.editorList.filter((x) => x !== id), exportList: [...s.exportList, id] };
+      }
+      if (!s.exportList.includes(id)) return {};
+      return { exportList: s.exportList.filter((x) => x !== id), editorList: [...s.editorList, id] };
+    }),
+
+  clearAssetList: (list) => set(list === "editor" ? { editorList: [] } : { exportList: [] }),
+
+  setBatchJobs: (jobs) => set({ batchJobs: jobs }),
+  patchBatchJob: (id, p) => set((s) => ({ batchJobs: s.batchJobs.map((j) => (j.id === id ? { ...j, ...p } : j)) })),
+  clearBatchJobs: () => set({ batchJobs: [] }),
 
   setProject: (p) => set((s) => ({ project: { ...s.project, ...p } })),
 
@@ -166,6 +231,8 @@ export const useEditor = create<EditorState>((set, get) => ({
     set((s) => ({
       assets: s.assets.filter((a) => a.id !== id),
       clips: s.clips.filter((c) => c.assetId !== id),
+      editorList: s.editorList.filter((x) => x !== id),
+      exportList: s.exportList.filter((x) => x !== id),
     })),
 
   getAsset: (id) => (id ? get().assets.find((a) => a.id === id) : undefined),

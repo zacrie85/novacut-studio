@@ -55,28 +55,28 @@ export function requestApplyTarget(t: ApplyTarget) {
 }
 
 export function ApplyTargetSwitch({ value, onChange }: { value: ApplyTarget; onChange: (t: ApplyTarget) => void }) {
-  const base = "flex flex-1 items-center justify-center gap-1 rounded-md border px-2 py-1.5 text-[10px] font-semibold transition";
+  const base = "flex flex-1 items-center justify-center gap-1 rounded-md border px-2 py-1.5 text-[11px] font-semibold transition";
   return (
-    <div className="space-y-1.5 rounded-lg border border-fuchsia-400/25 bg-fuchsia-400/[0.06] p-2">
-      <div className="text-[9px] font-semibold tracking-wider text-fuchsia-300">TERAPKAN SETELAN INI KE</div>
+    <div className="space-y-1.5 rounded-lg border border-blue-500/25 bg-blue-500/[0.06] p-2">
+      <div className="text-[11px] font-semibold tracking-wider text-blue-300">TERAPKAN SETELAN INI KE</div>
       <div className="flex gap-1.5">
         <button
           onClick={() => onChange("timeline")}
           aria-pressed={value === "timeline"}
-          className={`${base} ${value === "timeline" ? "border-cyan-300 bg-cyan-400/20 text-cyan-100" : "border-white/10 bg-white/[0.03] text-gray-400 hover:border-cyan-400/40"}`}
+          className={`${base} ${value === "timeline" ? "border-blue-400 bg-blue-500/15 text-blue-100" : "border-white/10 bg-white/[0.03] text-gray-400 hover:border-blue-500/40"}`}
         >
           <Scissors className="h-3 w-3" /> Klip Timeline
         </button>
         <button
           onClick={() => onChange("playlist")}
           aria-pressed={value === "playlist"}
-          className={`${base} ${value === "playlist" ? "border-fuchsia-300 bg-fuchsia-400/20 text-fuchsia-100" : "border-white/10 bg-white/[0.03] text-gray-400 hover:border-fuchsia-400/40"}`}
+          className={`${base} ${value === "playlist" ? "border-blue-500/70 bg-blue-500/15 text-blue-300" : "border-white/10 bg-white/[0.03] text-gray-400 hover:border-blue-500/40"}`}
         >
           <ListVideo className="h-3 w-3" /> Video Playlist
         </button>
       </div>
       {value === "playlist" && (
-        <p className="text-[9px] leading-relaxed text-fuchsia-200/80">
+        <p className="text-[11px] leading-relaxed text-blue-200/80">
           Setelan di menu ini otomatis diterapkan ke <b>semua video</b> hasil Export &amp; Split langsung dari Playlist — tanpa perlu masuk timeline.
         </p>
       )}
