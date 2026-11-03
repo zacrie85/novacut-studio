@@ -83,6 +83,9 @@ export async function saveBlobToDir(dir: string, name: string, blob: Blob): Prom
 export class DiskFileWriter {
   private constructor(private id: string) {}
 
+  /** total byte yang sudah tertulis (utk laporan ukuran file hasil) */
+  bytes = 0;
+
   /** Mulai sesi tulis; null = tidak tersedia (fallback jalur lama) */
   static async begin(dir: string, name: string): Promise<DiskFileWriter | null> {
     if (!window.novacutFS?.saveFileBegin || !window.novacutFS.saveFileChunk || !window.novacutFS.saveFileEnd) return null;
@@ -98,6 +101,7 @@ export class DiskFileWriter {
   /** Tulis satu potongan (mendukung posisi acak utk muxer MP4/WebM) */
   async write(data: BufferSource, position?: number): Promise<void> {
     const buf = data instanceof ArrayBuffer ? data : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+    this.bytes += buf.byteLength;
     const res = await window.novacutFS!.saveFileChunk!(this.id, buf, position);
     if (!res.ok) throw new Error(res.error || "Gagal menulis potongan file");
   }

@@ -7,7 +7,7 @@
 import { grabFrame, aiRecommendTemplates, analyzeVideoFrames, loadImage, renderCoverToDataURL } from "./covers";
 import { COVER_TEMPLATES, partLabel, slugify, uid } from "./constants";
 import { engine } from "./engine";
-import { exportRangeFast, fastSupported } from "./fastExport";
+import { exportRangeFast, fastSupported, AudioDecodeCache } from "./fastExport";
 import { ensureAppFonts } from "./fonts";
 import { isDesktopFS, saveBlobToDir } from "./fsBridge";
 import { normalizeEnhance } from "./playlistExport";
@@ -497,12 +497,13 @@ export function splitRanges(duration: number, mode: "count" | "duration", parts:
 
 /** Simpan/unduh satu hasil render.
  * Mode desktop + folder terpilih -> file langsung ditulis ke folder itu (tanpa dialog unduh).
- * Selain itu -> unduh otomatis ke folder unduhan bawaan. */
-async function blobResult(blob: Blob, name: string, part: number, total: number, duration: number) {
-  const url = URL.createObjectURL(blob);
-  let savedPath: string | undefined;
+ * Selain itu -> unduh otomatis ke folder unduhan bawaan.
+ * v1.0.14: bila file SUDAH tersimpan langsung ke disk (tulis streaming directSave),
+ * blob TIDAK diubah jadi objectURL — memori tetap rendah saat batch puluhan video
+ * (dulu 50 hasil × ratusan MB tertahan di RAM → aplikasi hang). */
+async function blobResult(blob: Blob | null, name: string, part: number, total: number, duration: number, savedPath?: string, size?: number) {
   const dir = useEditor.getState().exportSettings.exportDir;
-  if (dir && isDesktopFS()) {
+  if (!savedPath && blob && dir && isDesktopFS()) {
     try {
       useEditor.getState().patchExportState({ label: `Menyimpan ${name} ke folder...` });
       savedPath = await saveBlobToDir(dir, name, blob);
@@ -510,8 +511,9 @@ async function blobResult(blob: Blob, name: string, part: number, total: number,
       savedPath = undefined; // gagal simpan -> fallback unduh
     }
   }
-  useEditor.getState().addExportResult({ id: uid("exp"), name, url, size: blob.size, part, total, duration, savedPath });
-  if (!savedPath) triggerDownload(url, name);
+  const url = savedPath || !blob ? "" : URL.createObjectURL(blob);
+  useEditor.getState().addExportResult({ id: uid("exp"), name, url, size: size ?? blob?.size ?? 0, part, total, duration, savedPath });
+  if (!savedPath && url) triggerDownload(url, name);
 }
 
 /** true bila hasil render otomatis tersimpan ke folder pilihan pengguna */
@@ -730,8 +732,45 @@ async function pickFrameTimes(sourceAsset: MediaAsset | undefined): Promise<numb
   }
 }
 
+/** v1.0.14: cache cover per batch — bagian split yang memakai adegan yang sama
+ * tidak membuat ulang cover (dulu tiap bagian buat baru = ratusan gambar di RAM) */
+const batchCoverCache = new Map<string, MediaAsset>();
+
+function coverCacheKey(a: MediaAsset | undefined, ft?: number): string {
+  const st = useEditor.getState();
+  return `${a?.id ?? "-"}|${typeof ft === "number" ? ft.toFixed(2) : "auto"}|${st.project.width}x${st.project.height}`;
+}
+
+async function makeCoverAssetCached(a: MediaAsset | undefined, ft?: number): Promise<MediaAsset | undefined> {
+  const k = coverCacheKey(a, ft);
+  const hit = batchCoverCache.get(k);
+  if (hit) return hit;
+  const cov = await makeCoverAsset(a, ft);
+  if (cov) batchCoverCache.set(k, cov);
+  return cov;
+}
+
+/** v1.0.14: pembatas laju pembaruan UI — progres maksimal ~3x/detik.
+ * Dulu SETIAP frame memicu 2 pembaruan store × 3 video paralel = ~180 render
+ * ulang React per detik → antarmuka macet (hang). */
+function makeTick(ms = 300) {
+  let last = 0;
+  return (fn: () => void, force = false) => {
+    const now = Date.now();
+    if (force || now - last >= ms) {
+      last = now;
+      fn();
+    }
+  };
+}
+
 /** Export & split batch untuk semua video di playlist.
- * FASE 1 (berurutan): judul, cover, subtitle AI per video.
+ * v1.0.14 — AMAN UNTUK BATCH BESAR (50+ film):
+ *  - Fase persiapan INSTAN; kerja berat (adegan/cover/subtitle AI) LAZY per giliran render
+ *  - Cover di-cache, audio MONO + cache per film, file hasil TULIS LANGSUNG ke disk
+ *  - Elemen video dibersihkan tiap film selesai (dekoder tidak menumpuk → tak layar hitam)
+ *  - Pembaruan UI dibatasi ~3x/dtk (badai render ulang penyebab hang dihapus)
+ *  - Paralel otomatis diturunkan bila film terlalu panjang (mode hemat memori)
  * FASE 2 (mode kilat): beberapa video dirender BERSAMAAN (paralel 1-5);
  * mode kompatibel: berurutan seperti versi lama (rekam real-time). */
 export async function runBatchExport(assetIds: string[]) {
@@ -758,9 +797,33 @@ export async function runBatchExport(assetIds: string[]) {
     useEditor.getState().setProject({ ratio: pl.ratio, ...targetDims });
     engine.syncSize();
     const fast = s.engineMode === "fast" ? await fastSupported() : null;
-    const parallel = Math.max(1, Math.min(5, Math.round(pl.parallel ?? 3)));
+    useEditor.getState().setExportSettings({ includeCover: pl.showTitleScreen, autoPartText: pl.showPartText, showTitleText: pl.titleDuringVideo });
 
-    // ========== FASE 1 — PERSIAPAN (berurutan, aman utk store) ==========
+    // cover bersama (mode manual) — dianalisis SEKALI untuk seluruh batch (50x lebih hemat)
+    let sharedCoverId: string | undefined;
+    let sharedCoverP: Promise<string | undefined> | null = null;
+    const ensureSharedCover = (asset: MediaAsset) => {
+      if (sharedCoverId) return Promise.resolve(sharedCoverId);
+      sharedCoverP ??= (async () => {
+        const st = useEditor.getState();
+        if (st.cover.coverAssetId && st.assets.some((a) => a.id === st.cover.coverAssetId)) {
+          sharedCoverId = st.cover.coverAssetId;
+        } else {
+          sharedCoverId = await ensureCoverAsset(asset);
+        }
+        return sharedCoverId;
+      })();
+      return sharedCoverP;
+    };
+
+    // antre subtitle AI GLOBAL — hanya SATU transkripsi berjalan bersamaan
+    // (model AI & PCM 16k besar; dulu bisa 3 film sekaligus → memori meledak)
+    let subChain: Promise<void> = Promise.resolve();
+
+    // ========== FASE 1 — DAFTAR PEKERJAAN (INSTAN, tanpa kerja berat) ==========
+    // v1.0.14: dulu SEMUA video dianalisis (adegan+cover+subtitle AI) di depan
+    // → 50 film = aplikasi tampak beku berlama-lama di "Menyiapkan 23/50".
+    // Sekarang hanya menyusun daftar; kerja berat pindah ke giliran render (LAZY).
     type BatchJob = {
       asset: MediaAsset;
       /** id asset ASLI (asset bisa dikloning utk batch paralel) */
@@ -768,6 +831,11 @@ export async function runBatchExport(assetIds: string[]) {
       title: string;
       coverAssetId?: string;
       frameTimes: number[] | null;
+      prepped: boolean;
+      /** id cover bagian yang sedang dirender (agar tak ikut dibersihkan) */
+      curCoverId?: string;
+      /** cache decode audio MILIK film ini — dipakai ulang semua bagian split */
+      audio?: AudioDecodeCache;
       subs: SubSegment[]; // waktu SUMBER video
     };
     const jobs: BatchJob[] = [];
@@ -776,57 +844,67 @@ export async function runBatchExport(assetIds: string[]) {
       if (!asset || asset.type !== "video") continue;
       const autoName = asset.name.replace(/\.[^.]+$/, "");
       const title = pl.autoTitle ? autoName : pl.titleCustom.trim() || autoName;
-      useEditor.getState().setTexts({ title, description: pl.description, labelStyle: pl.labelStyle });
-      useEditor.getState().setExportSettings({ includeCover: pl.showTitleScreen, autoPartText: pl.showPartText, showTitleText: pl.titleDuringVideo });
-      useEditor.getState().patchExportState({ label: `Menyiapkan ${vi + 1}/${assetIds.length}: ${title}` });
-      markJob(asset.id, { status: "jalan", label: "Menyiapkan..." });
-
-      // latar "tiap bagian beda": AI pilih beberapa adegan berbeda dari video ini
-      let frameTimes: number[] | null = null;
-      if (pl.showTitleScreen) {
-        frameTimes = await pickFrameTimes(asset);
-      }
-      // cover per video (mode manual = cover pengguna dipakai bersama; otomatis = AI)
-      let coverAssetId = st0.cover.coverAssetId;
-      if (pl.showTitleScreen) {
-        if (useEditor.getState().cover.mode === "manual") {
-          if (!coverAssetId || !useEditor.getState().assets.some((a) => a.id === coverAssetId)) {
-            coverAssetId = await ensureCoverAsset(asset);
-          }
-        } else if (!frameTimes) {
-          useEditor.getState().setCover({ coverAssetId: undefined, previewUrl: undefined });
-          coverAssetId = await ensureCoverAsset(asset, true);
-        }
-      }
-      // SUBTITLE AI (unduh model sekali — butuh internet pada pemakaian pertama)
-      let subs: SubSegment[] = [];
-      if (pl.autoSub) {
-        try {
-          subs = await transcribeAsset(asset.url, pl.subLevel || "ringan", (p) => {
-            useEditor.getState().patchExportState({ label: `${title}: ${p.label || "subtitle AI..."}` });
-            markJob(asset.id, { label: p.label || "Subtitle AI..." });
-          });
-        } catch (e) {
-          console.warn("Subtitle AI dilewati:", e);
-          useEditor.getState().patchExportState({ label: `Subtitle AI dilewati: ${title}` });
-        }
-      }
       // bila video yang SAMA muncul lagi dalam batch paralel, kloning identitas
       // assetnya (URL tetap sama) supaya tiap pekerjaan punya elemen decode sendiri
       let jobAsset = asset;
-      if (jobs.some((j) => j.asset.id === asset.id)) {
-        jobAsset = { ...asset, id: `${asset.id}-p${vi}` };
-      }
-      jobs.push({ asset: jobAsset, origId: asset.id, title, coverAssetId, frameTimes, subs });
+      if (jobs.some((j) => j.asset.id === asset.id)) jobAsset = { ...asset, id: `${asset.id}-p${vi}` };
+      jobs.push({ asset: jobAsset, origId: asset.id, title, frameTimes: null, prepped: false, subs: [] });
       markJob(asset.id, { status: "antre", label: "Menunggu giliran render..." });
     }
+    useEditor.getState().patchExportState({ label: `${jobs.length} video siap — mulai merender...` });
+
+    /** kerja berat per video (adegan AI / cover / subtitle AI) — LAZY di awal
+     * giliran render masing-masing video, dengan status jelas di barisnya */
+    const prepJob = async (job: BatchJob, jid: string) => {
+      if (job.prepped) return;
+      if (pl.showTitleScreen) {
+        if (useEditor.getState().cover.mode === "manual") {
+          markJob(jid, { label: "Menyiapkan cover..." });
+          job.coverAssetId = await ensureSharedCover(job.asset);
+        } else if (useEditor.getState().cover.bgStyle === "adegan" && useEditor.getState().cover.bgScope === "beda") {
+          markJob(jid, { label: "Menganalisis adegan (AI)..." });
+          job.frameTimes = await pickFrameTimes(job.asset);
+        }
+        if (!job.frameTimes && !job.coverAssetId) {
+          markJob(jid, { label: "Menyiapkan cover..." });
+          job.coverAssetId = await ensureCoverAsset(job.asset, true);
+        }
+      }
+      if (pl.autoSub && !job.subs.length) {
+        await (subChain = subChain.then(async () => {
+          if (job.subs.length) return;
+          try {
+            job.subs = await transcribeAsset(job.asset.url, pl.subLevel || "ringan", (p) => {
+              markJob(jid, { label: p.label || "Subtitle AI..." });
+            });
+          } catch (e) {
+            console.warn("Subtitle AI dilewati:", e);
+          }
+        }));
+      }
+      job.prepped = true;
+    };
 
     // ========== FASE 2 — RENDER ==========
     const jobProgress = new Array(jobs.length).fill(0) as number[];
+    /** pekerjaan yang SEDANG berjalan (agar elemen medianya tidak ikut dibersihkan) */
+    const running = new Set<BatchJob>();
     let doneCount = 0;
     const report = () => {
       const sum = jobProgress.reduce((a, b) => a + b, 0);
       useEditor.getState().patchExportState({ progress: Math.min(0.99, sum / Math.max(1, jobs.length)) });
+    };
+
+    /** v1.0.14: bersihkan elemen video/gambar pekerjaan yang SUDAH selesai.
+     * Dulu elemen hanya dibersihkan SETELAH SEMUA film selesai — 50 film = 50
+     * dekoder video terbuka bersamaan → layar hitam & memori habis. */
+    const pruneFinished = () => {
+      const keep = new Set<string>();
+      for (const j of running) {
+        keep.add(`video:${j.asset.id}`);
+        if (j.curCoverId) keep.add(`image:${j.curCoverId}`);
+      }
+      engine.pruneElements(keep);
     };
 
     /** klip video batch + track utk satu pekerjaan (memakai setelan Efek & Klip "Video Playlist") */
@@ -866,12 +944,22 @@ export async function runBatchExport(assetIds: string[]) {
     /** MODE KILAT: render 1 video penuh — TIDAK menyentuh store timeline (aman paralel) */
     const renderJobFast = async (job: BatchJob, vi: number) => {
       const jid = job.origId;
+      running.add(job);
       try {
-        markJob(jid, { status: "jalan", progress: 0, label: "Merender..." });
+        markJob(jid, { status: "jalan", progress: 0, label: "Menyiapkan..." });
+        await prepJob(job, jid);
+        // v1.0.14: cache audio MILIK film ini — SEMUA bagian split memakai ulang
+        // (dulu tiap bagian decode ulang audio penuh = berulang + boros RAM)
+        const audio = new AudioDecodeCache(new OfflineAudioContext(1, 1, 48000));
+        job.audio = audio;
         const { clip, tracks } = buildBatchClip(job);
         const ranges = rangesFor(clip);
         // subtitle: waktu sumber -> waktu timeline (satu klip video, start 0)
         const tlSubs = mapSubsToTimeline(job.subs, [clip]);
+        // v1.0.14: tulis hasil LANGSUNG ke folder (desktop) — file ratusan MB tak
+        // pernah ditahan utuh di memori (penyebab utama hang/layar hitam)
+        const direct = s.exportDir && isDesktopFS() ? { dir: s.exportDir } : null;
+        const tick = makeTick();
         for (let i = 0; i < ranges.length; i++) {
           const r = ranges[i];
           const partTxt = partLabel(pl.labelStyle, i + 1, ranges.length, true);
@@ -881,13 +969,14 @@ export async function runBatchExport(assetIds: string[]) {
             batchTotal: jobs.length,
           });
           markJob(jid, { label: ranges.length > 1 ? partTxt : "Merender..." });
-          // cover bagian ini — asset LOKAL (tanpa race store antar pekerja paralel)
+          // cover bagian ini — asset LOKAL + CACHE (tanpa race store antar pekerja)
           let coverAssetId = job.coverAssetId;
           let assets = useEditor.getState().assets;
           if (job.frameTimes) {
-            const cov = await makeCoverAsset(job.asset, job.frameTimes[i % job.frameTimes.length]);
+            const cov = await makeCoverAssetCached(job.asset, job.frameTimes[i % job.frameTimes.length]);
             if (cov) {
               coverAssetId = cov.id;
+              job.curCoverId = cov.id;
               assets = [...assets, cov];
             }
           }
@@ -909,14 +998,23 @@ export async function runBatchExport(assetIds: string[]) {
             start: 0,
             end: proj.duration,
             rs,
+            audioCache: audio,
+            ...(direct ? { directSave: { dir: direct.dir, name: `${slugify(job.title)}-${slugify(partTxt)}` } } : {}),
             onProgress: (p) => {
-              jobProgress[vi] = (i + p) / ranges.length;
-              report();
-              markJob(jid, { progress: (i + p) / ranges.length });
+              const frac = (i + p) / ranges.length;
+              jobProgress[vi] = frac;
+              // v1.0.14: pembaruan UI dibatasi ~3x/dtk (dulu tiap frame = hang)
+              tick(
+                () => {
+                  report();
+                  markJob(jid, { progress: frac });
+                },
+                frac >= 1,
+              );
             },
           });
           const label = partLabel(pl.labelStyle, i + 1, ranges.length, true);
-          await blobResult(res.blob, `${slugify(job.title)}-${slugify(label)}${res.ext}`, i + 1, ranges.length, proj.duration);
+          await blobResult(res.blob, `${slugify(job.title)}-${slugify(label)}${res.ext}`, i + 1, ranges.length, proj.duration, res.savedPath, res.size);
         }
         jobProgress[vi] = 1;
         doneCount++;
@@ -927,18 +1025,27 @@ export async function runBatchExport(assetIds: string[]) {
         console.error(`Export gagal: ${job.title}`, e);
         markJob(jid, { status: "gagal", label: `Gagal: ${m}` });
         throw e;
+      } finally {
+        // v1.0.14: bebaskan cache audio & elemen/dekoder film ini SEKARANG
+        job.audio?.dispose();
+        job.audio = undefined;
+        running.delete(job);
+        pruneFinished();
       }
     };
 
     /** MODE KOMPATIBEL: jalur lama berurutan (rekam real-time via MediaRecorder) */
     const renderJobLegacy = async (job: BatchJob, vi: number) => {
       const jid = job.origId;
+      running.add(job);
       try {
-        markJob(jid, { status: "jalan", progress: 0, label: "Merender..." });
+        markJob(jid, { status: "jalan", progress: 0, label: "Menyiapkan..." });
+        await prepJob(job, jid);
         const { clip, tracks } = buildBatchClip(job);
         const ranges = rangesFor(clip);
         const tlSubs = mapSubsToTimeline(job.subs, [clip]);
         const fmt = pickExportFormat();
+        const tick = makeTick();
         for (let i = 0; i < ranges.length; i++) {
           const r = ranges[i];
           const partTxt = partLabel(pl.labelStyle, i + 1, ranges.length, true);
@@ -970,9 +1077,15 @@ export async function runBatchExport(assetIds: string[]) {
           engine.seek(0);
           await sleep(120);
           const blob = await exportRange(0, proj.duration, (p) => {
-            jobProgress[vi] = (i + p) / ranges.length;
-            report();
-            markJob(jid, { progress: (i + p) / ranges.length });
+            const frac = (i + p) / ranges.length;
+            jobProgress[vi] = frac;
+            tick(
+              () => {
+                report();
+                markJob(jid, { progress: frac });
+              },
+              frac >= 1,
+            );
           });
           const label = partLabel(pl.labelStyle, i + 1, ranges.length, true);
           await blobResult(blob, `${slugify(job.title)}-${slugify(label)}${fmt.ext}`, i + 1, ranges.length, proj.duration);
@@ -980,17 +1093,33 @@ export async function runBatchExport(assetIds: string[]) {
         jobProgress[vi] = 1;
         doneCount++;
         markJob(jid, { status: "selesai", progress: 1, label: "Selesai ✓" });
-        // bersihkan elemen antar video pada mode berurutan
-        engine.pruneElements();
       } catch (e) {
         const m = e instanceof Error ? e.message : "error";
         console.error(`Export gagal: ${job.title}`, e);
         markJob(jid, { status: "gagal", label: `Gagal: ${m}` });
         throw e;
+      } finally {
+        running.delete(job);
+        // bersihkan elemen antar video pada mode berurutan
+        engine.pruneElements();
       }
     };
 
     if (fast) {
+      // v1.0.14: paralel OTOMATIS disesuaikan estimasi memori — film sangat panjang
+      // dirender lebih sedikit bersamaan supaya tidak meledak (film pendek tetap ngebut)
+      const userParallel = Math.max(1, Math.min(5, Math.round(pl.parallel ?? 3)));
+      let parallel = userParallel;
+      const streaming = !!s.exportDir && isDesktopFS();
+      const maxDur = jobs.reduce((m, j) => Math.max(m, j.asset.duration || 0), 0);
+      const partLen = s.mode === "single" ? maxDur : s.splitBy === "count" ? maxDur / Math.max(1, s.parts) : Math.min(maxDur, Math.max(1, s.partSeconds));
+      const estMB = maxDur * 0.19 + (streaming ? 150 : partLen * 1.125) + 120;
+      if (estMB > 350) {
+        parallel = Math.max(1, Math.min(parallel, Math.floor(1400 / estMB)));
+        if (parallel < userParallel) {
+          useEditor.getState().patchExportState({ label: `Mode hemat memori: render ${parallel} video bersamaan (film panjang)` });
+        }
+      }
       await runPool(jobs, parallel, renderJobFast);
     } else {
       for (let vi = 0; vi < jobs.length; vi++) {
@@ -1003,7 +1132,8 @@ export async function runBatchExport(assetIds: string[]) {
     useEditor.getState().patchExportState({ label: `Gagal: ${msg}` });
   } finally {
     useEditor.setState({ clips: snapshot.clips, tracks: snapshot.tracks, assets: snapshot.assets, project: snapshot.project });
-    // lepaskan elemen media sisa batch (hemat memori/dekoder)
+    // lepaskan elemen media sisa batch (hemat memori/dekoder) + bersihkan cache cover
+    batchCoverCache.clear();
     engine.pruneElements();
     engine.syncSize();
     engine.pause();

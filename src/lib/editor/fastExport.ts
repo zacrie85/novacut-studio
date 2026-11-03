@@ -189,6 +189,8 @@ export interface FastExportResult {
   duration: number;
   /** v1.0.14: terisi bila file langsung ditulis ke disk (directSave) — blob kosong */
   savedPath?: string;
+  /** v1.0.14: ukuran file hasil (byte) — dari penghitung tulis disk bila streaming */
+  size?: number;
 }
 
 /** Campur & encode audio rentang timeline (PCM -> AudioEncoder) */
@@ -717,7 +719,7 @@ export async function exportRangeFast(opts: FastExportOptions): Promise<FastExpo
     }
   }
   const blob = savedPath ? new Blob() : new Blob([(targetRef as Mp4Target).buffer], { type: mime });
-  return { blob, ext: support.ext, mime, duration: dur, savedPath };
+  return { blob, ext: support.ext, mime, duration: dur, savedPath, size: savedPath ? writer?.bytes ?? 0 : blob.size };
 }
 
 /** estimasi dukungan cepat untuk UI (sinkron dari cache bila sudah di-probe) */

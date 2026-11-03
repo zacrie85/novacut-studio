@@ -3,10 +3,10 @@
 
 Unicode true
 !define APPNAME "NOVACUT Studio"
-!define VERSION "1.0.13"
+!define VERSION "1.0.14"
 !define EXENAME "NOVACUT Studio.exe"
 
-VIProductVersion "1.0.13.0"
+VIProductVersion "1.0.14.0"
 VIAddVersionKey /LANG=1033 "ProductName" "NOVACUT Studio Portable"
 VIAddVersionKey /LANG=1033 "FileDescription" "NOVACUT Studio Portable"
 VIAddVersionKey /LANG=1033 "FileVersion" "${VERSION}.0"
