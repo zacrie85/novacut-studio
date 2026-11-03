@@ -86,6 +86,60 @@ function registerFSIpc() {
     }
   });
 
+  // ===== TULIS FILE STREAMING (v1.0.14) =====
+  // Menulis video hasil render LANGSUNG ke disk per potongan — tanpa menahan
+  // blob utuh di memori renderer. Memecahkan hang/layar hitam saat export
+  // batch besar (puluhan film): memori tetap rendah walau file ratusan MB.
+  const liveWrites = new Map(); // id -> { fh, path }
+  let writeSeq = 0;
+
+  ipcMain.handle("fs:save-begin", async (_event, payload) => {
+    try {
+      const dir = typeof payload?.dir === "string" ? payload.dir : "";
+      if (!dir) return { ok: false, error: "Folder belum dipilih" };
+      let stat = null;
+      try { stat = await fs.promises.stat(dir); } catch { /* tidak ada */ }
+      if (!stat || !stat.isDirectory()) {
+        await fs.promises.mkdir(dir, { recursive: true });
+      }
+      const target = path.join(dir, safeFileName(payload?.name));
+      const fh = await fs.promises.open(target, "w");
+      const id = `w${++writeSeq}`;
+      liveWrites.set(id, { fh, path: target });
+      return { ok: true, id };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err) };
+    }
+  });
+
+  ipcMain.handle("fs:save-chunk", async (_event, payload) => {
+    try {
+      const w = liveWrites.get(payload?.id);
+      if (!w) return { ok: false, error: "Sesi tulis tidak ditemukan" };
+      const buf = Buffer.from(payload?.data ?? []);
+      if (!buf.length) return { ok: true };
+      const pos = typeof payload?.position === "number" ? payload.position : null;
+      if (pos === null) await w.fh.write(buf);
+      else await w.fh.write(buf, 0, buf.length, pos);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err) };
+    }
+  });
+
+  ipcMain.handle("fs:save-end", async (_event, payload) => {
+    try {
+      const w = liveWrites.get(payload?.id);
+      if (!w) return { ok: false, error: "Sesi tulis tidak ditemukan" };
+      liveWrites.delete(payload?.id);
+      await w.fh.sync();
+      await w.fh.close();
+      return { ok: true, path: w.path };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err) };
+    }
+  });
+
   ipcMain.handle("fs:open-folder", async (_event, dir) => {
     try {
       if (typeof dir !== "string" || !dir) return { ok: false, error: "Folder tidak valid" };

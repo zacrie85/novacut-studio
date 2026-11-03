@@ -17,6 +17,7 @@ import { Muxer as Mp4Muxer, ArrayBufferTarget as Mp4Target } from "mp4-muxer";
 import { Muxer as WebmMuxer, ArrayBufferTarget as WebmTarget } from "webm-muxer";
 import { engine, type RenderState } from "./engine";
 import { ensureAppFonts } from "./fonts";
+import { DiskFileWriter } from "./fsBridge";
 import { getMusicBuffer, musicDefById } from "./music";
 import { useEditor, totalDuration } from "./store";
 import type { Clip, MediaAsset, Track } from "./types";
@@ -94,31 +95,59 @@ async function probe(): Promise<FastSupport | null> {
 }
 
 interface AudioClipSrc {
+  /** v1.0.14: PCM MONO hasil mixdown — film 1 jam stereo 48 kHz butuh ~2,7 GB,
+   * mono cukup ~1,35 GB. Mixdown dilakukan SEKALI saat decode, bukan saat mixing. */
+  mono: Float32Array | null;
+  /** AudioBuffer asli (khusus musik pustaka — pendek) */
   buffer: AudioBuffer | null;
+  sampleRate: number;
 }
 
-/** decode audio satu aset (cache per sesi export) */
-class AudioDecodeCache {
+/**
+ * decode audio satu aset (cache per sesi export).
+ * v1.0.14: hasil decode langsung di-mixdown MONO lalu disimpan — hemat memori
+ * ~50%, dan audio besar tidak pernah ditahan dua kali (stereo + mono).
+ */
+export class AudioDecodeCache {
   private map = new Map<string, AudioClipSrc>();
   constructor(private ctx: OfflineAudioContext) {}
 
-  async get(assetId: string, url: string): Promise<AudioBuffer | null> {
+  async get(assetId: string, url: string): Promise<AudioClipSrc> {
     const hit = this.map.get(assetId);
-    if (hit) return hit.buffer;
-    let buffer: AudioBuffer | null = null;
+    if (hit) return hit;
+    let src: AudioClipSrc = { mono: null, buffer: null, sampleRate: this.ctx.sampleRate };
     try {
       const res = await fetch(url);
       const ab = await res.arrayBuffer();
-      buffer = await this.ctx.decodeAudioData(ab);
+      const buf = await this.ctx.decodeAudioData(ab);
+      const n = buf.length;
+      const mono = new Float32Array(n);
+      const c0 = buf.getChannelData(0);
+      const c1 = buf.numberOfChannels > 1 ? buf.getChannelData(1) : null;
+      if (c1) {
+        for (let i = 0; i < n; i++) mono[i] = (c0[i] + c1[i]) * 0.5;
+      } else {
+        mono.set(c0);
+      }
+      src = { mono, buffer: null, sampleRate: buf.sampleRate };
     } catch {
-      buffer = null;
+      src = { mono: null, buffer: null, sampleRate: this.ctx.sampleRate };
     }
-    this.map.set(assetId, { buffer });
-    return buffer;
+    this.map.set(assetId, src);
+    return src;
   }
 
   dispose() {
     this.map.clear();
+  }
+}
+
+/** v1.0.14: target muxer yang menulis potongan video LANGSUNG ke disk —
+ * file ratusan MB tidak pernah ditahan utuh di memori renderer */
+class DiskTarget {
+  constructor(private w: DiskFileWriter) {}
+  write(data: BufferSource, position?: number) {
+    return this.w.write(data, position);
   }
 }
 
@@ -145,6 +174,12 @@ export interface FastExportOptions {
   /** label tahap (untuk UI) */
   onStage?: (label: string) => void;
   fps?: number;
+  /** v1.0.14: tulis file LANGSUNG ke folder ini (desktop) — tanpa blob di memori.
+   * Nama TANPA ekstensi; ekstensi (.mp4/.webm) ditambahkan otomatis. */
+  directSave?: { dir: string; name: string };
+  /** v1.0.14: cache decode audio dari PEMANGGIL (dipakai ulang antar bagian split
+   * satu film yang sama — tidak decode ulang berulang). Tidak dibuang otomatis. */
+  audioCache?: AudioDecodeCache;
 }
 
 export interface FastExportResult {
@@ -152,6 +187,8 @@ export interface FastExportResult {
   ext: ".mp4" | ".webm";
   mime: string;
   duration: number;
+  /** v1.0.14: terisi bila file langsung ditulis ke disk (directSave) — blob kosong */
+  savedPath?: string;
 }
 
 /** Campur & encode audio rentang timeline (PCM -> AudioEncoder) */
@@ -168,8 +205,8 @@ async function encodeAudioRange(
 
   // kumpulkan kontributor audio
   type Contributor =
-    | { kind: "media"; clip: Clip; track: Track; buffer: AudioBuffer }
-    | { kind: "music"; clip: Clip; track: Track; buffer: AudioBuffer };
+    | { kind: "media"; clip: Clip; track: Track; src: AudioClipSrc }
+    | { kind: "music"; clip: Clip; track: Track; src: AudioClipSrc };
   const contributors: Contributor[] = [];
   for (const clip of rs.clips) {
     if (clip.kind !== "video" && clip.kind !== "audio") continue;
@@ -182,15 +219,25 @@ async function encodeAudioRange(
       if (!def) continue;
       try {
         const buf = await getMusicBuffer(def);
-        contributors.push({ kind: "music", clip, track: track!, buffer: buf });
+        contributors.push({ kind: "music", clip, track: track!, src: { mono: null, buffer: buf, sampleRate: buf.sampleRate } });
       } catch {
         /* musik gagal — lewati */
       }
     } else {
-      const buffer = await decodeCache.get(asset.id, asset.url);
-      if (buffer) contributors.push({ kind: "media", clip, track: track!, buffer });
+      const src = await decodeCache.get(asset.id, asset.url);
+      if (src.mono || src.buffer) contributors.push({ kind: "media", clip, track: track!, src });
     }
   }
+  // v1.0.14: referensi channel di-HOIST sekali di luar loop sampel — mixing
+  // puluhan menit audio jadi jauh lebih cepat (getChannelData tak dipanggil per sampel)
+  const mix = contributors.map((c) => {
+    const b = c.src.buffer;
+    const ch0 = c.src.mono ?? b!.getChannelData(0);
+    const ch1 = c.src.mono ?? (b!.numberOfChannels > 1 ? b!.getChannelData(1) : b!.getChannelData(0));
+    const sr = c.src.sampleRate;
+    const bufDur = c.src.mono ? c.src.mono.length / Math.max(1, sr) : b?.duration ?? 0;
+    return { clip: c.clip, track: c.track, kind: c.kind, ch0, ch1, sr, bufDur };
+  });
 
   const encoder = new AudioEncoder({
     output: (chunk, meta) => {
@@ -212,27 +259,25 @@ async function encodeAudioRange(
     r.fill(0);
     for (let i = 0; i < n; i++) {
       const t = start + (off + i) / sampleRate;
-      for (const c of contributors) {
-        const clip = c.clip;
+      for (const m of mix) {
+        const clip = m.clip;
         if (t < clip.start || t >= clip.start + clip.duration) continue;
         const local = t - clip.start;
-        const v = clipVolume(clip, c.track, local);
+        const v = clipVolume(clip, m.track, local);
         if (v <= 0) continue;
         let srcPos: number;
-        if (c.kind === "media") {
+        if (m.kind === "media") {
           srcPos = srcTimeOf(clip, t);
         } else {
-          srcPos = local % c.buffer.duration;
+          srcPos = local % Math.max(0.016, m.bufDur);
         }
-        const idx = srcPos * c.buffer.sampleRate;
+        const idx = srcPos * m.sr;
         const i0 = Math.floor(idx);
         const frac = idx - i0;
-        const ch0 = c.buffer.getChannelData(0);
-        const ch1 = c.buffer.numberOfChannels > 1 ? c.buffer.getChannelData(1) : ch0;
-        const s0 = i0 >= 0 && i0 < ch0.length ? ch0[i0] : 0;
-        const s0b = i0 + 1 < ch0.length ? ch0[i0 + 1] : s0;
-        const s1 = i0 >= 0 && i0 < ch1.length ? ch1[i0] : 0;
-        const s1b = i0 + 1 < ch1.length ? ch1[i0 + 1] : s1;
+        const s0 = i0 >= 0 && i0 < m.ch0.length ? m.ch0[i0] : 0;
+        const s0b = i0 + 1 < m.ch0.length ? m.ch0[i0 + 1] : s0;
+        const s1 = i0 >= 0 && i0 < m.ch1.length ? m.ch1[i0] : 0;
+        const s1b = i0 + 1 < m.ch1.length ? m.ch1[i0 + 1] : s1;
         l[i] += (s0 + (s0b - s0) * frac) * v;
         r[i] += (s1 + (s1b - s1) * frac) * v;
       }
@@ -529,33 +574,61 @@ export async function exportRangeFast(opts: FastExportOptions): Promise<FastExpo
 
   opts.onStage?.("Menyiapkan mesin render kilat...");
 
+  // ==== v1.0.14: tulis LANGSUNG ke disk (desktop) — file ratusan MB tak menumpuk di RAM ====
+  let writer: DiskFileWriter | null = null;
+  if (opts.directSave) {
+    writer = await DiskFileWriter.begin(opts.directSave.dir, opts.directSave.name + support.ext);
+  }
+
   // ==== muxer ====
   let muxer: Mp4Muxer<Mp4Target> | WebmMuxer<WebmTarget>;
-  let targetRef: Mp4Target | WebmTarget;
+  let targetRef: Mp4Target | WebmTarget | null;
   let mime: string;
   if (support.container === "mp4") {
-    const target = new Mp4Target();
-    muxer = new Mp4Muxer({
-      target,
-      video: { codec: support.videoMuxCodec, width: w, height: h, frameRate: fps },
-      ...(support.audioCodec ? { audio: { codec: support.audioCodec === "mp4a.40.2" ? ("aac" as const) : ("opus" as const), numberOfChannels: 2, sampleRate: 48000 } } : {}),
-      fastStart: "in-memory",
-    });
+    if (writer) {
+      muxer = new Mp4Muxer({
+        target: new DiskTarget(writer) as never,
+        video: { codec: support.videoMuxCodec, width: w, height: h, frameRate: fps },
+        ...(support.audioCodec ? { audio: { codec: support.audioCodec === "mp4a.40.2" ? ("aac" as const) : ("opus" as const), numberOfChannels: 2, sampleRate: 48000 } } : {}),
+        fastStart: false,
+      });
+      targetRef = null;
+    } else {
+      const target = new Mp4Target();
+      muxer = new Mp4Muxer({
+        target,
+        video: { codec: support.videoMuxCodec, width: w, height: h, frameRate: fps },
+        ...(support.audioCodec ? { audio: { codec: support.audioCodec === "mp4a.40.2" ? ("aac" as const) : ("opus" as const), numberOfChannels: 2, sampleRate: 48000 } } : {}),
+        fastStart: "in-memory",
+      });
+      targetRef = target;
+    }
     mime = "video/mp4";
-    targetRef = target;
   } else {
-    const target = new WebmTarget();
-    muxer = new WebmMuxer({
-      target,
-      video: { codec: "V_VP9", width: w, height: h, frameRate: fps },
-      ...(support.audioCodec ? { audio: { codec: "A_OPUS", numberOfChannels: 2, sampleRate: 48000 } } : {}),
-    });
+    if (writer) {
+      muxer = new WebmMuxer({
+        target: new DiskTarget(writer) as never,
+        video: { codec: "V_VP9", width: w, height: h, frameRate: fps },
+        ...(support.audioCodec ? { audio: { codec: "A_OPUS", numberOfChannels: 2, sampleRate: 48000 } } : {}),
+      });
+      targetRef = null;
+    } else {
+      const target = new WebmTarget();
+      muxer = new WebmMuxer({
+        target,
+        video: { codec: "V_VP9", width: w, height: h, frameRate: fps },
+        ...(support.audioCodec ? { audio: { codec: "A_OPUS", numberOfChannels: 2, sampleRate: 48000 } } : {}),
+      });
+      targetRef = target;
+    }
     mime = "video/webm";
-    targetRef = target;
   }
 
   // ==== audio dulu (cepat, seluruh rentang) ====
-  const decodeCache = new AudioDecodeCache(new OfflineAudioContext(1, 1, 48000));
+  // v1.0.14: cache audio bisa dari PEMANGGIL — dipakai ulang antar bagian split
+  // film yang sama (tidak decode ulang berulang = jauh lebih hemat waktu & RAM)
+  const localCache = !opts.audioCache;
+  const decodeCache = opts.audioCache ?? new AudioDecodeCache(new OfflineAudioContext(1, 1, 48000));
   if (support.audioCodec) {
     opts.onStage?.("Memproses audio...");
     await encodeAudioRange(muxer, support.audioCodec, opts, decodeCache, rs);
@@ -591,6 +664,16 @@ export async function exportRangeFast(opts: FastExportOptions): Promise<FastExpo
   let pumps = await primeVideoAt(opts.start, rs);
 
   const gopSize = fps * 2;
+  // v1.0.14: progres dikirim maksimal ~4x/detik (dulu SETIAP frame = 30x/detik
+  // per video × pembaruan store → badai render ulang UI → aplikasi hang)
+  let lastProgress = 0;
+  const emitProgress = (p: number) => {
+    const now = performance.now();
+    if (p >= 1 || now - lastProgress >= 250) {
+      lastProgress = now;
+      opts.onProgress?.(p);
+    }
+  };
   for (let f = 0; f < totalFrames; f++) {
     const t = opts.start + f / fps;
     // bila klip video berganti di tengah rentang, pompa ulang untuk klip baru
@@ -614,17 +697,27 @@ export async function exportRangeFast(opts: FastExportOptions): Promise<FastExpo
     encoder.encode(frame, { keyFrame: f % gopSize === 0 });
     frame.close();
     while (encoder.encodeQueueSize > 6) await sleep(2);
-    opts.onProgress?.((f + 1) / totalFrames);
+    emitProgress((f + 1) / totalFrames);
   }
 
   opts.onStage?.("Menyelesaikan berkas...");
   await encoder.flush();
   encoder.close();
   for (const p of pumps.values()) p.stop();
-  decodeCache.dispose();
+  if (localCache) decodeCache.dispose();
   muxer.finalize();
-  const blob = new Blob([targetRef.buffer], { type: mime });
-  return { blob, ext: support.ext, mime, duration: dur };
+  // v1.0.14: bila menulis langsung ke disk, tutup file & kembalikan path
+  let savedPath: string | undefined;
+  if (writer) {
+    try {
+      savedPath = await writer.finish();
+    } catch (e) {
+      await writer.abort();
+      throw e;
+    }
+  }
+  const blob = savedPath ? new Blob() : new Blob([(targetRef as Mp4Target).buffer], { type: mime });
+  return { blob, ext: support.ext, mime, duration: dur, savedPath };
 }
 
 /** estimasi dukungan cepat untuk UI (sinkron dari cache bila sudah di-probe) */
