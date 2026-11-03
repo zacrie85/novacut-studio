@@ -1,7 +1,8 @@
 // Uji E2E mesin Turbo di Electron (tanpa UI): decode WebCodecs murni +
 // compose + encode + tulis disk via IPC streaming — dua bagian split.
 import { audioCopyAllowed, exportSegmentTurbo, turboEligible } from "../../src/lib/editor/turboExport";
-import type { Clip, MediaAsset, RenderState, Track } from "../../src/lib/editor/types";
+import type { Clip, MediaAsset, Track } from "../../src/lib/editor/types";
+import type { RenderState } from "../../src/lib/editor/engine";
 
 async function main() {
   const res: Record<string, unknown> = { ok: false, steps: [] as unknown[] };

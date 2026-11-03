@@ -24,7 +24,11 @@ ipcMain.handle("t:chunk", async (_e, id, data, position) => {
   if (!f) return { ok: false, error: "no file" };
   try {
     const buf = Buffer.from(data);
-    await fs.promises.write(f.fd, buf, 0, buf.byteLength, typeof position === "number" ? position : null);
+    // Electron 45 / Node 24: fs.promises.write tidak ada — pakai callback fs.write
+    const pos = typeof position === "number" ? position : null;
+    await new Promise((res, rej) =>
+      fs.write(f.fd, buf, 0, buf.byteLength, pos, (err) => (err ? rej(err) : res()))
+    );
     return { ok: true };
   } catch (e) {
     return { ok: false, error: String(e) };

@@ -213,6 +213,8 @@ async function copyAudioRange(
     const avg = Math.max(0.001, (samples[samples.length - 1].cts - samples[0].cts) / samples.length);
     if (samples[i0 - 1].cts + avg > srcStart) i0--;
   }
+  // durasi rata-rata sampel (fallback chunk terakhir — AAC = 1024 sampel/frame)
+  const avgDur = Math.max(0.001, 1024 / Math.max(8000, atr.sampleRate || 48000));
   let metaSent = false;
   const BATCH = 4 * 1024 * 1024;
   let i = i0;
@@ -229,11 +231,15 @@ async function copyAudioRange(
     const from = batch[0].offset;
     const last = batch[batch.length - 1];
     const buf = new Uint8Array(await file.slice(from, last.offset + last.size).arrayBuffer());
-    for (const s of batch) {
+    for (let k = 0; k < batch.length; k++) {
+      const s = batch[k];
       if (s.cts >= srcEnd) break;
       const data = buf.slice(s.offset - from, s.offset - from + s.size);
       const ts = Math.round((shiftSec + Math.max(0, s.cts - srcStart)) * 1e6);
-      const chunk = new EncodedAudioChunk({ type: "key", timestamp: ts, data });
+      // mp4-muxer WAJIB duration — hitung dari sampel berikutnya (dts audio monoton)
+      const nxtCts = k + 1 < batch.length ? batch[k + 1].dts : j < samples.length ? samples[j].dts : s.dts + avgDur;
+      const durUs = Math.max(1, Math.round((nxtCts - s.dts) * 1e6));
+      const chunk = new EncodedAudioChunk({ type: "key", timestamp: ts, duration: durUs, data });
       muxer.addAudioChunk(
         chunk,
         metaSent
@@ -361,6 +367,9 @@ export async function exportSegmentTurbo(opts: TurboSegmentOptions): Promise<Tur
       video: { codec: support.videoMuxCodec, width: w, height: h, frameRate: fps },
       ...(audioMux ? { audio: audioMux } : {}),
       fastStart: false,
+      // bila encoder AAC sunyi tak tersedia (fallback platform), chunk audio
+      // pertama mulai di detik ke-"shift" — offset otomatis ke 0 oleh muxer
+      firstTimestampBehavior: "offset",
     });
     diskFlush = flusher;
   } else {
@@ -370,6 +379,7 @@ export async function exportSegmentTurbo(opts: TurboSegmentOptions): Promise<Tur
       video: { codec: support.videoMuxCodec, width: w, height: h, frameRate: fps },
       ...(audioMux ? { audio: audioMux } : {}),
       fastStart: "in-memory",
+      firstTimestampBehavior: "offset",
     });
   }
 
@@ -386,7 +396,9 @@ export async function exportSegmentTurbo(opts: TurboSegmentOptions): Promise<Tur
       }
     }
     const srcStart = srcTimeOf(clip, clip.start);
-    const srcEnd = srcTimeOf(clip, clip.start + clip.duration);
+    // akhir rentang TANPA wrap modulo (lihat catatan di blok video di bawah)
+    const segLenA = (clip.duration * clip.speed) / Math.max(1, clip.loopCount);
+    const srcEnd = clip.inPoint + clamp(clip.duration * clip.speed, 0, segLenA);
     await copyAudioRange(muxer, file, atr, srcStart, srcEnd, opts.shift);
   } else if (support.audioCodec && audioMux) {
     opts.onStage?.("Memproses audio...");
@@ -427,9 +439,13 @@ export async function exportSegmentTurbo(opts: TurboSegmentOptions): Promise<Tur
     ...(support.videoMuxCodec === "avc" ? { avc: { format: "avc" as const } } : {}),
   });
 
-  // rentang sumber yang perlu didekode
+  // rentang sumber yang perlu didekode — TANPA modulo: di titik akhir klip
+  // srcTimeOf membungkus ke 0 (perilaku loop) → rentang jadi kosong/terbalik.
+  // Turbo hanya berjalan utk loopCount=1, jadi petakan langsung + kunci ke segmen.
+  const segLen = (clip.duration * clip.speed) / Math.max(1, clip.loopCount);
+  const tEnd = Math.min(clip.start + clip.duration, opts.shift + contentDur + 0.02);
   const srcStart = srcTimeOf(clip, Math.max(clip.start, opts.shift));
-  const srcEnd = srcTimeOf(clip, Math.min(clip.start + clip.duration, opts.shift + contentDur + 0.02));
+  const srcEnd = clip.inPoint + clamp(Math.max(0, tEnd - clip.start) * clip.speed, 0, segLen);
 
   const gen = decodeVideoRange(file, vtr, srcStart, srcEnd);
   const buf: TurboFrame[] = [];
@@ -490,13 +506,16 @@ export async function exportSegmentTurbo(opts: TurboSegmentOptions): Promise<Tur
       });
       encoder.encode(out, { keyFrame: f % gopSize === 0 });
       out.close();
-      if (frame) frame.close();
+      // frame TIDAK ditutup di sini — bisa dipakai beberapa iterasi (hold frame)
+      // (fps render > fps sumber, mis. 30 > 24) — ditutup saat dibuang dari buffer
       while (encoder.encodeQueueSize > 6) await sleep(2);
       if (buf.length < 4 && !streamDone) await pull();
       emit((f + 1) / totalFrames);
     }
   } finally {
     await gen.return(undefined as never).catch(() => undefined); // tutup decoder + sisa frame
+    for (const b of buf) b.frame.close(); // sisa buffer tidak boleh bocor
+    buf.length = 0;
   }
 
   opts.onStage?.("Menyelesaikan berkas...");
