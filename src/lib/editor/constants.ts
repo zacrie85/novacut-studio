@@ -253,6 +253,15 @@ export function fmtSize(bytes: number): string {
   return `${(bytes / 1e3).toFixed(0)} KB`;
 }
 
+/** v1.0.16: format estimasi waktu tersisa (detik) — "2j 15m" / "48 mnt" */
+export function fmtEta(sec: number): string {
+  const s = Math.max(0, Math.round(sec));
+  const h = Math.floor(s / 3600);
+  const m = Math.round((s % 3600) / 60);
+  if (h > 0) return `${h}j ${m}m`;
+  return `${Math.max(1, m)} mnt`;
+}
+
 export function slugify(s: string): string {
   return (s || "video")
     .toLowerCase()

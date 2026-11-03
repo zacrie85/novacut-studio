@@ -9,7 +9,7 @@ import { ArrowLeft, CheckCircle2, Download, FolderOpen, GripVertical, ListVideo,
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useEditor } from "@/lib/editor/store";
-import { fmtSize, fmtTime } from "@/lib/editor/constants";
+import { fmtEta, fmtSize, fmtTime } from "@/lib/editor/constants";
 import { runBatchExport, triggerDownload } from "@/lib/editor/exporter";
 import { isDesktopFS, openInFolder } from "@/lib/editor/fsBridge";
 import { requestApplyTarget } from "../ApplyTargetSwitch";
@@ -85,7 +85,11 @@ export function PlaylistExportPanel() {
         <div className="shrink-0 space-y-1.5 rounded-xl border border-white/[0.07] bg-card p-2.5">
           <div className="flex items-center justify-between gap-2 text-[11px] text-gray-400">
             <span className="truncate">{ex.label || "Menyiapkan..."}</span>
-            <span className="shrink-0 font-mono text-gray-300">{Math.round(ex.progress * 100)}%</span>
+            <span className="shrink-0 font-mono text-gray-300">
+              {/* v1.0.16: estimasi waktu tersisa */}
+              {running && ex.eta !== undefined ? `±${fmtEta(ex.eta)} · ` : ""}
+              {Math.round(ex.progress * 100)}%
+            </span>
           </div>
           <div className="h-1.5 overflow-hidden rounded bg-white/10">
             <div className="h-full rounded bg-blue-500 transition-all" style={{ width: `${Math.max(2, Math.round(ex.progress * 100))}%` }} />

@@ -7,9 +7,9 @@
 import { grabFrame, aiRecommendTemplates, analyzeVideoFrames, loadImage, renderCoverToDataURL } from "./covers";
 import { COVER_TEMPLATES, partLabel, slugify, uid } from "./constants";
 import { engine } from "./engine";
-import { exportRangeFast, fastSupported, AudioDecodeCache } from "./fastExport";
+import { adjustRangesToSilence, exportRangeFast, fastSupported, AudioDecodeCache } from "./fastExport";
 import { ensureAppFonts } from "./fonts";
-import { isDesktopFS, saveBlobToDir } from "./fsBridge";
+import { fileSizeInDir, isDesktopFS, notifyDesktop, saveBlobToDir, shutdownPC } from "./fsBridge";
 import { normalizeEnhance } from "./playlistExport";
 import { dimsFor, useEditor, totalDuration } from "./store";
 import { transcribeAsset, type SubSegment } from "./subtitles";
@@ -17,6 +17,33 @@ import type { BatchJobView, Clip, MediaAsset, Track } from "./types";
 import { fillZoomFor } from "./visual";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// ===== v1.0.16: bunyi "ting" — AudioContext dibuat sekali, dipakai sepanjang batch =====
+let chimeCtx: AudioContext | null = null;
+/** Bunyi pendek saat satu film selesai ("film") dan saat seluruh batch tuntas ("done") */
+function chime(kind: "film" | "done") {
+  try {
+    chimeCtx ??= new AudioContext();
+    if (chimeCtx.state === "suspended") void chimeCtx.resume();
+    const t = chimeCtx.currentTime;
+    const tones: [number, number][] = kind === "film" ? [[880, 0]] : [[659.25, 0], [987.77, 0.15]];
+    for (const [freq, dt] of tones) {
+      const o = chimeCtx.createOscillator();
+      const g = chimeCtx.createGain();
+      o.type = "sine";
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, t + dt);
+      g.gain.exponentialRampToValueAtTime(0.18, t + dt + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dt + 0.4);
+      o.connect(g);
+      g.connect(chimeCtx.destination);
+      o.start(t + dt);
+      o.stop(t + dt + 0.45);
+    }
+  } catch {
+    /* audio tidak tersedia — abaikan */
+  }
+}
 
 /** batasi ukuran huruf relatif (0.012–0.2) dengan bawaan aman */
 function clampPct(v: number | undefined, def: number): number {
@@ -801,7 +828,8 @@ export async function runBatchExport(assetIds: string[]) {
   try {
     // rasio video hasil (pilihan di Menu Export Playlist): ganti ukuran proyek sementara
     // 16:9 = seperti aslinya; 9:16 = vertikal untuk Shorts/TikTok/Reels
-    const targetDims = dimsFor(pl.ratio, st0.project.quality);
+    // v1.0.16: preset kualitas menentukan resolusi hasil (ringan=720p, tajam/maksimal=1080p)
+    const targetDims = dimsFor(pl.ratio, pl.quality === "ringan" ? 720 : 1080);
     useEditor.getState().setProject({ ratio: pl.ratio, ...targetDims });
     engine.syncSize();
     const fast = s.engineMode === "fast" ? await fastSupported() : null;
@@ -898,9 +926,23 @@ export async function runBatchExport(assetIds: string[]) {
     /** pekerjaan yang SEDANG berjalan (agar elemen medianya tidak ikut dibersihkan) */
     const running = new Set<BatchJob>();
     let doneCount = 0;
+    /** v1.0.16: bobot per pekerjaan = jumlah bagian split — film 2 jam beratnya
+     * lebih besar daripada video pendek 1 bagian, supaya ETA akurat */
+    const jobParts = new Array(jobs.length).fill(1) as number[];
+    const t0 = performance.now();
     const report = () => {
-      const sum = jobProgress.reduce((a, b) => a + b, 0);
-      useEditor.getState().patchExportState({ progress: Math.min(0.99, sum / Math.max(1, jobs.length)) });
+      let sum = 0;
+      let wsum = 0;
+      for (let i = 0; i < jobs.length; i++) {
+        const w = Math.max(1, jobParts[i] || 1);
+        sum += (jobProgress[i] || 0) * w;
+        wsum += w;
+      }
+      const prog = Math.min(0.99, sum / Math.max(1, wsum));
+      // v1.0.16: estimasi waktu tersisa — makin akurat setelah ±5% pekerjaan tuntas
+      const elapsed = (performance.now() - t0) / 1000;
+      const eta = prog > 0.02 && elapsed > 8 ? Math.max(0, (elapsed / prog) * (1 - prog)) : undefined;
+      useEditor.getState().patchExportState({ progress: prog, ...(eta !== undefined ? { eta } : {}) });
     };
 
     /** v1.0.14: bersihkan elemen video/gambar pekerjaan yang SUDAH selesai.
@@ -955,22 +997,82 @@ export async function runBatchExport(assetIds: string[]) {
       running.add(job);
       try {
         markJob(jid, { status: "jalan", progress: 0, label: "Menyiapkan..." });
+        // v1.0.14: tulis hasil LANGSUNG ke folder (desktop) — file ratusan MB tak
+        // pernah ditahan utuh di memori (penyebab utama hang/layar hitam)
+        const direct = s.exportDir && isDesktopFS() ? { dir: s.exportDir } : null;
+        const { clip, tracks } = buildBatchClip(job);
+        let ranges = rangesFor(clip);
+        jobParts[vi] = ranges.length;
+        // ===== v1.0.16: RESUME BATCH =====
+        // Cek bagian yang filenya SUDAH ada di folder SEBELUM analisis berat
+        // (cover/subtitle AI) — film yang sudah lengkap terlewati seketika.
+        let skipParts: Set<number> | null = null;
+        if (direct && pl.skipExisting !== false && fast) {
+          const ext = fast.ext;
+          markJob(jid, { label: "Memeriksa file yang sudah ada..." });
+          const have: { i: number; size: number; path?: string }[] = [];
+          for (let i = 0; i < ranges.length; i++) {
+            const nm = `${slugify(job.title)}-${slugify(partLabel(pl.labelStyle, i + 1, ranges.length, true))}${ext}`;
+            const sz = await fileSizeInDir(direct.dir, nm);
+            if (sz >= 1024) have.push({ i, size: sz, path: `${direct.dir}/${nm}` });
+          }
+          const addResult = (h: { i: number; size: number; path?: string }) => {
+            useEditor.getState().addExportResult({
+              id: uid("exp"),
+              name: `${slugify(job.title)}-${slugify(partLabel(pl.labelStyle, h.i + 1, ranges.length, true))}${ext}`,
+              url: "",
+              size: h.size,
+              part: h.i + 1,
+              total: ranges.length,
+              duration: Math.max(0.1, ranges[h.i].end - ranges[h.i].start),
+              savedPath: h.path,
+            });
+          };
+          if (have.length === ranges.length) {
+            for (const h of have) addResult(h);
+            jobProgress[vi] = 1;
+            doneCount++;
+            report();
+            markJob(jid, { status: "selesai", progress: 1, label: "Sudah ada — dilewati ✓" });
+            if (pl.soundDone) chime("film");
+            return;
+          }
+          if (have.length) {
+            skipParts = new Set(have.map((h) => h.i));
+            for (const h of have) addResult(h);
+            markJob(jid, { label: `${have.length}/${ranges.length} bagian sudah ada — lanjut sisanya` });
+          }
+        }
         await prepJob(job, jid);
         // v1.0.14: cache audio MILIK film ini — SEMUA bagian split memakai ulang
         // (dulu tiap bagian decode ulang audio penuh = berulang + boros RAM)
         const audio = new AudioDecodeCache(new OfflineAudioContext(1, 1, 48000));
         job.audio = audio;
-        const { clip, tracks } = buildBatchClip(job);
-        const ranges = rangesFor(clip);
+        // ===== v1.0.16: SMART SPLIT — geser tiap batas ke jeda sunyi audio =====
+        if (pl.smartSplit && ranges.length > 1) {
+          markJob(jid, { label: "Mencari jeda sunyi (audio)..." });
+          try {
+            const asrc = await audio.get(job.asset.id, job.asset.url);
+            const sr = asrc.sampleRate || 48000;
+            if (asrc.mono && asrc.mono.length > sr) {
+              ranges = adjustRangesToSilence(ranges, asrc.mono, sr, clip.speed, asrc.mono.length / sr);
+            }
+          } catch {
+            /* analisis gagal — pakai pembagian rata biasa */
+          }
+        }
         // subtitle: waktu sumber -> waktu timeline (satu klip video, start 0)
         const tlSubs = mapSubsToTimeline(job.subs, [clip]);
-        // v1.0.14: tulis hasil LANGSUNG ke folder (desktop) — file ratusan MB tak
-        // pernah ditahan utuh di memori (penyebab utama hang/layar hitam)
-        const direct = s.exportDir && isDesktopFS() ? { dir: s.exportDir } : null;
         const tick = makeTick();
         for (let i = 0; i < ranges.length; i++) {
           const r = ranges[i];
           const partTxt = partLabel(pl.labelStyle, i + 1, ranges.length, true);
+          // v1.0.16: bagian yang filenya sudah lengkap — lewati tanpa render ulang
+          if (skipParts?.has(i)) {
+            jobProgress[vi] = (i + 1) / ranges.length;
+            markJob(jid, { progress: (i + 1) / ranges.length, label: `${partTxt} — sudah ada ✓` });
+            continue;
+          }
           useEditor.getState().patchExportState({
             label: `${job.title} — ${partTxt} (${doneCount + 1}/${jobs.length} berjalan)`,
             batchIndex: vi,
@@ -1007,6 +1109,7 @@ export async function runBatchExport(assetIds: string[]) {
             end: proj.duration,
             rs,
             audioCache: audio,
+            bitrate: pl.quality === "ringan" ? 4_500_000 : pl.quality === "maksimal" ? 14_000_000 : 9_000_000,
             ...(direct ? { directSave: { dir: direct.dir, name: `${slugify(job.title)}-${slugify(partTxt)}` } } : {}),
             onProgress: (p) => {
               const frac = (i + p) / ranges.length;
@@ -1028,6 +1131,7 @@ export async function runBatchExport(assetIds: string[]) {
         doneCount++;
         report();
         markJob(jid, { status: "selesai", progress: 1, label: "Selesai ✓" });
+        if (pl.soundDone) chime("film");
       } catch (e) {
         const m = e instanceof Error ? e.message : "error";
         console.error(`Export gagal: ${job.title}`, e);
@@ -1101,6 +1205,7 @@ export async function runBatchExport(assetIds: string[]) {
         jobProgress[vi] = 1;
         doneCount++;
         markJob(jid, { status: "selesai", progress: 1, label: "Selesai ✓" });
+        if (pl.soundDone) chime("film");
       } catch (e) {
         const m = e instanceof Error ? e.message : "error";
         console.error(`Export gagal: ${job.title}`, e);
@@ -1161,6 +1266,17 @@ export async function runBatchExport(assetIds: string[]) {
       }
     } else {
       stEnd.patchExportState({ running: false, progress: 1 });
+    }
+    // v1.0.16: bunyi tuntas + notifikasi Windows + auto-shutdown (bila diaktifkan)
+    if (pl.soundDone) chime("done");
+    const shutOk = pl.autoShutdown && isDesktopFS() && failedCount === 0;
+    if (!shutOk && isDesktopFS() && (pl.soundDone || failedCount > 0)) {
+      void notifyDesktop("NOVACUT Studio", failedCount > 0 ? `Batch selesai — ${failedCount} file gagal ✗` : `Batch selesai — semua file tersimpan ✓`);
+    }
+    if (shutOk) {
+      const st3 = useEditor.getState();
+      st3.patchExportState({ label: `${st3.exportState.label} — PC akan mati dalam 60 detik` });
+      void shutdownPC();
     }
   }
 }

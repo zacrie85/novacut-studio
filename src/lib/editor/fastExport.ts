@@ -142,6 +142,72 @@ export class AudioDecodeCache {
   }
 }
 
+/** v1.0.16: envelope RMS kasar (per ±100 ms) dari PCM mono — untuk smart split.
+ * Satu kali lewat pada seluruh array; hasilnya puluhan KB saja. */
+export function silenceEnvelope(mono: Float32Array, sampleRate: number): { rms: Float32Array; sec: number } {
+  const per = Math.max(1, Math.round(sampleRate * 0.1));
+  const n = Math.max(1, Math.floor(mono.length / per));
+  const rms = new Float32Array(n);
+  for (let b = 0; b < n; b++) {
+    const s0 = b * per;
+    const s1 = Math.min(mono.length, s0 + per);
+    let sum = 0;
+    for (let i = s0; i < s1; i++) {
+      const v = mono[i];
+      sum += v * v;
+    }
+    rms[b] = Math.sqrt(sum / Math.max(1, s1 - s0));
+  }
+  return { rms, sec: per / sampleRate };
+}
+
+/**
+ * v1.0.16: SMART SPLIT — geser tiap batas bagian (kecuali tepi) ke bucket
+ * paling sunyi dalam ±8 detik (waktu SUMBER). Bila RMS terendah tidak jauh
+ * di bawah median (tidak ada jeda nyata), batas dibiarkan agar tidak berpindah
+ * sembarangan. Output tetap berurutan & berjarak aman dari batas tetangga.
+ *
+ * @param speed laju klip playlist (waktu timeline = waktu sumber / speed)
+ * @param durSumber durasi sumber (detik) — batas di luar cakupan dibiarkan
+ */
+export function adjustRangesToSilence(
+  ranges: { start: number; end: number }[],
+  mono: Float32Array,
+  sampleRate: number,
+  speed: number,
+  durSumber: number,
+): { start: number; end: number }[] {
+  const { rms, sec } = silenceEnvelope(mono, sampleRate);
+  const out = ranges.map((r) => ({ ...r }));
+  const WIN = 8; // detik sumber
+  for (let k = 0; k < out.length - 1; k++) {
+    const b = out[k].end;
+    const s = b * Math.max(0.05, speed);
+    if (s <= 1 || s >= durSumber - 0.5) continue; // di luar audio sumber — biarkan
+    const lo = Math.max(0, s - WIN);
+    const hi = Math.min(durSumber - 0.25, s + WIN);
+    const i0 = Math.max(0, Math.floor(lo / sec));
+    const i1 = Math.min(rms.length - 1, Math.ceil(hi / sec));
+    if (i1 <= i0) continue;
+    const win: number[] = [];
+    for (let i = i0; i <= i1; i++) win.push(rms[i]);
+    win.sort((a, c) => a - c);
+    const med = win[Math.floor(win.length / 2)] || 0;
+    let best = i0;
+    for (let i = i0; i <= i1; i++) if (rms[i] < rms[best]) best = i;
+    if (med > 0 && rms[best] > med * 0.72) continue; // tak ada jeda jelas
+    const sNew = Math.min(hi, Math.max(lo, (best + 0.5) * sec));
+    const bNew = sNew / Math.max(0.05, speed);
+    // jaga jarak aman dari batas tetangga (±8% panjang gabungan, min 3 dtk)
+    const prev = out[k].start;
+    const next = out[k + 1].end;
+    const minGap = Math.min(15, Math.max(3, (next - prev) * 0.08));
+    out[k].end = Math.min(next - minGap, Math.max(prev + minGap, bNew));
+    out[k + 1].start = out[k].end;
+  }
+  return out;
+}
+
 /** v1.0.15: antrean tulis-disk berurutan utk StreamTarget BAWAAN muxer.
  * PENTING: mp4-muxer/webm-muxer hanya menerima target yang merupakan instance
  * kelas `Target` miliknya — kelas buatan sendiri (DiskTarget di v1.0.14) membuat
@@ -202,6 +268,8 @@ export interface FastExportOptions {
   /** v1.0.14: cache decode audio dari PEMANGGIL (dipakai ulang antar bagian split
    * satu film yang sama — tidak decode ulang berulang). Tidak dibuang otomatis. */
   audioCache?: AudioDecodeCache;
+  /** v1.0.16: bitrate video (bps). Bawaan 9 Mbps (preset "Tajam"). */
+  bitrate?: number;
 }
 
 export interface FastExportResult {
@@ -684,7 +752,7 @@ export async function exportRangeFast(opts: FastExportOptions): Promise<FastExpo
     codec: support.videoCodec,
     width: w,
     height: h,
-    bitrate: 9_000_000,
+    bitrate: opts.bitrate ?? 9_000_000,
     framerate: fps,
     ...(support.videoMuxCodec === "avc" ? { avc: { format: "avc" as const } } : {}),
   });
