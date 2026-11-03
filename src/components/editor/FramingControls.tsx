@@ -3,19 +3,135 @@
 // NOVACUT Studio - Kontrol kadro: zoom + tombol geser atas/bawah/kiri/kanan (mode 9:16)
 // Ada dua varian: klip timeline (FramingControls) & video playlist (PlaylistFramingControls).
 
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Crosshair, Maximize, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Crosshair, Film, Maximize, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { normalizeEnhance } from "@/lib/editor/playlistExport";
 import { useEditor } from "@/lib/editor/store";
-import { fillZoomFor } from "@/lib/editor/visual";
-import type { PlaylistEnhance } from "@/lib/editor/types";
+import { fillZoomFor, framingLayout } from "@/lib/editor/visual";
+import type { MediaAsset, PlaylistEnhance } from "@/lib/editor/types";
 import { cn } from "@/lib/utils";
 
 const PAN_STEP = 0.15;
 
 const padBtn =
   "flex h-8 w-8 items-center justify-center rounded-md border border-blue-500/25 bg-blue-500/10 text-blue-300 transition hover:border-blue-400 hover:bg-blue-500/25 active:scale-95";
+
+// ===== v1.0.21: PRATINJAU KADRO — gambar satu frame video + zoom & geser persis
+// seperti jalur render (framingLayout), jadi apa yang terlihat = hasil export.
+
+/** cache frame pratinjau per asset (dataURL 480px) — diambil sekali */
+const previewFrameCache = new Map<string, string>();
+
+async function grabPreviewFrame(asset: MediaAsset): Promise<string | null> {
+  const hit = previewFrameCache.get(asset.id);
+  if (hit) return hit;
+  const src = await new Promise<string | null>((res) => {
+    const el = document.createElement("video");
+    el.preload = "auto";
+    el.muted = true;
+    let settled = false;
+    const done = (v: string | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      el.removeAttribute("src");
+      el.load();
+      res(v);
+    };
+    const timer = setTimeout(() => done(null), 6000);
+    el.onloadedmetadata = () => {
+      // frame representatif: 10% durasi (minimal 0.5 dtk, maksimal 60 dtk)
+      el.currentTime = Math.min(Math.max(0.5, (el.duration || 2) * 0.1), 60);
+    };
+    el.onseeked = () => {
+      try {
+        const c = document.createElement("canvas");
+        const scale = 480 / Math.max(1, el.videoWidth);
+        c.width = 480;
+        c.height = Math.max(1, Math.round(el.videoHeight * scale));
+        const ctx = c.getContext("2d");
+        if (!ctx) return done(null);
+        ctx.drawImage(el, 0, 0, c.width, c.height);
+        done(c.toDataURL("image/jpeg", 0.82));
+      } catch {
+        done(null);
+      }
+    };
+    el.onerror = () => done(null);
+    el.src = asset.url;
+  });
+  if (src) previewFrameCache.set(asset.id, src);
+  return src;
+}
+
+/** Kanvas mini 9:16 — menampilkan video dengan ZOOM & GESER yang sedang disetel.
+ * Matematika gambar = engine.ts composeFrame (framingLayout + pan overX/overY). */
+function FramingPreview({ asset, zoom, panX, panY }: { asset: MediaAsset | undefined; zoom: number; panX: number; panY: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const [frame, setFrame] = useState<HTMLImageElement | null>(null);
+
+  // ambil frame video (cache per asset) → gambar
+  useEffect(() => {
+    let dead = false;
+    setFrame(null);
+    if (!asset?.url) return;
+    void (async () => {
+      const src = await grabPreviewFrame(asset);
+      if (dead || !src) return;
+      const img = new Image();
+      img.onload = () => {
+        if (!dead) setFrame(img);
+      };
+      img.src = src;
+    })();
+    return () => {
+      dead = true;
+    };
+  }, [asset?.id]);
+
+  // gambar ulang setiap zoom / geser berubah — langsung tanpa delay
+  useEffect(() => {
+    const cv = ref.current;
+    if (!cv) return;
+    const ctx = cv.getContext("2d");
+    if (!ctx) return;
+    const W = cv.width;
+    const H = cv.height;
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, W, H);
+    if (frame && frame.naturalWidth) {
+      const layout = framingLayout(frame.naturalWidth, frame.naturalHeight, W, H, zoom);
+      const dx = (W - layout.dw) / 2 + panX * layout.overX;
+      const dy = (H - layout.dh) / 2 + panY * layout.overY;
+      ctx.drawImage(frame, dx, dy, layout.dw, layout.dh);
+    }
+  }, [frame, zoom, panX, panY]);
+
+  if (!asset) {
+    return (
+      <div className="hidden w-16 shrink-0 flex-col items-center gap-1 @min-[300px]:flex">
+        <div className="flex aspect-[9/16] w-full items-center justify-center rounded-lg border border-white/10 bg-black/60 text-gray-600">
+          <Film className="h-5 w-5" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="hidden w-16 shrink-0 flex-col items-center gap-1 @min-[300px]:flex @min-[430px]:w-24">
+      <canvas
+        ref={ref}
+        width={192}
+        height={340}
+        title={asset.name}
+        className="h-auto w-full rounded-lg border border-blue-500/25 bg-black"
+      />
+      <div className="text-center text-[8px] font-semibold tracking-widest text-gray-500">PRATINJAU</div>
+    </div>
+  );
+}
 
 export function FramingControls({ target, className }: { target: "active" | "selected"; className?: string }) {
   const clipId = useEditor((s) => {
@@ -167,7 +283,7 @@ export function PlaylistFramingControls({ className, title, hint }: { className?
   const fillZoom = firstVideo?.width && firstVideo?.height ? fillZoomFor(firstVideo.width, firstVideo.height, project.width, project.height) : null;
 
   return (
-    <div className={cn("space-y-2 rounded-lg border border-blue-500/20 bg-black/40 px-3 py-2.5 ", className)}>
+    <div className={cn("space-y-2 rounded-lg border border-blue-500/20 bg-black/40 px-3 py-2.5 @container", className)}>
       <div className="flex items-center justify-between">
         <span className="text-[11px] font-semibold tracking-widest text-blue-400">{title ?? `ZOOM & GESER ${project.ratio}`}</span>
         <div className="flex items-center gap-1">
@@ -190,6 +306,9 @@ export function PlaylistFramingControls({ className, title, hint }: { className?
       </div>
 
       <div className="flex items-center gap-3">
+        {/* v1.0.21: pratinjau live di kiri — frame video + zoom & geser yang sedang disetel */}
+        <FramingPreview asset={firstVideo} zoom={zoom} panX={panX} panY={panY} />
+
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex items-center gap-1.5">
             <Button size="sm" variant="outline" className={padBtn} onClick={() => patch({ zoom: Math.max(1, zoom - 0.1) })} aria-label="Perkecil" disabled={zoom <= 1}>
@@ -199,7 +318,7 @@ export function PlaylistFramingControls({ className, title, hint }: { className?
             <Button size="sm" variant="outline" className={padBtn} onClick={() => patch({ zoom: Math.min(5, zoom + 0.1) })} aria-label="Perbesar" disabled={zoom >= 5}>
               <ZoomIn className="h-3.5 w-3.5" />
             </Button>
-            <span className="w-11 text-right font-mono text-[11px] text-blue-400">{zoom.toFixed(2)}x</span>
+            <span className="hidden w-11 text-right font-mono text-[11px] text-blue-400 @min-[380px]:inline">{zoom.toFixed(2)}x</span>
           </div>
           <div className="flex items-center justify-between text-[11px] text-gray-500">
             <span>
