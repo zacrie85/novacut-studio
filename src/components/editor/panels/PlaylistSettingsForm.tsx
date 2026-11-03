@@ -33,7 +33,7 @@ function Section({ icon, title, hint, children, defaultOpen = false }: { icon: R
   );
 }
 
-export function PlaylistSettingsForm({ showSave = true }: { showSave?: boolean }) {
+export function PlaylistSettingsForm({ showSave = true, hideTitleScreen = false }: { showSave?: boolean; hideTitleScreen?: boolean }) {
   const pl = useEditor((s) => s.playlistExport);
   const { toast } = useToast();
   const setPl = (p: Partial<PlaylistExportConfig>) => useEditor.getState().setPlaylistExport(p);
@@ -92,10 +92,13 @@ export function PlaylistSettingsForm({ showSave = true }: { showSave?: boolean }
           <span className="whitespace-nowrap rounded-lg border border-blue-500/30 bg-blue-500/10 px-2 py-1 font-mono text-[11px] text-blue-300">{partLabel(pl.labelStyle, 2, 5, true)}</span>
         </div>
 
-        <div className="flex items-center justify-between gap-3">
-          <Label className="text-xs leading-snug text-gray-300">Layar judul di awal tiap hasil</Label>
-          <Switch checked={pl.showTitleScreen} onCheckedChange={(v) => setPl({ showTitleScreen: v })} className="data-[state=checked]:bg-blue-500" />
-        </div>
+        {/* di Mode Sederhana toggle cover dipindah ke langkah Export & Split (hideTitleScreen) */}
+        {!hideTitleScreen && (
+          <div className="flex items-center justify-between gap-3">
+            <Label className="text-xs leading-snug text-gray-300">Layar judul di awal tiap hasil</Label>
+            <Switch checked={pl.showTitleScreen} onCheckedChange={(v) => setPl({ showTitleScreen: v })} className="data-[state=checked]:bg-blue-500" />
+          </div>
+        )}
 
         <div className="flex items-center justify-between gap-3">
           <Label className="text-xs leading-snug text-gray-300">Teks tampil selama video (judul, deskripsi &amp; part)</Label>

@@ -3,7 +3,7 @@
 
 Unicode true
 !define APPNAME "NOVACUT Studio"
-!define VERSION "1.0.12"
+!define VERSION "1.0.13"
 !define EXENAME "NOVACUT Studio.exe"
 
 VIProductVersion "1.0.12.0"

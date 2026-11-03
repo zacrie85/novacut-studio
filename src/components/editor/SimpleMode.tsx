@@ -1,13 +1,15 @@
 "use client";
 
-// NOVACUT Studio - Mode Sederhana: wizard 3 langkah untuk export langsung
-//   1) Pilih Video   2) Atur (teks/rasio/subtitle)   3) Export & Split
+// NOVACUT Studio - Mode Sederhana: wizard 4 langkah untuk export langsung
+//   1) Pilih Video   2) Atur (rasio/subtitle)   3) Teks (ukuran/posisi/font)
+//   4) Export & Split (+ pengaturan Cover Otomatis di Depan)
 // Semua fitur tetap tersedia di Mode Pro (tombol kanan atas).
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, CheckCircle2, Download, FolderOpen, FolderSearch, Loader2, Rocket, Scissors, Sparkles, Upload, Video, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, Download, FolderOpen, FolderSearch, Image as ImageIcon, Loader2, Rocket, Scissors, Sparkles, Upload, Video, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useEditor } from "@/lib/editor/store";
 import { fmtSize, fmtTime } from "@/lib/editor/constants";
@@ -17,11 +19,13 @@ import { forgetExportDir, isDesktopFS, loadSavedExportDir, openInFolder, pickExp
 import { saveUiMode } from "@/lib/editor/uiPrefs";
 import { useToast } from "@/hooks/use-toast";
 import { PlaylistSettingsForm } from "./panels/PlaylistSettingsForm";
+import { TextStyleSettings } from "./panels/TextStyleSettings";
 
 const STEPS = [
   { n: 1, label: "Pilih Video" },
   { n: 2, label: "Atur" },
-  { n: 3, label: "Export" },
+  { n: 3, label: "Teks" },
+  { n: 4, label: "Export" },
 ];
 
 function StepBar({ step }: { step: number }) {
@@ -51,6 +55,8 @@ export function SimpleMode() {
   const ex = useEditor((s) => s.exportState);
   const jobs = useEditor((s) => s.batchJobs);
   const settings = useEditor((s) => s.exportSettings);
+  const pl = useEditor((s) => s.playlistExport);
+  const cover = useEditor((s) => s.cover);
   const { toast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
   const desktop = isDesktopFS();
@@ -94,6 +100,17 @@ export function SimpleMode() {
 
   const D = selected.reduce((m, v) => m + v.duration, 0);
   const estParts = settings.mode === "single" ? selected.length : settings.splitBy === "count" ? Math.max(1, Math.min(50, settings.parts)) * selected.length : Math.max(selected.length, Math.ceil(D / Math.max(1, settings.partSeconds)));
+
+  const firstSel = selected[0];
+  // Langkah TEKS: selaraskan judul/deskripsi/label dengan setelan langkah "Atur"
+  // (sama seperti yang dipakai saat render) agar pratinjau 100% representatif.
+  const autoName = firstSel ? firstSel.name.replace(/\.[^.]+$/, "") : "";
+  useEffect(() => {
+    if (step !== 3) return;
+    const title = pl.autoTitle ? autoName : pl.titleCustom.trim() || autoName;
+    const perVideoParts = settings.mode === "single" ? 1 : settings.splitBy === "count" ? Math.max(1, Math.min(50, settings.parts)) : Math.max(1, Math.ceil((firstSel?.duration || 1) / Math.max(1, settings.partSeconds)));
+    useEditor.getState().setTexts({ title, description: pl.description, labelStyle: pl.labelStyle, parts: perVideoParts });
+  }, [step, autoName, firstSel?.id, pl.autoTitle, pl.titleCustom, pl.description, pl.labelStyle, settings.mode, settings.splitBy, settings.parts, settings.partSeconds]);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
@@ -194,10 +211,10 @@ export function SimpleMode() {
           {step === 2 && (
             <div className="space-y-4">
               <div>
-                <h1 className="text-lg font-bold">Atur tulisan &amp; tampilan video hasil</h1>
-                <p className="mt-1 text-sm text-muted-foreground">Judul, deskripsi, teks part, rasio layar dan subtitle AI — cukup disetel sekali.</p>
+                <h1 className="text-lg font-bold">Atur tampilan video hasil</h1>
+                <p className="mt-1 text-sm text-muted-foreground">Judul, deskripsi, rasio layar dan subtitle AI — teks lanjutan ada di langkah berikutnya.</p>
               </div>
-              <PlaylistSettingsForm showSave={false} />
+              <PlaylistSettingsForm showSave={false} hideTitleScreen />
               <div className="rounded-xl border border-white/[0.07] bg-card p-3 text-[11px] leading-relaxed text-gray-500">
                 Mau pakai <b className="text-gray-300">efek sinematik, transisi, kecepatan, zoom</b> atau atur huruf lanjutan? Buka <b className="text-blue-400">Mode Pro</b> (kanan atas) → menu Efek / Klip / Teks, pilih target &quot;Video Playlist&quot;.
               </div>
@@ -206,14 +223,33 @@ export function SimpleMode() {
                   <ArrowLeft className="h-4 w-4" /> Kembali
                 </Button>
                 <Button className="h-10 gap-2 bg-blue-600 px-6 text-sm font-bold text-white hover:bg-blue-500" onClick={() => setStep(3)}>
-                  Lanjut: Export <ArrowRight className="h-4 w-4" />
+                  Lanjut: Teks <ArrowRight className="h-4 w-4" />
                 </Button>
               </div>
             </div>
           )}
 
-          {/* ===== LANGKAH 3: EXPORT ===== */}
+          {/* ===== LANGKAH 3: TEKS (UKURAN, POSISI & FONT) ===== */}
           {step === 3 && (
+            <div className="space-y-4">
+              <div>
+                <h1 className="text-lg font-bold">Atur teks: ukuran, posisi &amp; font</h1>
+                <p className="mt-1 text-sm text-muted-foreground">Geser huruf judul, deskripsi &amp; part sesukamu — pratinjau berubah seketika, hasil export mengikuti persis.</p>
+              </div>
+              <TextStyleSettings ratioOverride={pl.ratio} />
+              <div className="flex items-center justify-between pt-1">
+                <Button variant="outline" className="h-10 gap-2 border-white/10 bg-white/[0.04] text-sm" onClick={() => setStep(2)}>
+                  <ArrowLeft className="h-4 w-4" /> Kembali
+                </Button>
+                <Button className="h-10 gap-2 bg-blue-600 px-6 text-sm font-bold text-white hover:bg-blue-500" onClick={() => setStep(4)}>
+                  Lanjut: Export &amp; Split <ArrowRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* ===== LANGKAH 4: EXPORT & SPLIT ===== */}
+          {step === 4 && (
             <div className="space-y-4">
               <div>
                 <h1 className="text-lg font-bold">Export &amp; Split {selected.length} video</h1>
@@ -262,6 +298,35 @@ export function SimpleMode() {
                       {fmtTime(D)} → ±{estParts} video hasil
                     </div>
                   </div>
+                )}
+              </div>
+
+              {/* ===== COVER OTOMATIS DI DEPAN ===== */}
+              <div className="space-y-3 rounded-xl border border-white/[0.07] bg-card p-3.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-gray-300">
+                    <ImageIcon className="h-3.5 w-3.5 text-blue-400" /> Cover Otomatis di Depan
+                  </div>
+                  <Switch checked={pl.showTitleScreen} onCheckedChange={(v) => useEditor.getState().setPlaylistExport({ showTitleScreen: v })} className="data-[state=checked]:bg-blue-500" aria-label="Cover otomatis di depan" />
+                </div>
+                {pl.showTitleScreen ? (
+                  <>
+                    <div className="flex items-center gap-2 text-xs text-gray-400">
+                      <span className="w-16 shrink-0">Durasi</span>
+                      <input type="range" min={2} max={5} step={0.5} value={settings.coverDuration} onChange={(e) => useEditor.getState().setExportSettings({ coverDuration: Number(e.target.value) })} className="h-1 flex-1 accent-blue-500" aria-label="Durasi cover" />
+                      <span className="w-9 text-right font-mono text-blue-300">{settings.coverDuration}s</span>
+                    </div>
+                    <div className="text-[11px] leading-relaxed text-gray-500">
+                      {cover.coverAssetId ? "✔ Cover siap dipakai (dibuat di Cover Studio)." : "Belum ada cover — AI akan membuatkan otomatis dari video."}
+                    </div>
+                    <div className="rounded-lg border border-blue-500/20 bg-blue-500/[0.06] px-2.5 py-1.5 text-[11px] leading-relaxed text-blue-200/90">
+                      Latar cover: <b>{cover.bgStyle === "hitam" ? "hitam polos" : "adegan dari video"}</b>
+                      {cover.bgStyle === "adegan" ? (<> · semua bagian <b>{cover.bgScope === "beda" ? "berbeda adegan" : "sama"}</b></>) : null}
+                      {cover.mode === "auto" ? " — ubah di Mode Pro → tab Cover" : " · gambar pilihanmu"}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-[11px] leading-relaxed text-gray-500">Cover dimatikan — video hasil langsung mulai dari isi tanpa layar judul di depan.</p>
                 )}
               </div>
 
@@ -382,7 +447,7 @@ export function SimpleMode() {
               )}
 
               <div className="flex items-center justify-between pt-1">
-                <Button variant="outline" className="h-10 gap-2 border-white/10 bg-white/[0.04] text-sm" disabled={running} onClick={() => setStep(2)}>
+                <Button variant="outline" className="h-10 gap-2 border-white/10 bg-white/[0.04] text-sm" disabled={running} onClick={() => setStep(3)}>
                   <ArrowLeft className="h-4 w-4" /> Kembali
                 </Button>
                 {!running && ex.results.length > 0 && (

@@ -2,7 +2,7 @@
 
 // NOVACUT Studio - Layar Sambutan: pilih alur kerja saat aplikasi dibuka
 // 1) Edit Video (timeline penuh / Mode Pro)
-// 2) Export Langsung & Split (Mode Sederhana — wizard 3 langkah)
+// 2) Export Langsung & Split (Mode Sederhana — wizard 4 langkah: Pilih → Atur → Teks → Export)
 
 import { useState } from "react";
 import { Rocket, Scissors } from "lucide-react";
@@ -61,7 +61,7 @@ export function WelcomeScreen() {
           </div>
           <div className="mt-4 text-base font-bold text-gray-100">Export Langsung &amp; Split</div>
           <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-            Pilih video → atur teks &amp; rasio → langsung dipecah jadi banyak video. Tiga langkah mudah tanpa timeline.
+            Pilih video → atur → atur teks (posisi &amp; font) → export &amp; split dengan cover otomatis. Empat langkah mudah tanpa timeline.
           </p>
           <div className="mt-4 text-xs font-bold text-blue-400 group-hover:underline">Buka Mode Sederhana →</div>
         </button>
