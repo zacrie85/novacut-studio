@@ -105,6 +105,9 @@ export interface TextsConfig {
   partY?: number;
 }
 
+/** v1.0.19: gaya bingkai di sekeliling gambar cover — dipilih manual pengguna */
+export type CoverFrameStyle = "none" | "klasik" | "modern" | "futuristik";
+
 export interface CoverConfig {
   frameAssetId?: string; // video sumber
   frameTime: number; // detik frame yang dipakai
@@ -118,6 +121,8 @@ export interface CoverConfig {
   bgStyle: "adegan" | "hitam";
   /** Penyebaran latar saat export & split: "sama" = 1 latar untuk semua bagian; "beda" = tiap bagian adegan berbeda */
   bgScope: "sama" | "beda";
+  /** v1.0.19: bingkai cover (klasik/modern/futuristik) — digambar transparan 75% mengelilingi gambar cover */
+  frameStyle?: CoverFrameStyle;
   coverAssetId?: string; // hasil render cover (image asset)
   previewUrl?: string;
 }

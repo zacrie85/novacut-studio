@@ -13,7 +13,10 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useEditor } from "@/lib/editor/store";
 import { fmtEta, fmtSize, fmtTime } from "@/lib/editor/constants";
-import { runBatchExport, triggerDownload } from "@/lib/editor/exporter";
+import { COVER_FRAMES } from "@/lib/editor/covers";
+import { regenCoverWithFrame, runBatchExport, triggerDownload } from "@/lib/editor/exporter";
+import type { CoverFrameStyle } from "@/lib/editor/types";
+import { FramePicker } from "./FramePicker";
 import { importFiles } from "@/lib/editor/mediaImport";
 import { forgetExportDir, isDesktopFS, loadSavedExportDir, openInFolder, pickExportDir, rememberExportDir } from "@/lib/editor/fsBridge";
 import { saveUiMode } from "@/lib/editor/uiPrefs";
@@ -61,6 +64,23 @@ export function SimpleMode() {
   const inputRef = useRef<HTMLInputElement>(null);
   const desktop = isDesktopFS();
   const [dir, setDir] = useState(settings.exportDir || "");
+  // v1.0.19: status penerapan bingkai cover (regenerasi cover berjalan diam-diam)
+  const [frameApplying, setFrameApplying] = useState(false);
+
+  /** v1.0.19: pilih bingkai cover — cover yang sudah ada langsung dibuat ulang agar bingkai terlihat */
+  const pickFrame = (id: CoverFrameStyle) => {
+    const st = useEditor.getState();
+    const prev = st.cover.frameStyle ?? "none";
+    if (prev === id) return;
+    st.setCover({ frameStyle: id });
+    if (!st.cover.coverAssetId) return; // belum ada cover — nanti dibuat otomatis saat export (bingkai ikut)
+    setFrameApplying(true);
+    void regenCoverWithFrame(prev)
+      .then((ok) => {
+        if (ok) toast({ title: "Bingkai diterapkan ✔", description: "Cover dibuat ulang dengan bingkai baru." });
+      })
+      .finally(() => setFrameApplying(false));
+  };
 
   const videos = assets.filter((a) => a.type === "video");
   const selected = list.map((id) => assets.find((a) => a.id === id)).filter((a): a is NonNullable<typeof a> => !!a && a.type === "video");
@@ -316,12 +336,24 @@ export function SimpleMode() {
                       <input type="range" min={2} max={5} step={0.5} value={settings.coverDuration} onChange={(e) => useEditor.getState().setExportSettings({ coverDuration: Number(e.target.value) })} className="h-1 flex-1 accent-blue-500" aria-label="Durasi cover" />
                       <span className="w-9 text-right font-mono text-blue-300">{settings.coverDuration}s</span>
                     </div>
+                    {/* v1.0.19: BINGKAI COVER — klasik / modern / futuristik, transparan 75% */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Bingkai Cover</span>
+                        <span className="font-mono text-[10px] text-blue-300/80">transparan 75%</span>
+                      </div>
+                      <FramePicker value={cover.frameStyle ?? "none"} onChange={pickFrame} disabled={running || frameApplying} />
+                      <div className="text-[11px] leading-relaxed text-gray-500">
+                        {frameApplying ? "Menerapkan bingkai pada cover..." : COVER_FRAMES.find((f) => f.id === (cover.frameStyle ?? "none"))?.desc}
+                      </div>
+                    </div>
                     <div className="text-[11px] leading-relaxed text-gray-500">
                       {cover.coverAssetId ? "✔ Cover siap dipakai (dibuat di Cover Studio)." : "Belum ada cover — AI akan membuatkan otomatis dari video."}
                     </div>
                     <div className="rounded-lg border border-blue-500/20 bg-blue-500/[0.06] px-2.5 py-1.5 text-[11px] leading-relaxed text-blue-200/90">
                       Latar cover: <b>{cover.bgStyle === "hitam" ? "hitam polos" : "adegan dari video"}</b>
                       {cover.bgStyle === "adegan" ? (<> · semua bagian <b>{cover.bgScope === "beda" ? "berbeda adegan" : "sama"}</b></>) : null}
+                      {cover.frameStyle && cover.frameStyle !== "none" ? (<> · bingkai <b>{COVER_FRAMES.find((f) => f.id === cover.frameStyle)?.label}</b></>) : null}
                       {cover.mode === "auto" ? " — ubah di Mode Pro → tab Cover" : " · gambar pilihanmu"}
                     </div>
                   </>

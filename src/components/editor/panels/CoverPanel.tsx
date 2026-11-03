@@ -10,11 +10,13 @@ import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { COVER_TEMPLATES, fmtTime, partLabel } from "@/lib/editor/constants";
 import type { CoverTemplate } from "@/lib/editor/constants";
-import { aiRecommendTemplates, analyzeVideoFrames, grabFrame, loadImage, plainCoverDataURL, renderCover, renderCoverToDataURL } from "@/lib/editor/covers";
+import { aiRecommendTemplates, analyzeVideoFrames, COVER_FRAMES, drawCoverFrame, grabFrame, loadImage, plainCoverDataURL, renderCover, renderCoverToDataURL } from "@/lib/editor/covers";
 import { useEditor } from "@/lib/editor/store";
 import { uid } from "@/lib/editor/constants";
+import { regenCoverWithFrame } from "@/lib/editor/exporter";
 import { useToast } from "@/hooks/use-toast";
-import type { MediaAsset } from "@/lib/editor/types";
+import type { CoverFrameStyle, MediaAsset } from "@/lib/editor/types";
+import { FramePicker } from "../FramePicker";
 
 export function CoverPanel() {
   const assets = useEditor((s) => s.assets);
@@ -62,8 +64,9 @@ export function CoverPanel() {
     const ctx = c.getContext("2d");
     if (!ctx) return;
     const bgStyle = cover.mode === "auto" ? cover.bgStyle : undefined;
+    const frame = cover.frameStyle;
     if (!bgUrl) {
-      renderCover(ctx, { img: null, title, part: partText, template, bgStyle, w: c.width, h: c.height });
+      renderCover(ctx, { img: null, title, part: partText, template, bgStyle, frame, w: c.width, h: c.height });
       return;
     }
     const drawPlain = (img: HTMLImageElement) => {
@@ -73,17 +76,19 @@ export function CoverPanel() {
       const sh = img.naturalHeight || 2;
       const s = Math.max(c.width / sw, c.height / sh);
       ctx.drawImage(img, (c.width - sw * s) / 2, (c.height - sh * s) / 2, sw * s, sh * s);
+      // v1.0.19: bingkai juga tampil pada gambar apa adanya
+      if (frame && frame !== "none") drawCoverFrame(ctx, c.width, c.height, frame);
     };
     let alive = true;
     void loadImage(bgUrl).then((img) => {
       if (!alive) return;
       if (cover.mode === "manual" && cover.manualPlain) drawPlain(img);
-      else renderCover(ctx, { img, title, part: partText, template, bgStyle, w: c.width, h: c.height });
+      else renderCover(ctx, { img, title, part: partText, template, bgStyle, frame, w: c.width, h: c.height });
     });
     return () => {
       alive = false;
     };
-  }, [bgUrl, cover.mode, cover.manualPlain, cover.bgStyle, template, title, partText]);
+  }, [bgUrl, cover.mode, cover.manualPlain, cover.bgStyle, cover.frameStyle, template, title, partText]);
 
   useEffect(() => {
     if (!showAll) return;
@@ -95,18 +100,18 @@ export function CoverPanel() {
         const tpl = COVER_TEMPLATES[i];
         if (!ctx || !tpl) return;
         if (!bgUrl) {
-          renderCover(ctx, { img: null, title: title.slice(0, 22), part: "", template: tpl, bgStyle: cover.mode === "auto" ? cover.bgStyle : undefined, w: c.width, h: c.height });
+          renderCover(ctx, { img: null, title: title.slice(0, 22), part: "", template: tpl, bgStyle: cover.mode === "auto" ? cover.bgStyle : undefined, frame: cover.frameStyle, w: c.width, h: c.height });
           c.dataset.done = "1";
           return;
         }
         void loadImage(bgUrl).then((img) => {
-          renderCover(ctx, { img, title: title.slice(0, 22), part: "", template: tpl, bgStyle: cover.mode === "auto" ? cover.bgStyle : undefined, w: c.width, h: c.height });
+          renderCover(ctx, { img, title: title.slice(0, 22), part: "", template: tpl, bgStyle: cover.mode === "auto" ? cover.bgStyle : undefined, frame: cover.frameStyle, w: c.width, h: c.height });
         });
         c.dataset.done = "1";
       });
     }, 60);
     return () => clearTimeout(t);
-  }, [showAll, bgUrl, title]);
+  }, [showAll, bgUrl, title, cover.frameStyle]);
 
   const analyze = useCallback(async () => {
     if (!source) return;
@@ -125,6 +130,18 @@ export function CoverPanel() {
 
   const applyTemplate = (t: CoverTemplate) => {
     useEditor.getState().setCover({ templateId: t.id });
+  };
+
+  /** v1.0.19: pilih bingkai cover — cover yang sudah disimpan langsung dibuat ulang */
+  const pickFrame = (id: CoverFrameStyle) => {
+    const st = useEditor.getState();
+    const prev = st.cover.frameStyle ?? "none";
+    if (prev === id) return;
+    st.setCover({ frameStyle: id });
+    if (!st.cover.coverAssetId) return; // belum disimpan — pratinjau sudah menampilkan bingkai
+    void regenCoverWithFrame(prev).then((ok) => {
+      if (ok) toast({ title: "Bingkai diterapkan ✔", description: "Cover tersimpan dibuat ulang dengan bingkai baru." });
+    });
   };
 
   const handleCoverUpload = useCallback(
@@ -164,10 +181,10 @@ export function CoverPanel() {
     const srcUrl = cover.mode === "manual" ? manualAsset!.url : frameUrl!;
     const dataUrl =
       cover.mode === "manual" && cover.manualPlain
-        ? await plainCoverDataURL(srcUrl, project.width, project.height)
+        ? await plainCoverDataURL(srcUrl, project.width, project.height, cover.frameStyle)
         : isBlack
-          ? renderCoverToDataURL({ img: null, title, part: partText, template, bgStyle: "hitam" }, project.width, project.height)
-          : renderCoverToDataURL({ img: await loadImage(srcUrl), title, part: partText, template, bgStyle: cover.mode === "auto" ? cover.bgStyle : undefined }, project.width, project.height);
+          ? renderCoverToDataURL({ img: null, title, part: partText, template, bgStyle: "hitam", frame: cover.frameStyle }, project.width, project.height)
+          : renderCoverToDataURL({ img: await loadImage(srcUrl), title, part: partText, template, bgStyle: cover.mode === "auto" ? cover.bgStyle : undefined, frame: cover.frameStyle }, project.width, project.height);
     if (!dataUrl) {
       toast({ title: "Gagal membuat cover" });
       return;
@@ -324,6 +341,18 @@ export function CoverPanel() {
         </div>
         )}
 
+        {/* v1.0.19: bingkai cover — klasik / modern / futuristik (transparan 75%) */}
+        <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-2.5">
+          <div className="flex items-center justify-between">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-gray-400">BINGKAI COVER</div>
+            <span className="font-mono text-[10px] text-blue-300/80">transparan 75%</span>
+          </div>
+          <FramePicker value={cover.frameStyle ?? "none"} onChange={pickFrame} />
+          <div className="text-[11px] leading-relaxed text-gray-500">
+            {COVER_FRAMES.find((f) => f.id === (cover.frameStyle ?? "none"))?.desc}
+          </div>
+        </div>
+
         {/* pratinjau */}
         <div className="overflow-hidden rounded-lg border border-white/10 ">
           <canvas ref={previewRef} width={project.ratio === "9:16" ? 360 : 640} height={project.ratio === "9:16" ? 640 : 360} className="mx-auto block max-h-72 w-auto max-w-full" />
@@ -367,14 +396,18 @@ export function CoverPanel() {
               {COVER_TEMPLATES.map((t, i) => (
                 <button
                   key={t.id}
-                  ref={(el) => {
-                    if (el) gridRef.current[i] = el;
-                  }}
                   onClick={() => applyTemplate(t)}
                   className={`overflow-hidden rounded-md border text-left transition hover:scale-[1.03] ${t.id === cover.templateId ? "border-blue-400 ring-1 ring-blue-300" : t.popular ? "border-amber-400/40" : "border-white/10"}`}
                   title={t.name}
                 >
-                  <canvas width={project.ratio === "9:16" ? 72 : 128} height={project.ratio === "9:16" ? 128 : 72} className="w-full" />
+                  <canvas
+                    ref={(el) => {
+                      if (el) gridRef.current[i] = el;
+                    }}
+                    width={project.ratio === "9:16" ? 72 : 128}
+                    height={project.ratio === "9:16" ? 128 : 72}
+                    className="w-full"
+                  />
                   <div className="flex items-center gap-1 bg-black/60 px-1 py-0.5">
                     {t.id === cover.templateId && <Check className="h-2.5 w-2.5 shrink-0 text-blue-300" />}
                     <span className="truncate text-[11px] text-gray-300">{t.name}</span>

@@ -7,7 +7,7 @@
 //  2) MODE KOMPATIBEL: rekam real-time via MediaRecorder (jalur lama).
 // Fitur: cover otomatis, teks judul/deskripsi/part, subtitle AI (bahasa Indonesia).
 
-import { grabFrame, aiRecommendTemplates, analyzeVideoFrames, loadImage, renderCoverToDataURL } from "./covers";
+import { grabFrame, aiRecommendTemplates, analyzeVideoFrames, drawCoverFrame, loadImage, plainCoverDataURL, renderCoverToDataURL } from "./covers";
 import { COVER_TEMPLATES, partLabel, slugify, uid } from "./constants";
 import { engine } from "./engine";
 import { adjustRangesToSilence, exportRangeFast, fastSupported, AudioDecodeCache } from "./fastExport";
@@ -17,7 +17,7 @@ import { normalizeEnhance } from "./playlistExport";
 import { dimsFor, useEditor, totalDuration } from "./store";
 import { transcribeAsset, type SubSegment } from "./subtitles";
 import { audioCopyAllowed, exportSegmentTurbo, releaseTurboParse, turboEligible } from "./turboExport";
-import type { BatchJobView, Clip, MediaAsset, Track } from "./types";
+import type { BatchJobView, Clip, CoverFrameStyle, MediaAsset, Track } from "./types";
 import { fillZoomFor } from "./visual";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -688,7 +688,7 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
   // Latar hitam polos — pilihan pengguna, tanpa adegan video
   if (st.cover.bgStyle === "hitam") {
     const tpl = aiRecommendTemplates(title, 40, 1)[0] ?? COVER_TEMPLATES[0];
-    const dataUrl = renderCoverToDataURL({ img: null, title: "", template: tpl, bgStyle: "hitam" }, width, height);
+    const dataUrl = renderCoverToDataURL({ img: null, title: "", template: tpl, bgStyle: "hitam", frame: st.cover.frameStyle }, width, height);
     if (!dataUrl) return undefined;
     return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: dataUrl, duration: 0, width, height };
   }
@@ -716,7 +716,8 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
   if (!img) return undefined;
   // cover dibuat TANPA tulisan (latar saja) — judul/deskripsi/part ditulis oleh
   // clip teks di buildSplitProject agar judul panjang otomatis wrap & tak terpotong
-  const dataUrl = renderCoverToDataURL({ img, title: "", template: tpl }, width, height);
+  // v1.0.19: bingkai cover ikut ditanam sesuai pilihan pengguna
+  const dataUrl = renderCoverToDataURL({ img, title: "", template: tpl, frame: st.cover.frameStyle }, width, height);
   return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: dataUrl, duration: 0, width, height };
 }
 
@@ -728,6 +729,77 @@ async function ensureCoverAsset(sourceAsset: MediaAsset | undefined, force = fal
   useEditor.getState().addAsset(asset);
   useEditor.getState().setCover({ coverAssetId: asset.id, previewUrl: asset.url, frameTime: 0 });
   return asset.id;
+}
+
+/** v1.0.19: buat ulang cover yang SUDAH ADA setelah gaya bingkai diubah, agar
+ * bingkai baru langsung terlihat tanpa menunggu export. Return true bila cover diperbarui.
+ * @param prevFrame gaya bingkai SEBELUM perubahan (untuk deteksi jalur overlay instan)
+ *  - cover lama tanpa bingkai + bingkai baru → cukup tumpangkan bingkai di atas gambar lama (instan, latar persis sama)
+ *  - selain itu → buat ulang dari sumber (gambar unggahan untuk mode manual, adegan video untuk mode auto)
+ *  - belum ada cover sama sekali → false (nanti dibuat otomatis saat export, bingkai ikut) */
+export async function regenCoverWithFrame(prevFrame: CoverFrameStyle = "none"): Promise<boolean> {
+  const st = useEditor.getState();
+  const { cover, project, texts, assets } = st;
+  if (!cover.coverAssetId || !assets.some((a) => a.id === cover.coverAssetId)) return false;
+  const frame = cover.frameStyle ?? "none";
+  const { width, height } = project;
+  const putAsset = (dataUrl: string, name: string) => {
+    const asset: MediaAsset = { id: uid("as"), name, type: "image", url: dataUrl, duration: 0, width, height };
+    useEditor.getState().addAsset(asset);
+    useEditor.getState().setCover({ coverAssetId: asset.id, previewUrl: dataUrl });
+  };
+  try {
+    if (cover.mode === "manual") {
+      // mode gambar unggahan — bangun ulang dari gambar asli pengguna
+      const m = assets.find((a) => a.id === cover.manualAssetId);
+      if (!m) return false;
+      const title = texts.title || m.name.replace(/\.[^.]+$/, "") || "Judul Video";
+      const dataUrl = cover.manualPlain
+        ? await plainCoverDataURL(m.url, width, height, frame)
+        : renderCoverToDataURL({ img: await loadImage(m.url), title, template: COVER_TEMPLATES.find((t) => t.id === cover.templateId) ?? COVER_TEMPLATES[0], frame }, width, height);
+      if (!dataUrl) return false;
+      putAsset(dataUrl, `Cover - ${title}`);
+      return true;
+    }
+    // mode otomatis (adegan video / hitam polos)
+    if (cover.bgStyle === "hitam") {
+      const src = assets.find((a) => a.type === "video" && (a.id === cover.frameAssetId || cover.frameAssetId === undefined));
+      const asset = await makeCoverAsset(src);
+      if (!asset) return false;
+      putAsset(asset.url, asset.name);
+      return true;
+    }
+    const old = assets.find((a) => a.id === cover.coverAssetId);
+    if (old && prevFrame === "none" && frame !== "none") {
+      // jalur instan: tumpangkan bingkai di atas cover lama yang masih "bersih"
+      const img = await loadImage(old.url).catch(() => null);
+      if (img) {
+        const c = document.createElement("canvas");
+        c.width = width;
+        c.height = height;
+        const ctx = c.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          drawCoverFrame(ctx, width, height, frame);
+          const dataUrl = c.toDataURL("image/jpeg", 0.92);
+          if (dataUrl) {
+            putAsset(dataUrl, old.name);
+            return true;
+          }
+        }
+      }
+    }
+    // buat ulang dari adegan video (analisis ulang — hasil adegan sama karena deterministik)
+    const vids = assets.filter((a) => a.type === "video");
+    const src = vids.find((v) => v.id === cover.frameAssetId) ?? vids[0];
+    if (!src) return false;
+    const asset = await makeCoverAsset(src);
+    if (!asset) return false;
+    putAsset(asset.url, asset.name);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** AI pilih beberapa adegan berbeda (waktu frame, diurut dari skor terbaik)
@@ -751,7 +823,7 @@ const batchCoverCache = new Map<string, MediaAsset>();
 
 function coverCacheKey(a: MediaAsset | undefined, ft?: number): string {
   const st = useEditor.getState();
-  return `${a?.id ?? "-"}|${typeof ft === "number" ? ft.toFixed(2) : "auto"}|${st.project.width}x${st.project.height}`;
+  return `${a?.id ?? "-"}|${typeof ft === "number" ? ft.toFixed(2) : "auto"}|${st.project.width}x${st.project.height}|${st.cover.frameStyle ?? "none"}`;
 }
 
 async function makeCoverAssetCached(a: MediaAsset | undefined, ft?: number): Promise<MediaAsset | undefined> {

@@ -2,6 +2,7 @@
 
 import { COVER_TEMPLATES, fontStack, type CoverTemplate } from "./constants";
 import { wrapCanvasText } from "./textwrap";
+import type { CoverFrameStyle } from "./types";
 
 export interface CoverRenderInput {
   img: CanvasImageSource | null;
@@ -10,6 +11,8 @@ export interface CoverRenderInput {
   template: CoverTemplate;
   /** "hitam" = latar hitam polos (abaikan gambar); "adegan"/default = gambar adegan video */
   bgStyle?: "adegan" | "hitam";
+  /** v1.0.19: bingkai di sekeliling cover — digambar transparan 75% di atas latar & teks */
+  frame?: CoverFrameStyle;
   w: number;
   h: number;
 }
@@ -85,6 +88,155 @@ function glowText(ctx: CanvasRenderingContext2D, text: string, x: number, y: num
   ctx.restore();
 }
 
+// ===== v1.0.19: BINGKAI COVER — KLASIK / MODERN / FUTURISTIK =====
+
+/** Daftar pilihan bingkai cover (dipakai UI pemilih di Mode Sederhana & Cover Studio) */
+export const COVER_FRAMES: { id: CoverFrameStyle; label: string; desc: string }[] = [
+  { id: "none", label: "Tanpa Bingkai", desc: "Cover polos — tanpa hiasan tepi." },
+  { id: "klasik", label: "Klasik", desc: "Bingkai ganda emas + hiasan sudut, gaya poster bioskop vintage." },
+  { id: "modern", label: "Modern", desc: "Garis bersih minimalis dengan aksen sudut." },
+  { id: "futuristik", label: "Futuristik", desc: "Sudut HUD menyala + garis teknis, gaya sci-fi." },
+];
+
+/** Transparansi bingkai: tampil 75% (latar cover masih sedikit terlihat) */
+const FRAME_ALPHA = 0.75;
+
+/** Gambar bingkai di sekeliling cover. Dipanggil SETELAH latar & teks (paling atas).
+ * Semua gaya digambar dengan globalAlpha 0.75 — semi-transparan sesuai permintaan. */
+export function drawCoverFrame(ctx: CanvasRenderingContext2D, w: number, h: number, style: CoverFrameStyle, accent = "#5ec8f8") {
+  if (!style || style === "none") return;
+  ctx.save();
+  ctx.globalAlpha = FRAME_ALPHA;
+  const m = Math.min(w, h) * 0.05; // jarak bingkai dari tepi
+  if (style === "klasik") drawFrameKlasik(ctx, w, h, m);
+  else if (style === "modern") drawFrameModern(ctx, w, h, m, accent);
+  else drawFrameFuturistik(ctx, w, h, m, accent);
+  ctx.restore();
+}
+
+/** KLASIK: bingkai ganda emas + belah ketupat di sudut — poster bioskop vintage */
+function drawFrameKlasik(ctx: CanvasRenderingContext2D, w: number, h: number, m: number) {
+  const gold = "#ecd9a0";
+  const deep = "#c9a24b";
+  // garis luar tebal
+  ctx.strokeStyle = gold;
+  ctx.lineWidth = Math.max(2, h * 0.006);
+  ctx.strokeRect(m, m, w - m * 2, h - m * 2);
+  // garis dalam tipis
+  const m2 = m * 1.6;
+  ctx.lineWidth = Math.max(1, h * 0.0022);
+  ctx.strokeRect(m2, m2, w - m2 * 2, h - m2 * 2);
+  // hiasan sudut: belah ketupat + titik pusat di tiap sudut bingkai luar
+  const d = m * 0.6;
+  for (const [cx, cy] of [[m, m], [w - m, m], [m, h - m], [w - m, h - m]]) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = deep;
+    ctx.fillRect(-d / 2, -d / 2, d, d);
+    ctx.restore();
+    ctx.fillStyle = gold;
+    ctx.beginPath();
+    ctx.arc(cx, cy, d * 0.26, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // lengkung kecil di tengah tiap sisi (sentuhan ukiran)
+  ctx.strokeStyle = gold;
+  ctx.lineWidth = Math.max(1.5, h * 0.003);
+  const a = m * 0.5;
+  for (const [x, y, dx, dy] of [[w / 2, m, 1, 0], [w / 2, h - m, 1, 0], [m, h / 2, 0, 1], [w - m, h / 2, 0, 1]]) {
+    ctx.beginPath();
+    if (dx) ctx.arc(x, y, a, Math.PI * 0.15, Math.PI * 0.85, dy === 0);
+    else ctx.arc(x, y, a, Math.PI * (dy > 0 ? 0.65 : -0.35), Math.PI * (dy > 0 ? 0.35 : -0.65));
+    ctx.stroke();
+  }
+}
+
+/** MODERN: satu garis rounded bersih + garis tipis luar + aksen persegi di 2 sudut */
+function drawFrameModern(ctx: CanvasRenderingContext2D, w: number, h: number, m: number, accent: string) {
+  const r = h * 0.022;
+  // garis utama putih
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = Math.max(2.5, h * 0.0075);
+  ctx.beginPath();
+  ctx.roundRect(m, m, w - m * 2, h - m * 2, r);
+  ctx.stroke();
+  // garis tipis kedua sedikit di luarnya
+  ctx.save();
+  ctx.globalAlpha *= 0.55;
+  ctx.lineWidth = Math.max(1, h * 0.002);
+  const mo = m * 0.62;
+  ctx.beginPath();
+  ctx.roundRect(mo, mo, w - mo * 2, h - mo * 2, r * 0.7);
+  ctx.stroke();
+  ctx.restore();
+  // aksen: kotak kecil di sudut kanan-atas & kiri-bawah
+  const s = Math.min(w, h) * 0.02;
+  ctx.fillStyle = accent;
+  ctx.fillRect(w - m - s / 2, m - s / 2, s, s);
+  ctx.fillRect(m - s / 2, h - m - s / 2, s, s);
+}
+
+/** FUTURISTIK: sudut HUD menyala + bingkai chamfer + garis tick teknis */
+function drawFrameFuturistik(ctx: CanvasRenderingContext2D, w: number, h: number, m: number, accent: string) {
+  // garis penuh tipis dengan sudut terpotong 45° (chamfer)
+  ctx.save();
+  ctx.globalAlpha *= 0.5;
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = Math.max(1, h * 0.0022);
+  const ch = Math.min(w, h) * 0.035;
+  ctx.beginPath();
+  ctx.moveTo(m + ch, m);
+  ctx.lineTo(w - m - ch, m);
+  ctx.lineTo(w - m, m + ch);
+  ctx.lineTo(w - m, h - m - ch);
+  ctx.lineTo(w - m - ch, h - m);
+  ctx.lineTo(m + ch, h - m);
+  ctx.lineTo(m, h - m - ch);
+  ctx.lineTo(m, m + ch);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
+  // 4 bracket sudut menyala
+  const L = Math.min(w, h) * 0.13;
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = Math.max(3, h * 0.0085);
+  ctx.shadowColor = accent;
+  ctx.shadowBlur = Math.max(6, h * 0.018);
+  for (const [x, y, sx, sy] of [[m, m, 1, 1], [w - m, m, -1, 1], [m, h - m, 1, -1], [w - m, h - m, -1, -1]] as const) {
+    ctx.beginPath();
+    ctx.moveTo(x + sx * L, y);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x, y + sy * L);
+    ctx.stroke();
+  }
+  ctx.shadowBlur = 0;
+  // garis tick teknis di tepi atas & bawah
+  ctx.fillStyle = accent;
+  const n = 14;
+  const tw = Math.max(1.5, h * 0.0028);
+  for (let i = 3; i < n - 2; i++) {
+    const x = m + ((w - m * 2) * i) / n;
+    const len = i % 2 === 0 ? h * 0.014 : h * 0.008;
+    ctx.fillRect(x - tw / 2, m + h * 0.004, tw, len);
+    ctx.fillRect(x - tw / 2, h - m - h * 0.004 - len, tw, len);
+  }
+  // segitiga penunjuk kecil di tengah sisi kiri & kanan
+  const tri = Math.min(w, h) * 0.011;
+  ctx.beginPath();
+  ctx.moveTo(m, h / 2 - tri);
+  ctx.lineTo(m + tri * 1.3, h / 2);
+  ctx.lineTo(m, h / 2 + tri);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(w - m, h / 2 - tri);
+  ctx.lineTo(w - m - tri * 1.3, h / 2);
+  ctx.lineTo(w - m, h / 2 + tri);
+  ctx.closePath();
+  ctx.fill();
+}
+
 /** Render satu cover ke ctx sesuai template */
 export function renderCover(ctx: CanvasRenderingContext2D, input: CoverRenderInput) {
   const { w, h, template, title, part } = input;
@@ -111,7 +263,7 @@ export function renderCover(ctx: CanvasRenderingContext2D, input: CoverRenderInp
       });
       ctx.fillStyle = accent;
       ctx.fillRect(w / 2 - w * 0.08, startY + lines.length * h * 0.125 - h * 0.06, w * 0.16, h * 0.012);
-      drawPartBadge(ctx, part, pal, w / 2, h * 0.74, h * 0.032, "center");
+      drawPartBadge(ctx, part ?? "", pal, w / 2, h * 0.74, h * 0.032, "center");
     },
     lower: () => {
       drawBackground(ctx, input, 0.3);
@@ -316,6 +468,9 @@ export function renderCover(ctx: CanvasRenderingContext2D, input: CoverRenderInp
   };
 
   (layouts[template.layout] ?? layouts.impact)();
+
+  // v1.0.19: bingkai cover — digambar PALING ATAS mengelilingi tepi gambar
+  if (input.frame && input.frame !== "none") drawCoverFrame(ctx, w, h, input.frame, accent);
 }
 
 /** Render cover ke kanvas offscreen & kembalikan dataURL */
@@ -329,8 +484,9 @@ export function renderCoverToDataURL(input: Omit<CoverRenderInput, "w" | "h">, w
   return c.toDataURL("image/jpeg", 0.92);
 }
 
-/** Cover polos: gambar unggahan pengguna apa adanya (tanpa teks template) */
-export async function plainCoverDataURL(url: string, w: number, h: number): Promise<string> {
+/** Cover polos: gambar unggahan pengguna apa adanya (tanpa teks template).
+ * v1.0.19: mendukung bingkai cover opsional. */
+export async function plainCoverDataURL(url: string, w: number, h: number, frame?: CoverFrameStyle): Promise<string> {
   const img = await loadImage(url);
   const c = document.createElement("canvas");
   c.width = w;
@@ -343,6 +499,7 @@ export async function plainCoverDataURL(url: string, w: number, h: number): Prom
   const sh = img.naturalHeight || 2;
   const s = Math.max(w / sw, h / sh);
   ctx.drawImage(img, (w - sw * s) / 2, (h - sh * s) / 2, sw * s, sh * s);
+  if (frame && frame !== "none") drawCoverFrame(ctx, w, h, frame);
   return c.toDataURL("image/jpeg", 0.94);
 }
 

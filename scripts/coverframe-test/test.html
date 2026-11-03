@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { margin: 0; background: #05070c; font-family: sans-serif; color: #cbd5e1; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; padding: 12px; }
+  .cell { text-align: center; }
+  .cell canvas { display: block; border: 1px solid #26304a; border-radius: 6px; }
+  .cell p { margin: 4px 0 0; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="row" id="grid"></div>
+<script type="module">
+import { renderCover, drawCoverFrame, COVER_TEMPLATES } from "./covers.esm.js";
+const styles = ["none", "klasik", "modern", "futuristik"];
+const grid = document.getElementById("grid");
+const TPL = COVER_TEMPLATES.find(t => t.id === "impact--cyber") ?? COVER_TEMPLATES[0];
+
+for (const st of styles) {
+  // 1) cover dengan adegan contoh + judul (jalur renderCover penuh)
+  const c1 = document.createElement("canvas");
+  c1.width = 640; c1.height = 360;
+  const ctx1 = c1.getContext("2d");
+  // gambar "adegan" contoh (nanti digambar ulang oleh renderCover sebagai latar)
+  const g = ctx1.createLinearGradient(0, 0, 640, 360);
+  g.addColorStop(0, "#16324f"); g.addColorStop(0.55, "#4a3060"); g.addColorStop(1, "#0a0c12");
+  ctx1.fillStyle = g; ctx1.fillRect(0, 0, 640, 360);
+  ctx1.fillStyle = "rgba(255,190,90,0.95)";
+  ctx1.beginPath(); ctx1.arc(430, 140, 55, 0, Math.PI * 2); ctx1.fill();
+  ctx1.fillStyle = "rgba(0,0,0,0.6)";
+  ctx1.beginPath(); ctx1.moveTo(0, 360); ctx1.lineTo(190, 190); ctx1.lineTo(350, 360); ctx1.closePath(); ctx1.fill();
+  renderCover(ctx1, { img: c1, title: "JUDUL FILM TEST", part: "Part 2/5", template: TPL, frame: st, w: 640, h: 360 });
+
+  // 2) jalur plain (gambar apa adanya) + drawCoverFrame langsung
+  const c2 = document.createElement("canvas");
+  c2.width = 640; c2.height = 360;
+  const ctx2 = c2.getContext("2d");
+  ctx2.fillStyle = "#000"; ctx2.fillRect(0, 0, 640, 360);
+  ctx2.fillStyle = "#20304a"; ctx2.fillRect(40, 30, 560, 300);
+  drawCoverFrame(ctx2, 640, 360, st, "#5ec8f8");
+
+  const cell = document.createElement("div");
+  cell.className = "cell";
+  cell.appendChild(c1);
+  const p = document.createElement("p"); p.textContent = st + " (template)"; cell.appendChild(p);
+  cell.appendChild(c2);
+  const p2 = document.createElement("p"); p2.textContent = st + " (plain)"; cell.appendChild(p2);
+  grid.appendChild(cell);
+}
+document.title = "OK";
+</script>
+</body>
+</html>

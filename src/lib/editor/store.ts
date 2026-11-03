@@ -134,7 +134,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   snap: true,
   texts: { title: "", description: "", labelStyle: "Part", parts: 5 },
   textPreview: true,
-  cover: { frameTime: 0, templateId: "impact--cyber", duration: 3, useAI: true, mode: "auto" as const, bgStyle: "adegan" as const, bgScope: "sama" as const },
+  cover: { frameTime: 0, templateId: "impact--cyber", duration: 3, useAI: true, mode: "auto" as const, bgStyle: "adegan" as const, bgScope: "sama" as const, frameStyle: "none" as const },
   exportSettings: {
     mode: "split",
     splitBy: "duration",
