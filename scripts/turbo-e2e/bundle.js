@@ -6537,7 +6537,7 @@ function videoCodecString(mux, desc) {
       const b2 = dv.getUint8(2);
       const tier = b2 >> 7 & 1;
       const depth = b2 & 64 ? b2 & 32 ? 12 : 10 : 8;
-      return `av01.${prof}.${tier ? "H" : "M"}${hex2(lvl)}.${hex2(depth)}`;
+      return `av01.${prof}.${hex2(lvl)}${tier ? "H" : "M"}.${hex2(depth)}`;
     }
   }
 }
@@ -7096,10 +7096,18 @@ async function exportSegmentTurbo(opts) {
   const gen = decodeVideoRange(file, vtr, srcStart, srcEnd);
   const buf = [];
   let streamDone = false;
+  let pullErr = null;
   const pull = async () => {
     if (streamDone)
       return false;
-    const r = await gen.next();
+    let r;
+    try {
+      r = await gen.next();
+    } catch (e) {
+      pullErr = e;
+      streamDone = true;
+      return false;
+    }
     if (r.done) {
       streamDone = true;
       return false;
@@ -7125,6 +7133,8 @@ async function exportSegmentTurbo(opts) {
   };
   try {
     for (let f = 0;f < totalFrames; f++) {
+      if (pullErr)
+        throw pullErr;
       const t = f / fps;
       let frame = null;
       if (t >= clip.start - 0.0001 && t < clip.start + clip.duration) {
