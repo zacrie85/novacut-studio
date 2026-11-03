@@ -15,6 +15,21 @@ function clampOff(v?: number): number {
   return typeof v === "number" && isFinite(v) ? Math.max(-0.45, Math.min(0.45, v)) : 0;
 }
 
+/**
+ * v1.0.17 — Ruang kerja per tugas render untuk komposisi PARALEL.
+ * Bila diisi, composeFrame/drawMediaFrame memakai kanvas bantu MILIK tugas
+ * (tmpA/tmpB/scratch) dan SUMBER VIDEO dari frame WebCodecs (videoFrames:
+ * VideoFrame hasil VideoDecoder murni) alih-alih elemen <video> — tanpa ini
+ * tugas paralel akan saling menimpa kanvas bantu engine yang dipakai bersama.
+ */
+export interface ComposeWork {
+  /** key = clip.assetId (atau clip.id) → frame yang sedang dirender */
+  videoFrames?: Map<string, VideoFrame | null>;
+  tmpA?: HTMLCanvasElement;
+  tmpB?: HTMLCanvasElement;
+  scratch?: HTMLCanvasElement;
+}
+
 /** status render mandiri untuk satu pekerjaan export (dipakai mode paralel:
  * tiap video punya klip/track/asset sendiri tanpa menyentuh timeline global) */
 export interface RenderState {
@@ -609,7 +624,7 @@ class EditorEngine {
   }
 
   // ===== menggambar klip =====
-  private drawMediaFrame(ctx: CanvasRenderingContext2D, clip: Clip, t: number, w: number, h: number, noSync = false, rs?: RenderState) {
+  private drawMediaFrame(ctx: CanvasRenderingContext2D, clip: Clip, t: number, w: number, h: number, noSync = false, rs?: RenderState, work?: ComposeWork) {
     const stStore = useEditor.getState();
     const st = rs ? { ...stStore, clips: rs.clips, tracks: rs.tracks, assets: rs.assets } : stStore;
     const track = st.tracks.find((tr) => tr.id === clip.trackId);
@@ -627,12 +642,21 @@ class EditorEngine {
     let sw = 0;
     let sh = 0;
     if (clip.kind === "video") {
-      // noSync: elemen sudah diposisikan exporter (pump/seek) — ambil saja elemennya
-      const el = noSync ? (this.elFor(clip, rs?.assets) as HTMLVideoElement | null) : this.syncMedia(clip, track ?? { id: "", kind: "video", name: "", muted: false, hidden: false }, t, this.playing, true);
-      if (el && el.videoWidth) {
-        src = el;
-        sw = el.videoWidth;
-        sh = el.videoHeight;
+      // v1.0.17: bila work.videoFrames berisi frame utk asset ini (mesin Turbo
+      // WebCodecs), gambar langsung dari VideoFrame hasil decoder — tanpa elemen video
+      const vf = work?.videoFrames?.get(clip.assetId ?? clip.id);
+      if (vf) {
+        src = vf;
+        sw = vf.displayWidth;
+        sh = vf.displayHeight;
+      } else {
+        // noSync: elemen sudah diposisikan exporter (pump/seek) — ambil saja elemennya
+        const el = noSync ? (this.elFor(clip, rs?.assets) as HTMLVideoElement | null) : this.syncMedia(clip, track ?? { id: "", kind: "video", name: "", muted: false, hidden: false }, t, this.playing, true);
+        if (el && el.videoWidth) {
+          src = el;
+          sw = el.videoWidth;
+          sh = el.videoHeight;
+        }
       }
     } else if (clip.kind === "image") {
       const el = this.elFor(clip, rs?.assets);
@@ -659,7 +683,7 @@ class EditorEngine {
       ctx.restore();
       ctx.filter = "none";
       applyGradeTints(ctx, fx, w, h);
-      applyOverlays(ctx, fx, w, h, { t, local, progress, grainPattern: this.grainPattern, scratch: this.scratch });
+      applyOverlays(ctx, fx, w, h, { t, local, progress, grainPattern: this.grainPattern, scratch: work?.scratch ?? this.scratch });
     }
   }
 
@@ -679,7 +703,7 @@ class EditorEngine {
    * noSync=true (render kilat offscreen): posisi media DIATUR PANGGIL (pump/seek
    * oleh exporter) — composeFrame HANYA menggambar, tanpa menyentuh pemutaran.
    */
-  composeFrame(ctx: CanvasRenderingContext2D | null, t: number, noSync: boolean, rs?: RenderState) {
+  composeFrame(ctx: CanvasRenderingContext2D | null, t: number, noSync: boolean, rs?: RenderState, work?: ComposeWork) {
     if (!ctx) return;
     const stStore = useEditor.getState();
     const st = rs
@@ -720,7 +744,7 @@ class EditorEngine {
       // salah satunya tidak pernah terlihat di hasil render).
       if (track.kind === "text") {
         const actives = clips.filter((c) => c.trackId === track.id && c.start <= tt && tt < c.start + c.duration).sort((a, b) => a.start - b.start);
-        for (const tc of actives) this.drawMediaFrame(ctx, tc, tt, w, h, noSync, rs);
+        for (const tc of actives) this.drawMediaFrame(ctx, tc, tt, w, h, noSync, rs, work);
         continue;
       }
 
@@ -736,27 +760,29 @@ class EditorEngine {
       }
 
       if (donor) {
-        this.tmpA.width = w;
-        this.tmpA.height = h;
-        this.tmpB.width = w;
-        this.tmpB.height = h;
-        const aCtx = this.tmpA.getContext("2d");
-        const bCtx = this.tmpB.getContext("2d");
+        const tmpA = work?.tmpA ?? this.tmpA;
+        const tmpB = work?.tmpB ?? this.tmpB;
+        tmpA.width = w;
+        tmpA.height = h;
+        tmpB.width = w;
+        tmpB.height = h;
+        const aCtx = tmpA.getContext("2d");
+        const bCtx = tmpB.getContext("2d");
         if (aCtx && bCtx) {
           aCtx.fillStyle = "#000";
           aCtx.fillRect(0, 0, w, h);
           bCtx.fillStyle = "#000";
           bCtx.fillRect(0, 0, w, h);
-          this.drawMediaFrame(aCtx, donor, tt, w, h, noSync, rs);
-          this.drawMediaFrame(bCtx, active, tt, w, h, noSync, rs);
-          applyTransition(active.transition!.type, ctx, this.tmpA, this.tmpB, transP, w, h, {
-            scratch: this.scratch,
+          this.drawMediaFrame(aCtx, donor, tt, w, h, noSync, rs, work);
+          this.drawMediaFrame(bCtx, active, tt, w, h, noSync, rs, work);
+          applyTransition(active.transition!.type, ctx, tmpA, tmpB, transP, w, h, {
+            scratch: work?.scratch ?? this.scratch,
             noise: this.tvNoise,
             accent: "#22d3ee",
           });
         }
       } else {
-        this.drawMediaFrame(ctx, active, tt, w, h, noSync, rs);
+        this.drawMediaFrame(ctx, active, tt, w, h, noSync, rs, work);
       }
     }
 

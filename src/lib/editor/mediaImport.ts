@@ -65,6 +65,9 @@ export async function importFiles(files: FileList | null): Promise<MediaAsset[]>
       width: meta.width,
       height: meta.height,
       thumb: meta.thumb,
+      // v1.0.17: simpan objek File — mesin Turbo (WebCodecs murni) membaca film
+      // lewat akses acak File.slice tanpa memuat utuh ke RAM (aman hingga GB)
+      ...(type === "video" ? { file } : {}),
     };
     useEditor.getState().addAsset(asset);
     created.push(asset);

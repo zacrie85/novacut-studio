@@ -4,7 +4,7 @@
 // dan di Mode Sederhana langkah 2). Seksi berjudul yang bisa dilipat agar rapi.
 
 import { useState } from "react";
-import { ChevronDown, Save, Type, Monitor, Cpu, Captions } from "lucide-react";
+import { Bookmark, BookmarkPlus, Bot, Captions, ChevronDown, Cpu, Monitor, Save, Type, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,7 +13,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEditor } from "@/lib/editor/store";
 import { partLabel, LABEL_STYLES } from "@/lib/editor/constants";
-import { loadPlaylistExportConfig, savePlaylistExportConfig } from "@/lib/editor/playlistExport";
+import { deletePlaylistPreset, loadPlaylistPresets, savePlaylistExportConfig, savePlaylistPreset, type PlaylistPreset } from "@/lib/editor/playlistExport";
+import { isDesktopFS } from "@/lib/editor/fsBridge";
 import { modelSizeLabel } from "@/lib/editor/subtitles";
 import { useToast } from "@/hooks/use-toast";
 import type { PlaylistExportConfig } from "@/lib/editor/types";
@@ -36,8 +37,34 @@ function Section({ icon, title, hint, children, defaultOpen = false }: { icon: R
 export function PlaylistSettingsForm({ showSave = true, hideTitleScreen = false }: { showSave?: boolean; hideTitleScreen?: boolean }) {
   const pl = useEditor((s) => s.playlistExport);
   const { toast } = useToast();
+  const desktop = isDesktopFS();
   const setPl = (p: Partial<PlaylistExportConfig>) => useEditor.getState().setPlaylistExport(p);
   const contohJudul = useEditor((s) => s.assets.filter((a) => a.type === "video")[0]?.name.replace(/\.[^.]+$/, "")) || "Nama Video";
+
+  // ===== v1.0.16: PRESET SATU-KLIK =====
+  const [presets, setPresets] = useState<PlaylistPreset[]>(() => loadPlaylistPresets());
+  const [presetName, setPresetName] = useState("");
+  const savePreset = () => {
+    const st = useEditor.getState();
+    if (!presetName.trim()) {
+      toast({ title: "Tulis nama preset dulu", description: "Contoh: Novel 8 Bagian" });
+      return;
+    }
+    savePlaylistPreset(presetName, st.playlistExport, { mode: st.exportSettings.mode, splitBy: st.exportSettings.splitBy, parts: st.exportSettings.parts, partSeconds: st.exportSettings.partSeconds });
+    setPresets(loadPlaylistPresets());
+    toast({ title: `Preset "${presetName.trim()}" disimpan ✓`, description: "Klik chip presetnya kapan saja untuk menerapkan satu klik." });
+    setPresetName("");
+  };
+  const applyPreset = (p: PlaylistPreset) => {
+    useEditor.getState().setPlaylistExport({ ...p.cfg });
+    useEditor.getState().setExportSettings({ mode: p.split.mode, splitBy: p.split.splitBy, parts: p.split.parts, partSeconds: p.split.partSeconds });
+    savePlaylistExportConfig(p.cfg);
+    toast({ title: `Preset "${p.name}" diterapkan ✓`, description: "Semua setelan teks, rasio, kualitas & split diganti sesuai preset." });
+  };
+  const removePreset = (name: string) => {
+    deletePlaylistPreset(name);
+    setPresets(loadPlaylistPresets());
+  };
 
   const applyAndSave = () => {
     savePlaylistExportConfig(useEditor.getState().playlistExport);
@@ -49,6 +76,31 @@ export function PlaylistSettingsForm({ showSave = true, hideTitleScreen = false 
 
   return (
     <div className="space-y-2.5">
+      {/* ===== PRESET SATU-KLIK (v1.0.16) ===== */}
+      <Section icon={<Bookmark className="h-4 w-4" />} title="Preset" hint={presets.length ? `${presets.length} tersimpan` : "satu klik"} defaultOpen>
+        <p className="text-[11px] leading-relaxed text-gray-500">Simpan SEMUA setelan (teks, rasio, kualitas, split, subtitle) di bawah satu nama — terapkan kapan saja dengan satu klik.</p>
+        {presets.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {presets.map((p) => (
+              <span key={p.name} className="inline-flex items-center gap-1 rounded-lg border border-blue-500/30 bg-blue-500/10 py-1 pl-2 pr-1 text-[11px] font-semibold text-blue-300">
+                <button className="max-w-[170px] truncate" onClick={() => applyPreset(p)} title={`Terapkan preset "${p.name}"`}>
+                  {p.name}
+                </button>
+                <button className="rounded p-0.5 text-blue-400/60 transition hover:bg-red-500/20 hover:text-red-400" onClick={() => removePreset(p.name)} aria-label={`Hapus preset ${p.name}`}>
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-1.5">
+          <Input value={presetName} onChange={(e) => setPresetName(e.target.value)} placeholder="Nama preset (mis. Novel 8 Bagian)" className="h-8 flex-1 border-white/10 bg-white/[0.03] text-xs" />
+          <Button size="sm" className="h-8 shrink-0 gap-1 bg-blue-600 px-2.5 text-[11px] font-bold text-white hover:bg-blue-500" onClick={savePreset}>
+            <BookmarkPlus className="h-3.5 w-3.5" /> Simpan
+          </Button>
+        </div>
+      </Section>
+
       {/* ===== TEKS DI VIDEO ===== */}
       <Section icon={<Type className="h-4 w-4" />} title="Teks di Video" hint="judul · deskripsi · part" defaultOpen>
         <p className="text-[11px] leading-relaxed text-gray-500">Atur tulisan yang muncul di setiap hasil export &amp; split video.</p>
@@ -110,7 +162,7 @@ export function PlaylistSettingsForm({ showSave = true, hideTitleScreen = false 
       </Section>
 
       {/* ===== RASIO & LAYAR ===== */}
-      <Section icon={<Monitor className="h-4 w-4" />} title="Rasio & Layar" hint={pl.ratio}>
+      <Section icon={<Monitor className="h-4 w-4" />} title="Rasio & Layar" hint={`${pl.ratio} · ${pl.quality ?? "tajam"}`}>
         <div className="space-y-1">
           <Label className="text-xs text-gray-300" htmlFor="pl-ratio">
             Rasio video hasil
@@ -124,6 +176,27 @@ export function PlaylistSettingsForm({ showSave = true, hideTitleScreen = false 
               <SelectItem value="9:16">9:16 — Vertikal (Shorts/TikTok/Reels)</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+        {/* v1.0.16: preset kualitas — resolusi & kepadatan bitrate */}
+        <div className="space-y-1">
+          <Label className="text-xs text-gray-300">Kualitas hasil</Label>
+          <div className="grid grid-cols-3 gap-1.5">
+            {([
+              ["ringan", "Ringan", "720p · file kecil"],
+              ["tajam", "Tajam", "1080p · disarankan"],
+              ["maksimal", "Maksimal", "1080p · terbaik"],
+            ] as const).map(([val, lab, sub]) => (
+              <button
+                key={val}
+                onClick={() => setPl({ quality: val })}
+                className={`rounded-lg border px-2 py-1.5 text-xs font-semibold transition ${(pl.quality ?? "tajam") === val ? "border-blue-500/70 bg-blue-500/15 text-blue-300" : "border-white/10 bg-white/[0.03] text-gray-400 hover:border-white/25"}`}
+              >
+                {lab}
+                <span className="block text-[10px] font-normal text-gray-500">{sub}</span>
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] leading-relaxed text-gray-500">Ringan = render paling cepat &amp; file paling kecil (cocok untuk upload harian). Maksimal = bitrate tertinggi, file terbesar.</p>
         </div>
         {pl.ratio === "9:16" && (
           <div className="space-y-1">
@@ -163,6 +236,33 @@ export function PlaylistSettingsForm({ showSave = true, hideTitleScreen = false 
           </Select>
           <p className="text-[11px] leading-relaxed text-gray-500">Mode kilat merender beberapa video SEKALIGUS — makin banyak, makin cepat (memakai lebih banyak CPU/GPU).</p>
         </div>
+      </Section>
+
+      {/* ===== OTOMATISASI BATCH (v1.0.16) ===== */}
+      <Section icon={<Bot className="h-4 w-4" />} title="Otomatisasi Batch" hint={pl.autoShutdown ? "shutdown ON" : pl.smartSplit ? "split cerdas" : "lanjutan"}>
+        <div className="flex items-center justify-between gap-3">
+          <Label className="text-xs leading-snug text-gray-300">Potong di jeda sunyi (smart split)</Label>
+          <Switch checked={!!pl.smartSplit} onCheckedChange={(v) => setPl({ smartSplit: v })} className="data-[state=checked]:bg-blue-500" />
+        </div>
+        {!!pl.smartSplit && <p className="text-[11px] leading-relaxed text-emerald-400/90">✓ Titik potong digeser otomatis ke jeda sunyi audio terdekat (±8 detik) — klip berhenti di tempat dramatis, bukan di tengah kalimat.</p>}
+        <div className="flex items-center justify-between gap-3">
+          <Label className="text-xs leading-snug text-gray-300">Bunyi &quot;ting&quot; saat tiap film selesai</Label>
+          <Switch checked={pl.soundDone !== false} onCheckedChange={(v) => setPl({ soundDone: v })} className="data-[state=checked]:bg-blue-500" />
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <Label className="text-xs leading-snug text-gray-300">Lanjutkan batch — lewati yang sudah ada</Label>
+          <Switch checked={pl.skipExisting !== false} onCheckedChange={(v) => setPl({ skipExisting: v })} className="data-[state=checked]:bg-blue-500" />
+        </div>
+        <p className="text-[11px] leading-relaxed text-gray-500">Bagian yang filenya sudah lengkap di folder hasil DILEWATI — cocok untuk melanjutkan batch besar yang terputus listrik atau aplikasi tertutup.</p>
+        {desktop && (
+          <>
+            <div className="flex items-center justify-between gap-3">
+              <Label className="text-xs leading-snug text-gray-300">Matikan PC setelah batch selesai</Label>
+              <Switch checked={!!pl.autoShutdown} onCheckedChange={(v) => setPl({ autoShutdown: v })} className="data-[state=checked]:bg-blue-500" />
+            </div>
+            {!!pl.autoShutdown && <p className="text-[11px] leading-relaxed text-amber-400/90">PC akan mati otomatis 60 detik setelah SEMUA film selesai tanpa gagal — jalankan batch semalaman dengan tenang. Pastikan tidak ada pekerjaan lain.</p>}
+          </>
+        )}
       </Section>
 
       {/* ===== SUBTITLE AI ===== */}

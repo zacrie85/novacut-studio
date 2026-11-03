@@ -50,6 +50,11 @@ export const PLAYLIST_EXPORT_DEFAULTS: PlaylistExportConfig = {
   autoSub: false,
   subLevel: "ringan",
   parallel: 3,
+  quality: "tajam",
+  smartSplit: false,
+  skipExisting: true,
+  soundDone: true,
+  autoShutdown: false,
   cfgVersion: CFG_VERSION,
 };
 
@@ -85,4 +90,55 @@ export function savePlaylistExportConfig(cfg: PlaylistExportConfig) {
   } catch {
     /* penyimpanan penuh / diblokir — abaikan */
   }
+}
+
+// ===== v1.0.16: PRESET SATU-KLIK =====
+// Simpan seluruh setelan playlist (teks, rasio, efek, subtitle, kualitas, split)
+// di bawah satu nama — terapkan kapan saja dengan satu klik.
+
+const PRESET_KEY = "novacut.playlistPresets";
+
+/** potongan setelan split yang ikut tersimpan dalam preset */
+export interface PresetSplit {
+  mode: "single" | "split";
+  splitBy: "count" | "duration";
+  parts: number;
+  partSeconds: number;
+}
+
+export interface PlaylistPreset {
+  name: string;
+  cfg: PlaylistExportConfig;
+  split: PresetSplit;
+}
+
+export function loadPlaylistPresets(): PlaylistPreset[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(PRESET_KEY);
+    const arr = raw ? (JSON.parse(raw) as PlaylistPreset[]) : [];
+    return Array.isArray(arr) ? arr.filter((p) => p && typeof p.name === "string" && !!p.cfg && !!p.split) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePresets(list: PlaylistPreset[]) {
+  try {
+    window.localStorage.setItem(PRESET_KEY, JSON.stringify(list.slice(0, 24)));
+  } catch {
+    /* penyimpanan penuh — abaikan */
+  }
+}
+
+/** Simpan setelan SAAT INI sebagai preset bernama (menimpa nama yang sama) */
+export function savePlaylistPreset(name: string, cfg: PlaylistExportConfig, split: PresetSplit) {
+  const nm = name.trim().slice(0, 40) || "Preset";
+  const list = loadPlaylistPresets().filter((p) => p.name !== nm);
+  list.unshift({ name: nm, cfg: { ...cfg }, split: { ...split } });
+  writePresets(list);
+}
+
+export function deletePlaylistPreset(name: string) {
+  writePresets(loadPlaylistPresets().filter((p) => p.name !== name));
 }

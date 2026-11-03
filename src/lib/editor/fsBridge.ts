@@ -27,6 +27,12 @@ interface NovacutFS {
   saveFileChunk?: (id: string, data: ArrayBuffer, position?: number) => Promise<SaveResult>;
   saveFileEnd?: (id: string) => Promise<SaveResult>;
   openFolder: (dir: string) => Promise<SaveResult>;
+  /** v1.0.16: cek keberadaan & ukuran file di folder (resume batch) */
+  statFile?: (dir: string, name: string) => Promise<SaveResult & { size?: number }>;
+  /** v1.0.16: notifikasi Windows dari main process */
+  notify?: (title: string, body: string) => Promise<SaveResult>;
+  /** v1.0.16: matikan PC (Windows) dengan jeda 60 detik */
+  shutdownPC?: () => Promise<SaveResult>;
 }
 
 declare global {
@@ -130,6 +136,39 @@ export async function openInFolder(dir: string): Promise<boolean> {
   if (!window.novacutFS) return false;
   const res = await window.novacutFS.openFolder(dir);
   return !!res.ok;
+}
+
+/**
+ * v1.0.16 — RESUME BATCH: ukuran file di folder hasil (byte), atau -1 bila
+ * tidak ada. Dipakai untuk melewatkan bagian yang filenya SUDAH lengkap
+ * (lanjutkan batch yang terputus listrik/aplikasi ditutup).
+ */
+export async function fileSizeInDir(dir: string, name: string): Promise<number> {
+  if (!window.novacutFS?.statFile) return -1;
+  try {
+    const r = await window.novacutFS.statFile(dir, name);
+    return r.ok ? r.size ?? 0 : -1;
+  } catch {
+    return -1;
+  }
+}
+
+/** v1.0.16: notifikasi Windows (dari main process — tampil walau jendela minim) */
+export async function notifyDesktop(title: string, body: string): Promise<void> {
+  try {
+    await window.novacutFS?.notify?.(title, body);
+  } catch {
+    /* abaikan */
+  }
+}
+
+/** v1.0.16: matikan PC (Windows) — dipanggil hanya bila user mengaktifkannya */
+export async function shutdownPC(): Promise<void> {
+  try {
+    await window.novacutFS?.shutdownPC?.();
+  } catch {
+    /* abaikan */
+  }
 }
 
 /** Lokasi folder terakhir yang dipilih (diingat antar sesi aplikasi). */

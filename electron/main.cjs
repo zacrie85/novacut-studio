@@ -1,7 +1,7 @@
 // NOVACUT Studio - Electron main process
 // Menyajikan build statis (folder out/) lewat HTTP lokal lalu membukanya di window.
 
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, Menu, Notification, dialog, ipcMain, shell } = require("electron");
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
@@ -145,6 +145,59 @@ function registerFSIpc() {
       if (typeof dir !== "string" || !dir) return { ok: false, error: "Folder tidak valid" };
       const err = await shell.openPath(dir);
       return err ? { ok: false, error: err } : { ok: true, path: dir };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err) };
+    }
+  });
+
+  // ===== v1.0.16: RESUME BATCH, NOTIFIKASI & AUTO-SHUTDOWN =====
+  // Cek ukuran file di folder hasil — untuk melewatkan bagian yang SUDAH
+  // lengkap (lanjutkan batch yang terputus listrik / aplikasi ditutup).
+  ipcMain.handle("fs:stat-file", async (_event, payload) => {
+    try {
+      const dir = typeof payload?.dir === "string" ? payload.dir : "";
+      const name = safeFileName(payload?.name);
+      if (!dir || !name) return { ok: false };
+      const st = await fs.promises.stat(path.join(dir, name));
+      return { ok: true, size: st.size, path: path.join(dir, name) };
+    } catch {
+      return { ok: false };
+    }
+  });
+
+  // Notifikasi Windows — tampil walau jendela NOVACUT diminimalkan, jadi user
+  // yang menjalankan batch semalaman tahu kapan batch selesai.
+  ipcMain.handle("app:notify", async (_event, payload) => {
+    try {
+      if (!Notification.isSupported()) return { ok: false, error: "Notifikasi tidak didukung" };
+      const iconPath = path.join(__dirname, "..", "build", "icon.png");
+      const n = new Notification({
+        title: String(payload?.title || "NOVACUT Studio").slice(0, 80),
+        body: String(payload?.body || "").slice(0, 200),
+        ...(fs.existsSync(iconPath) ? { icon: iconPath } : {}),
+        silent: false,
+      });
+      n.on("click", () => {
+        const w = BrowserWindow.getAllWindows()[0];
+        if (w) {
+          if (w.isMinimized()) w.restore();
+          w.focus();
+        }
+      });
+      n.show();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err) };
+    }
+  });
+
+  // Matikan PC (Windows) setelah batch selesai — jeda 60 detik memberi kesempatan
+  // membatalkan lewat terminal (`shutdown /a`) bila berubah pikiran.
+  ipcMain.handle("app:shutdown", async () => {
+    try {
+      const { exec } = require("child_process");
+      exec("shutdown /s /t 60");
+      return { ok: true };
     } catch (err) {
       return { ok: false, error: String((err && err.message) || err) };
     }

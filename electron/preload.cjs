@@ -17,4 +17,10 @@ contextBridge.exposeInMainWorld("novacutFS", {
   saveFileEnd: (id) => ipcRenderer.invoke("fs:save-end", { id }),
   // Buka folder di Windows Explorer -> { ok, error? }
   openFolder: (dir) => ipcRenderer.invoke("fs:open-folder", dir),
+  // v1.0.16: cek keberadaan & ukuran file di folder (resume batch) -> { ok, size? }
+  statFile: (dir, name) => ipcRenderer.invoke("fs:stat-file", { dir, name }),
+  // v1.0.16: notifikasi Windows (tampil walau jendela diminimalkan)
+  notify: (title, body) => ipcRenderer.invoke("app:notify", { title, body }),
+  // v1.0.16: matikan PC otomatis setelah batch selesai (jeda 60 detik)
+  shutdownPC: () => ipcRenderer.invoke("app:shutdown"),
 });

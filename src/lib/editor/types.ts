@@ -14,6 +14,9 @@ export interface MediaAsset {
   height: number;
   thumb?: string; // data URL
   musicId?: string; // untuk aset dari pustaka musik
+  /** v1.0.17: objek File asli (tidak terserialisasi) — mesin Turbo membaca
+   * film lewat akses acak File.slice tanpa memuat utuh ke memori */
+  file?: File;
 }
 
 export interface Track {
@@ -175,6 +178,16 @@ export interface PlaylistExportConfig {
   subLevel?: SubLevel;
   /** berapa video dirender BERSAMAAN (paralel) 1–5 */
   parallel?: number;
+  /** v1.0.16: kualitas hasil — ringan (720p, file kecil & tercepat) / tajam (1080p) / maksimal (1080p, bitrate tinggi) */
+  quality?: "ringan" | "tajam" | "maksimal";
+  /** v1.0.16: geser titik potong ke jeda sunyi audio — klip tidak motong kalimat */
+  smartSplit?: boolean;
+  /** v1.0.16: lanjutkan batch terputus — lewati bagian yang filenya sudah ada di folder hasil */
+  skipExisting?: boolean;
+  /** v1.0.16: bunyi "ting" tiap film selesai + notifikasi Windows saat batch tuntas */
+  soundDone?: boolean;
+  /** v1.0.16: matikan PC otomatis 60 detik setelah batch selesai tanpa gagal */
+  autoShutdown?: boolean;
   /** versi skema setelan (internal, untuk migrasi setelan lama) */
   cfgVersion?: number;
 }
@@ -217,6 +230,8 @@ export interface ExportState {
   running: boolean;
   label: string;
   progress: number; // 0..1
+  /** v1.0.16: estimasi waktu tersisa (detik) — terisi setelah sebagian selesai */
+  eta?: number;
   results: ExportResult[];
   batchTotal: number;
   batchIndex: number;
