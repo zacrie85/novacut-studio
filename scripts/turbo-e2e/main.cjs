@@ -65,11 +65,21 @@ app.whenReady().then(async () => {
       backgroundThrottling: false,
     },
   });
+  const consoleLog = [];
   win.webContents.on("console-message", (_e, levelOrDetails, maybeMsg) => {
     const msg = typeof levelOrDetails === "object" && levelOrDetails !== null ? levelOrDetails.message : maybeMsg;
     if (typeof msg === "string" && msg.startsWith("TURBO_RESULT ")) {
-      fs.writeFileSync(RESULT, msg.slice("TURBO_RESULT ".length));
+      try {
+        const parsed = JSON.parse(msg.slice("TURBO_RESULT ".length));
+        parsed.console = consoleLog;
+        fs.writeFileSync(RESULT, JSON.stringify(parsed));
+      } catch {
+        fs.writeFileSync(RESULT, msg.slice("TURBO_RESULT ".length));
+      }
       setTimeout(() => app.exit(0), 200);
+    } else if (typeof msg === "string") {
+      consoleLog.push(msg.slice(0, 300));
+      if (consoleLog.length > 60) consoleLog.shift();
     }
   });
   try {

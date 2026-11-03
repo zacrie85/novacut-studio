@@ -450,9 +450,17 @@ export async function exportSegmentTurbo(opts: TurboSegmentOptions): Promise<Tur
   const gen = decodeVideoRange(file, vtr, srcStart, srcEnd);
   const buf: TurboFrame[] = [];
   let streamDone = false;
+  let pullErr: unknown = null; // error decoder ditampung, dilempar serempak di loop render
   const pull = async (): Promise<boolean> => {
     if (streamDone) return false;
-    const r = await gen.next();
+    let r: IteratorResult<TurboFrame>;
+    try {
+      r = await gen.next();
+    } catch (e) {
+      pullErr = e; // jangan biarkan rejection lewat tanpa ditangani (void pull)
+      streamDone = true;
+      return false;
+    }
     if (r.done) {
       streamDone = true;
       return false;
@@ -479,6 +487,7 @@ export async function exportSegmentTurbo(opts: TurboSegmentOptions): Promise<Tur
 
   try {
     for (let f = 0; f < totalFrames; f++) {
+      if (pullErr) throw pullErr; // decode gagal → gagal bersih → fallback mesin kilat
       const t = f / fps;
       let frame: VideoFrame | null = null;
       if (t >= clip.start - 1e-4 && t < clip.start + clip.duration) {

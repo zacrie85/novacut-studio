@@ -188,7 +188,9 @@ function videoCodecString(mux: TurboVideoMux, desc: Uint8Array): string {
       const b2 = dv.getUint8(2);
       const tier = (b2 >> 7) & 1;
       const depth = (b2 & 0x40 ? (b2 & 0x20 ? 12 : 10) : 8);
-      return `av01.${prof}.${tier ? "H" : "M"}${hex2(lvl)}.${hex2(depth)}`;
+      // format resmi WebCodecs: av01.<profile>.<level 2 digit><tier>.<bitdepth>
+      // (level DULU, baru huruf tier — terbalik = string ditolak Chromium → Turbo mati)
+      return `av01.${prof}.${hex2(lvl)}${tier ? "H" : "M"}.${hex2(depth)}`;
     }
   }
 }

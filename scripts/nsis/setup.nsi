@@ -9,11 +9,11 @@
 Unicode true
 !define APPNAME "NOVACUT Studio"
 !define COMPANY "NOVACUT"
-!define VERSION "1.0.17"
+!define VERSION "1.0.18"
 !define EXENAME "NOVACUT Studio.exe"
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\NOVACUTStudio"
 
-VIProductVersion "1.0.17.0"
+VIProductVersion "1.0.18.0"
 VIAddVersionKey /LANG=1033 "ProductName" "NOVACUT Studio"
 VIAddVersionKey /LANG=1033 "FileDescription" "NOVACUT Studio Installer"
 VIAddVersionKey /LANG=1033 "FileVersion" "${VERSION}.0"
