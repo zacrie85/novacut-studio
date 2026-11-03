@@ -13,8 +13,8 @@
 // Bila WebCodecs tidak tersedia (Electron lama), exporter.ts otomatis
 // memakai jalur rekam real-time lama (kompatibilitas).
 
-import { Muxer as Mp4Muxer, ArrayBufferTarget as Mp4Target } from "mp4-muxer";
-import { Muxer as WebmMuxer, ArrayBufferTarget as WebmTarget } from "webm-muxer";
+import { Muxer as Mp4Muxer, ArrayBufferTarget as Mp4Target, StreamTarget as Mp4StreamTarget } from "mp4-muxer";
+import { Muxer as WebmMuxer, ArrayBufferTarget as WebmTarget, StreamTarget as WebmStreamTarget } from "webm-muxer";
 import { engine, type RenderState } from "./engine";
 import { ensureAppFonts } from "./fonts";
 import { DiskFileWriter } from "./fsBridge";
@@ -142,12 +142,34 @@ export class AudioDecodeCache {
   }
 }
 
-/** v1.0.14: target muxer yang menulis potongan video LANGSUNG ke disk —
- * file ratusan MB tidak pernah ditahan utuh di memori renderer */
-class DiskTarget {
+/** v1.0.15: antrean tulis-disk berurutan utk StreamTarget BAWAAN muxer.
+ * PENTING: mp4-muxer/webm-muxer hanya menerima target yang merupakan instance
+ * kelas `Target` miliknya — kelas buatan sendiri (DiskTarget di v1.0.14) membuat
+ * SEMUA export langsung gagal: "The target must be provided and an instance
+ * of Target". Kelas ini hanya menjembatani callback onData -> IPC pwrite:
+ * potongan ditulis berurutan pada posisi absolutnya, error tulis ditahan dan
+ * dilempar saat flush() agar file tidak ditutup dalam keadaan korup. */
+const DISK_CHUNK = 8 * 1024 * 1024; // 8 MB per potongan IPC — hemat RAM & hemat pesan
+
+class DiskWriteChain {
+  private chain: Promise<void> = Promise.resolve();
+  private err: Error | null = null;
   constructor(private w: DiskFileWriter) {}
-  write(data: BufferSource, position?: number) {
-    return this.w.write(data, position);
+
+  /** callback `onData` StreamTarget (tanda tangan wajib: data, position) */
+  onData = (data: Uint8Array, position: number): void => {
+    if (this.err) return;
+    this.chain = this.chain
+      .then(() => this.w.write(data, position))
+      .catch((e) => {
+        this.err ??= e instanceof Error ? e : new Error(String(e));
+      });
+  };
+
+  /** tunggu semua tulis tertunda selesai; lempar error tulis pertama bila ada */
+  async flush(): Promise<void> {
+    await this.chain;
+    if (this.err) throw this.err;
   }
 }
 
@@ -195,7 +217,7 @@ export interface FastExportResult {
 
 /** Campur & encode audio rentang timeline (PCM -> AudioEncoder) */
 async function encodeAudioRange(
-  muxer: Mp4Muxer<Mp4Target> | WebmMuxer<WebmTarget>,
+  muxer: Mp4Muxer<Mp4Target | Mp4StreamTarget> | WebmMuxer<WebmTarget | WebmStreamTarget>,
   audioCodec: string,
   opts: FastExportOptions,
   decodeCache: AudioDecodeCache,
@@ -583,17 +605,21 @@ export async function exportRangeFast(opts: FastExportOptions): Promise<FastExpo
   }
 
   // ==== muxer ====
-  let muxer: Mp4Muxer<Mp4Target> | WebmMuxer<WebmTarget>;
+  let muxer: Mp4Muxer<Mp4Target | Mp4StreamTarget> | WebmMuxer<WebmTarget | WebmStreamTarget>;
   let targetRef: Mp4Target | WebmTarget | null;
   let mime: string;
+  /** v1.0.15: antrean tulis disk (null = jalur blob lama) — di-flush sebelum file ditutup */
+  let diskFlush: DiskWriteChain | null = null;
   if (support.container === "mp4") {
     if (writer) {
+      const flusher = new DiskWriteChain(writer);
       muxer = new Mp4Muxer({
-        target: new DiskTarget(writer) as never,
+        target: new Mp4StreamTarget({ onData: flusher.onData, chunked: true, chunkSize: DISK_CHUNK }),
         video: { codec: support.videoMuxCodec, width: w, height: h, frameRate: fps },
         ...(support.audioCodec ? { audio: { codec: support.audioCodec === "mp4a.40.2" ? ("aac" as const) : ("opus" as const), numberOfChannels: 2, sampleRate: 48000 } } : {}),
         fastStart: false,
       });
+      diskFlush = flusher;
       targetRef = null;
     } else {
       const target = new Mp4Target();
@@ -608,11 +634,13 @@ export async function exportRangeFast(opts: FastExportOptions): Promise<FastExpo
     mime = "video/mp4";
   } else {
     if (writer) {
+      const flusher = new DiskWriteChain(writer);
       muxer = new WebmMuxer({
-        target: new DiskTarget(writer) as never,
+        target: new WebmStreamTarget({ onData: flusher.onData, chunked: true, chunkSize: DISK_CHUNK }),
         video: { codec: "V_VP9", width: w, height: h, frameRate: fps },
         ...(support.audioCodec ? { audio: { codec: "A_OPUS", numberOfChannels: 2, sampleRate: 48000 } } : {}),
       });
+      diskFlush = flusher;
       targetRef = null;
     } else {
       const target = new WebmTarget();
@@ -709,9 +737,13 @@ export async function exportRangeFast(opts: FastExportOptions): Promise<FastExpo
   if (localCache) decodeCache.dispose();
   muxer.finalize();
   // v1.0.14: bila menulis langsung ke disk, tutup file & kembalikan path
+  // v1.0.15: flush antrean tulis DULU (pastikan semua potongan muxer benar-benar
+  // sampai ke disk) sebelum menutup file; bila ada potongan gagal (mis. disk
+  // penuh) -> abort agar tidak menyisakan file korup.
   let savedPath: string | undefined;
   if (writer) {
     try {
+      await diskFlush?.flush();
       savedPath = await writer.finish();
     } catch (e) {
       await writer.abort();

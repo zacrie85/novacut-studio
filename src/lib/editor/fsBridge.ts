@@ -99,9 +99,11 @@ export class DiskFileWriter {
   }
 
   /** Tulis satu potongan (mendukung posisi acak utk muxer MP4/WebM) */
-  async write(data: BufferSource, position?: number): Promise<void> {
+  async write(data: Uint8Array | ArrayBuffer, position?: number): Promise<void> {
     const buf = data instanceof ArrayBuffer ? data : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
-    this.bytes += buf.byteLength;
+    // v1.0.15: tulis berposisi (patch muxer, mis. ukuran mdat) TIDAK menambah
+    // panjang file — ukuran = posisi terjauh yang pernah tertulis
+    this.bytes = Math.max(this.bytes, (typeof position === "number" ? position : this.bytes) + buf.byteLength);
     const res = await window.novacutFS!.saveFileChunk!(this.id, buf, position);
     if (!res.ok) throw new Error(res.error || "Gagal menulis potongan file");
   }

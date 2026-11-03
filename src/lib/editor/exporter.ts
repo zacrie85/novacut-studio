@@ -30,9 +30,11 @@ function clampOffPct(v: number | undefined): number {
   return Math.max(-45, Math.min(45, n)) / 100;
 }
 
-/** pool paralel sederhana: jalankan maksimal `limit` tugas bersamaan */
-async function runPool<T>(items: T[], limit: number, fn: (item: T, idx: number) => Promise<void>): Promise<void> {
+/** pool paralel sederhana: jalankan maksimal `limit` tugas bersamaan.
+ * v1.0.15: mengembalikan JUMLAH tugas yang gagal (utk pesan akhir yang jujur). */
+async function runPool<T>(items: T[], limit: number, fn: (item: T, idx: number) => Promise<void>): Promise<number> {
   let next = 0;
+  let failed = 0;
   const n = Math.max(1, Math.min(limit, items.length));
   const workers = Array.from({ length: n }, async () => {
     while (true) {
@@ -41,11 +43,13 @@ async function runPool<T>(items: T[], limit: number, fn: (item: T, idx: number) 
       try {
         await fn(items[idx], idx);
       } catch (e) {
+        failed++;
         console.error("Pekerjaan paralel gagal:", e);
       }
     }
   });
   await Promise.all(workers);
+  return failed;
 }
 
 /**
@@ -790,6 +794,10 @@ export async function runBatchExport(assetIds: string[]) {
   useEditor.getState().setBatchJobs(initJobs);
   const markJob = (id: string, p: Partial<BatchJobView>) => useEditor.getState().patchBatchJob(id, p);
 
+  // v1.0.15: hitung pekerjaan yang gagal supaya pesan akhir TIDAK bohong
+  // "semua file tersimpan ✓" padahal ada yang gagal (bug tampilan v1.0.14)
+  let failedCount = 0;
+
   try {
     // rasio video hasil (pilihan di Menu Export Playlist): ganti ukuran proyek sementara
     // 16:9 = seperti aslinya; 9:16 = vertikal untuk Shorts/TikTok/Reels
@@ -1120,7 +1128,7 @@ export async function runBatchExport(assetIds: string[]) {
           useEditor.getState().patchExportState({ label: `Mode hemat memori: render ${parallel} video bersamaan (film panjang)` });
         }
       }
-      await runPool(jobs, parallel, renderJobFast);
+      failedCount = await runPool(jobs, parallel, renderJobFast);
     } else {
       for (let vi = 0; vi < jobs.length; vi++) {
         await renderJobLegacy(jobs[vi], vi);
@@ -1145,7 +1153,12 @@ export async function runBatchExport(assetIds: string[]) {
     const auto = isAutoSaveActive();
     const stEnd = useEditor.getState();
     if (!stEnd.exportState.label.startsWith("Gagal")) {
-      stEnd.patchExportState({ running: false, label: auto ? "Batch selesai — semua file tersimpan di folder pilihanmu ✓" : "Batch selesai", progress: 1 });
+      // v1.0.15: bila ada file yang gagal, jangan bilang "semua tersimpan ✓"
+      if (failedCount > 0) {
+        stEnd.patchExportState({ running: false, label: `Batch selesai — ${failedCount} file GAGAL ✗ (lihat keterangan merah di daftar)`, progress: 1 });
+      } else {
+        stEnd.patchExportState({ running: false, label: auto ? "Batch selesai — semua file tersimpan di folder pilihanmu ✓" : "Batch selesai", progress: 1 });
+      }
     } else {
       stEnd.patchExportState({ running: false, progress: 1 });
     }
