@@ -145,8 +145,10 @@ export function FramingControls({ target, className }: { target: "active" | "sel
 }
 
 /** Varian kadro untuk target "Video Playlist" — mengatur zoom & geser yang
- * diterapkan ke semua video hasil Export & Split langsung dari Playlist. */
-export function PlaylistFramingControls({ className }: { className?: string }) {
+ * diterapkan ke semua video hasil Export & Split langsung dari Playlist.
+ * v1.0.20: judul & teks info bisa ditimpa lewat props agar pas konteks
+ * (mis. dipasang tepat di bawah pilihan "Video utuh" di Rasio & Layar). */
+export function PlaylistFramingControls({ className, title, hint }: { className?: string; title?: string; hint?: string }) {
   const plState = useEditor((s) => s.playlistExport);
   const project = useEditor((s) => s.project);
   const firstVideo = useEditor((s) => s.assets.find((a) => a.type === "video"));
@@ -167,7 +169,7 @@ export function PlaylistFramingControls({ className }: { className?: string }) {
   return (
     <div className={cn("space-y-2 rounded-lg border border-blue-500/20 bg-black/40 px-3 py-2.5 ", className)}>
       <div className="flex items-center justify-between">
-        <span className="text-[11px] font-semibold tracking-widest text-blue-400">ZOOM &amp; GESER {project.ratio}</span>
+        <span className="text-[11px] font-semibold tracking-widest text-blue-400">{title ?? `ZOOM & GESER ${project.ratio}`}</span>
         <div className="flex items-center gap-1">
           <button
             className="flex items-center gap-1 rounded border border-blue-500/30 bg-blue-500/10 px-1.5 py-0.5 text-[11px] text-blue-200 transition hover:border-blue-400 hover:bg-blue-500/25 disabled:cursor-not-allowed disabled:opacity-40"
@@ -243,9 +245,9 @@ export function PlaylistFramingControls({ className }: { className?: string }) {
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5 text-[11px] leading-relaxed text-gray-500">
-        <Maximize className="h-3 w-3 shrink-0 text-blue-500/70" />
-        Berlaku ke semua video hasil Export &amp; Split dari Playlist. Mode rasio 9:16 &quot;Isi penuh&quot; tetap otomatis, zoom ini menambahkannya.
+      <div className="flex items-start gap-1.5 text-[11px] leading-relaxed text-gray-500">
+        <Maximize className="mt-0.5 h-3 w-3 shrink-0 text-blue-500/70" />
+        <span>{hint ?? <>Berlaku ke semua video hasil Export &amp; Split dari Playlist. Mode rasio 9:16 &quot;Isi penuh&quot; tetap otomatis, zoom ini menambahkannya.</>}</span>
       </div>
     </div>
   );

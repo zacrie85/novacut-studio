@@ -33,6 +33,9 @@ export function normalizeEnhance(e?: Partial<PlaylistEnhance> | null): PlaylistE
     loopCount: Math.max(1, Math.min(10, Math.round(Number(e?.loopCount) || 1))),
     volume: Math.max(0, Math.min(2, Number(e?.volume ?? 1))),
     zoom: Math.max(1, Math.min(5, Number(e?.zoom) || 1)),
+    // v1.0.20: zoom & geser berdiri sendiri (tidak bergantung toggle efek) — dinormalisasi agar aman dari data lama
+    panX: Math.max(-1, Math.min(1, Number(e?.panX) || 0)),
+    panY: Math.max(-1, Math.min(1, Number(e?.panY) || 0)),
   };
 }
 

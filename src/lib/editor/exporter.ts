@@ -1035,9 +1035,12 @@ export async function runBatchExport(assetIds: string[]) {
         fadeIn: enOn ? en.fadeIn : 0,
         fadeOut: enOn ? en.fadeOut : 0,
         effects: enOn ? [...en.effects] : [],
-        zoom: Math.min(8, (enOn ? en.zoom : 1) * fillZoom),
-        panX: enOn ? en.panX : 0,
-        panY: enOn ? en.panY : 0,
+        // v1.0.20: ZOOM & GESER berdiri SENDIRI — selalu diterapkan walau toggle
+        // "efek & klip" mati (menu ZOOM & POSISI VIDEO UTUH di Rasio & Layar
+        // menulis ke sini). Bawaan 1x/0/0 = perilaku lama, tanpa perubahan.
+        zoom: Math.min(8, en.zoom * fillZoom),
+        panX: en.panX,
+        panY: en.panY,
       });
       if (enOn && en.transitionType) clip.transition = { type: en.transitionType, duration: en.transitionDuration };
       const textTrack: Track = { id: "batch-text", kind: "text", name: "T", muted: false, hidden: false };

@@ -16,6 +16,7 @@ import { partLabel, LABEL_STYLES } from "@/lib/editor/constants";
 import { deletePlaylistPreset, loadPlaylistPresets, savePlaylistExportConfig, savePlaylistPreset, type PlaylistPreset } from "@/lib/editor/playlistExport";
 import { isDesktopFS } from "@/lib/editor/fsBridge";
 import { modelSizeLabel } from "@/lib/editor/subtitles";
+import { PlaylistFramingControls } from "../FramingControls";
 import { useToast } from "@/hooks/use-toast";
 import type { PlaylistExportConfig } from "@/lib/editor/types";
 
@@ -213,6 +214,13 @@ export function PlaylistSettingsForm({ showSave = true, hideTitleScreen = false 
               </SelectContent>
             </Select>
           </div>
+        )}
+        {/* v1.0.20: pilih "Video utuh" → menu ZOOM & POSISI muncul (besar-kecil + geser kiri/kanan/atas/bawah) */}
+        {pl.ratio === "9:16" && pl.fitMode === "fit" && (
+          <PlaylistFramingControls
+            title="ZOOM & POSISI VIDEO UTUH"
+            hint="Khusus Video utuh: 1.00x = video utuh seperti biasa (ada bar hitam). Perbesar zoom untuk membuat video tampil lebih BESAR, lalu geser KIRI/KANAN/ATAS/BAWAH untuk memilih bagian video mana yang terlihat. Tombol ISI FRAME = perbesar otomatis sampai bar hitam hilang."
+          />
         )}
       </Section>
 

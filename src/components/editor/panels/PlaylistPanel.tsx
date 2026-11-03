@@ -15,6 +15,7 @@ import { fmtTime, partLabel, LABEL_STYLES } from "@/lib/editor/constants";
 import { runBatchExport } from "@/lib/editor/exporter";
 import { loadPlaylistExportConfig, savePlaylistExportConfig } from "@/lib/editor/playlistExport";
 import { requestApplyTarget } from "../ApplyTargetSwitch";
+import { PlaylistFramingControls } from "../FramingControls";
 import { modelSizeLabel } from "@/lib/editor/subtitles";
 import { engine } from "@/lib/editor/engine";
 import { useToast } from "@/hooks/use-toast";
@@ -177,6 +178,13 @@ export function PlaylistPanel() {
               </SelectContent>
             </Select>
           </div>
+        )}
+        {/* v1.0.20: pilih "Video utuh" → menu ZOOM & POSISI muncul di bawahnya */}
+        {pl.ratio === "9:16" && pl.fitMode === "fit" && (
+          <PlaylistFramingControls
+            title="ZOOM & POSISI VIDEO UTUH"
+            hint="1.00x = video utuh (bar hitam). Perbesar zoom, lalu geser kiri/kanan/atas/bawah untuk memilih bagian yang tampil. ISI FRAME = perbesar sampai bar hitam hilang."
+          />
         )}
 
         {/* jumlah render paralel */}
