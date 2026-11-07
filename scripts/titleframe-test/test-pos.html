@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><style>
+  body { margin:0; background:#202028; font-family:sans-serif; }
+  .grid { display:grid; grid-template-columns:repeat(2, 480px); gap:14px; padding:14px; }
+  .cell { background:#000; border-radius:8px; overflow:hidden; }
+  canvas { display:block; width:480px; height:270px; }
+  .lbl { color:#9fb4d8; font-size:12px; padding:4px 8px; background:#111118; }
+</style></head>
+<body>
+<div class="grid" id="g"></div>
+<script src="./engine.module.js"></script>
+<script>
+// ===== Uji POSISI VERTIKAL + BINGKAI lewat jalur ASLI drawTextOverlay =====
+const cases = [
+  { name: "default: judul BAWAH + part ATAS", titleV: undefined, partV: undefined, frame: undefined },
+  { name: "judul paling ATAS (titleV=0)", titleV: 0, partV: undefined, frame: undefined },
+  { name: "judul TENGAH (titleV=50)", titleV: 50, partV: 50, frame: undefined },
+  { name: "part paling BAWAH (partV=100)", titleV: undefined, partV: 100, frame: undefined },
+  { name: "judul BAWAH + bingkai t1", titleV: undefined, partV: undefined, frame: "t1" },
+  { name: "judul BAWAH + bingkai t5 (lebar 1.5x, tinggi 1.4x)", titleV: undefined, partV: undefined, frame: "t5", frameW: 1.5, frameH: 1.4 },
+  { name: "judul ATAS + bingkai f2 + geser halus titleY=-10", titleV: 0, partV: undefined, frame: "f2", titleY: -10 },
+  { name: "judul BAWAH + bingkai t3 + geser halus titleY=+5", titleV: undefined, partV: undefined, frame: "t3", titleY: 5 },
+];
+const g = document.getElementById("g");
+const W = 960, H = 540;
+for (const c of cases) {
+  const cell = document.createElement("div");
+  cell.className = "cell";
+  const cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  const lbl = document.createElement("div");
+  lbl.className = "lbl"; lbl.textContent = c.name;
+  cell.appendChild(cv); cell.appendChild(lbl);
+  g.appendChild(cell);
+  const ctx = cv.getContext("2d");
+  const bg = ctx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,"#26466e"); bg.addColorStop(0.55,"#3d2f63"); bg.addColorStop(1,"#0b0d14");
+  ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = "rgba(255,196,88,0.9)";
+  ctx.beginPath(); ctx.arc(W*0.7, H*0.28, H*0.15, 0, Math.PI*2); ctx.fill();
+
+  // judul+deskripsi — posV SELALU terisi seperti di exporter asli:
+  // clampV(st.texts.titleV, 100) → default 100 = PALING BAWAH
+  NovaDraw.drawTextOverlay(ctx, W, H, {
+    content: "JUDUL VIDEO UJI",
+    sub: "Deskripsi video singkat",
+    size: 0.075, subSize: 0.035,
+    color: "#ffffff", font: "sans", subFont: "sans",
+    anim: "rise", pos: "top", bg: "none", stroke: true,
+    offY: (c.titleY ?? 0) / 100,
+    posV: (c.titleV === undefined ? 100 : c.titleV) / 100,
+    frame: c.frame, frameW: c.frameW, frameH: c.frameH,
+  }, 10, 0.6, 12);
+  // part — posV default 0 = PALING ATAS
+  NovaDraw.drawTextOverlay(ctx, W, H, {
+    content: "PART 1",
+    size: 0.07, color: "#ffffff", font: "sans",
+    anim: "slam", pos: "bottom", bg: "bar", stroke: true,
+    posV: (c.partV === undefined ? 0 : c.partV) / 100,
+  }, 10, 0.6, 12);
+}
+document.title = "DONE2";
+</script>
+</body>
+</html>
