@@ -7,7 +7,7 @@
 // Semua setelan dipakai hasil Export & Split dan diingat otomatis (localStorage).
 
 import { useEffect, useRef } from "react";
-import { ALargeSmall, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, MonitorPlay, RotateCcw } from "lucide-react";
+import { ALargeSmall, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Frame, MoveVertical, MonitorPlay, RotateCcw } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
@@ -16,6 +16,7 @@ import { drawTextOverlay } from "@/lib/editor/engine";
 import { ensureAppFonts } from "@/lib/editor/fonts";
 import { useEditor } from "@/lib/editor/store";
 import { TEXT_STYLE_DEFAULTS, saveTextStyle, type TextStyle } from "@/lib/editor/textStyle";
+import { TitleFramePicker } from "@/components/editor/TitleFramePicker";
 import type { Ratio } from "@/lib/editor/types";
 
 type OffKey = "titleX" | "titleY" | "descX" | "descY" | "partX" | "partY";
@@ -117,6 +118,11 @@ function LivePreview({ ratioOverride }: { ratioOverride?: Ratio }) {
           offY: pct(texts.titleY),
           subOffX: pct(texts.descX),
           subOffY: pct(texts.descY),
+          // v1.0.22: posisi vertikal (default PALING BAWAH) + bingkai judul
+          posV: (typeof texts.titleV === "number" ? texts.titleV : 100) / 100,
+          frame: texts.titleFrame || undefined,
+          frameW: texts.titleFrameW,
+          frameH: texts.titleFrameH,
         },
         10,
         0,
@@ -137,6 +143,8 @@ function LivePreview({ ratioOverride }: { ratioOverride?: Ratio }) {
           stroke: true,
           offX: pct(texts.partX),
           offY: pct(texts.partY),
+          // v1.0.22: posisi vertikal part — default PALING ATAS
+          posV: (typeof texts.partV === "number" ? texts.partV : 0) / 100,
         },
         10,
         0,
@@ -167,6 +175,23 @@ function LivePreview({ ratioOverride }: { ratioOverride?: Ratio }) {
   );
 }
 
+/** satu baris slider POSISI VERTIKAL (0 = paling atas, 100 = paling bawah) */
+function VRow({ name, value, onChange, onReset, def }: { name: string; value: number; onChange: (v: number) => void; onReset: () => void; def: number }) {
+  const ket = value <= 20 ? "Atas" : value >= 80 ? "Bawah" : `${value}%`;
+  return (
+    <div className="flex items-center gap-2 text-[11px] text-gray-400">
+      <span className="w-16 shrink-0 font-semibold text-gray-300">{name}</span>
+      <span className="w-8 shrink-0 text-center text-[9px] uppercase tracking-wide text-gray-500">Atas</span>
+      <Slider value={[value]} min={0} max={100} step={1} onValueChange={([v]) => onChange(v)} className="flex-1" aria-label={`Posisi vertikal ${name}`} />
+      <span className="w-8 shrink-0 text-center text-[9px] uppercase tracking-wide text-gray-500">Bawah</span>
+      <span className="w-12 shrink-0 text-right font-mono text-blue-400">{value === def ? "Default" : ket}</span>
+      <button type="button" onClick={onReset} className="rounded p-1 text-gray-500 hover:bg-white/10 hover:text-gray-200" aria-label={`Reset posisi ${name}`} title={`Reset posisi ${name} ke posisi bawaan`}>
+        <RotateCcw className="h-3 w-3" />
+      </button>
+    </div>
+  );
+}
+
 /** Bagian lengkap "UKURAN, POSISI & FONT TULISAN" (dipakai Mode Pro & Mode Sederhana) */
 export function TextStyleSettings({ ratioOverride }: { ratioOverride?: Ratio }) {
   const texts = useEditor((s) => s.texts);
@@ -183,6 +208,12 @@ export function TextStyleSettings({ ratioOverride }: { ratioOverride?: Ratio }) 
   const descY = texts.descY ?? 0;
   const partX = texts.partX ?? 0;
   const partY = texts.partY ?? 0;
+  // v1.0.22: posisi vertikal + bingkai judul
+  const titleV = typeof texts.titleV === "number" ? texts.titleV : 100;
+  const partV = typeof texts.partV === "number" ? texts.partV : 0;
+  const titleFrame = texts.titleFrame || "";
+  const frameW = typeof texts.titleFrameW === "number" ? texts.titleFrameW : 1;
+  const frameH = typeof texts.titleFrameH === "number" ? texts.titleFrameH : 1;
 
   /** simpan gaya tulisan ke localStorage agar bertahan setelah aplikasi ditutup */
   const persistStyle = (p: Partial<TextStyle>) => {
@@ -198,6 +229,11 @@ export function TextStyleSettings({ ratioOverride }: { ratioOverride?: Ratio }) 
       descY: t.descY ?? 0,
       partX: t.partX ?? 0,
       partY: t.partY ?? 0,
+      titleV: typeof t.titleV === "number" ? t.titleV : 100,
+      partV: typeof t.partV === "number" ? t.partV : 0,
+      titleFrame: t.titleFrame ?? "",
+      titleFrameW: typeof t.titleFrameW === "number" ? t.titleFrameW : 1,
+      titleFrameH: typeof t.titleFrameH === "number" ? t.titleFrameH : 1,
       ...p,
     });
   };
@@ -263,9 +299,85 @@ export function TextStyleSettings({ ratioOverride }: { ratioOverride?: Ratio }) 
         <span className="w-10 text-right font-mono text-blue-400">{(partSize * 100).toFixed(1)}%</span>
       </div>
 
+      {/* ===== v1.0.22: POSISI VERTIKAL ===== */}
+      <div className="space-y-1.5 rounded-md border border-fuchsia-500/25 bg-fuchsia-500/[0.06] p-2">
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-fuchsia-300">
+          <MoveVertical className="h-3.5 w-3.5" /> POSISI VERTIKAL (GESER ATAS ↔ BAWAH)
+        </div>
+        <p className="text-[11px] leading-relaxed text-gray-500">
+          Judul &amp; deskripsi <b className="text-fuchsia-300">mulai di PALING BAWAH</b>, part/episode <b className="text-fuchsia-300">mulai di PALING ATAS</b> — geser slidernya sampai ke ujung sebaliknya sesuka hatimu.
+        </p>
+        <VRow
+          name="Judul+Desc"
+          value={titleV}
+          def={100}
+          onChange={(v) => {
+            st.setTexts({ titleV: v });
+            persistStyle({ titleV: v });
+          }}
+          onReset={() => {
+            st.setTexts({ titleV: 100 });
+            persistStyle({ titleV: 100 });
+          }}
+        />
+        <VRow
+          name="Part/Eps"
+          value={partV}
+          def={0}
+          onChange={(v) => {
+            st.setTexts({ partV: v });
+            persistStyle({ partV: v });
+          }}
+          onReset={() => {
+            st.setTexts({ partV: 0 });
+            persistStyle({ partV: 0 });
+          }}
+        />
+      </div>
+
+      {/* ===== v1.0.22: BINGKAI JUDUL (10 GAYA) ===== */}
+      <div className="space-y-1.5 rounded-md border border-amber-500/25 bg-amber-500/[0.05] p-2">
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-amber-300">
+          <Frame className="h-3.5 w-3.5" /> BINGKAI JUDUL (10 GAYA — INTERIOR KOSONG)
+        </div>
+        <p className="text-[11px] leading-relaxed text-gray-500">
+          Pilih bingkai untuk tulisan judul di dalam video: <b className="text-amber-300">6 gaya referensi</b> + <b className="text-amber-300">4 futuristik</b>. Bagian dalam bingkai <b className="text-gray-400">kosong</b> — video tetap terlihat. Besar bingkai <b className="text-blue-400">otomatis mengikuti panjang &amp; lebar tulisan</b>, atau atur sendiri lewat slider di bawah.
+        </p>
+        <TitleFramePicker
+          value={titleFrame}
+          onChange={(id) => {
+            st.setTexts({ titleFrame: id });
+            persistStyle({ titleFrame: id });
+          }}
+        />
+        <div className={`flex items-center gap-2 text-[11px] text-gray-400 ${titleFrame ? "" : "pointer-events-none opacity-40"}`}>
+          <span className="w-16 shrink-0">Lebar</span>
+          <Slider value={[Math.round(frameW * 100)]} min={60} max={250} step={5} onValueChange={([v]) => { st.setTexts({ titleFrameW: v / 100 }); persistStyle({ titleFrameW: v / 100 }); }} className="flex-1" aria-label="Lebar bingkai judul" />
+          <span className="w-10 text-right font-mono text-blue-400">{frameW === 1 ? "Otomatis" : `${frameW.toFixed(2)}x`}</span>
+        </div>
+        <div className={`flex items-center gap-2 text-[11px] text-gray-400 ${titleFrame ? "" : "pointer-events-none opacity-40"}`}>
+          <span className="w-16 shrink-0">Tinggi</span>
+          <Slider value={[Math.round(frameH * 100)]} min={60} max={250} step={5} onValueChange={([v]) => { st.setTexts({ titleFrameH: v / 100 }); persistStyle({ titleFrameH: v / 100 }); }} className="flex-1" aria-label="Tinggi bingkai judul" />
+          <span className="w-10 text-right font-mono text-blue-400">{frameH === 1 ? "Otomatis" : `${frameH.toFixed(2)}x`}</span>
+          <button
+            type="button"
+            onClick={() => {
+              st.setTexts({ titleFrameW: 1, titleFrameH: 1 });
+              persistStyle({ titleFrameW: 1, titleFrameH: 1 });
+            }}
+            disabled={!titleFrame || (frameW === 1 && frameH === 1)}
+            className="rounded p-1 text-gray-500 hover:bg-white/10 hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-30"
+            aria-label="Reset ukuran bingkai ke otomatis"
+            title="Kembalikan ukuran bingkai ke otomatis (ikut tulisan)"
+          >
+            <RotateCcw className="h-3 w-3" />
+          </button>
+        </div>
+      </div>
+
       {/* ===== POSISI: GESER ATAS/BAWAH/KIRI/KANAN ===== */}
       <div className="space-y-1.5 rounded-md border border-blue-500/20 bg-blue-500/[0.05] p-2">
-        <div className="text-[11px] font-semibold tracking-wider text-blue-300">POSISI TULISAN (GESER PER 1%)</div>
+        <div className="text-[11px] font-semibold tracking-wider text-blue-300">GESER HALUS (KOREKSI PER 1%)</div>
         <PosRow name="Judul" x={titleX} y={titleY} onMove={(dx, dy) => { setOff("titleX", dx); setOff("titleY", dy); }} onReset={() => resetOff(["titleX", "titleY"])} />
         <PosRow name="Deskripsi" x={descX} y={descY} onMove={(dx, dy) => { setOff("descX", dx); setOff("descY", dy); }} onReset={() => resetOff(["descX", "descY"])} />
         <PosRow name="Part/Eps" x={partX} y={partY} onMove={(dx, dy) => { setOff("partX", dx); setOff("partY", dy); }} onReset={() => resetOff(["partX", "partY"])} />

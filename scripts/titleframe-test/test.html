@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><style>
+  body { margin:0; background:#202028; font-family:sans-serif; }
+  .grid { display:grid; grid-template-columns:repeat(2, 480px); gap:14px; padding:14px; }
+  .cell { background:#000; border-radius:8px; overflow:hidden; }
+  canvas { display:block; width:480px; height:270px; }
+  .lbl { color:#9fb4d8; font-size:12px; padding:4px 8px; background:#111118; }
+</style></head>
+<body>
+<div class="grid" id="g"></div>
+<script src="./tf.module.js"></script>
+<script>
+const ids = ["t1","t2","t3","t4","t5","t6","f1","f2","f3","f4"];
+const g = document.getElementById("g");
+const W = 960, H = 540; // 16:9 layar penuh per contoh
+for (const id of ids) {
+  const cell = document.createElement("div");
+  cell.className = "cell";
+  const cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  const lbl = document.createElement("div");
+  lbl.className = "lbl"; lbl.textContent = id;
+  cell.appendChild(cv); cell.appendChild(lbl);
+  g.appendChild(cell);
+
+  const ctx = cv.getContext("2d");
+  // latar adegan (dummy video)
+  const bg = ctx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,"#26466e"); bg.addColorStop(0.55,"#3d2f63"); bg.addColorStop(1,"#0b0d14");
+  ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = "rgba(255,196,88,0.9)";
+  ctx.beginPath(); ctx.arc(W*0.7, H*0.3, H*0.16, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = "rgba(0,0,0,0.5)";
+  ctx.beginPath(); ctx.moveTo(0,H); ctx.lineTo(W*0.3,H*0.62); ctx.lineTo(W*0.55,H); ctx.closePath(); ctx.fill();
+
+  // contoh teks judul panjang beda-beda untuk uji auto-size
+  const title = id === "t5" ? "PETUALANGAN" : (id === "f2" ? "JUDUL" : "JUDUL VIDEO UJI");
+  const sz = H * 0.075;
+  ctx.font = `900 ${sz}px Arial`;
+  // ukuran bingkai = lebar teks + padding (simulasi logika drawTextOverlay)
+  const tw = ctx.measureText(title).width;
+  const blockH = sz * 1.12;
+  const padX = sz * 0.85, padY = sz * 0.42;
+  const fw = Math.max(sz*1.6, (tw + padX*2));
+  const fh = Math.max(sz*1.7, (blockH + padY*2));
+  const fx = W/2 - fw/2, fy = H/2 - fh/2;
+  NovaTitleFrames.drawTitleFrame(ctx, id, fx, fy, fw, fh);
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.lineWidth = Math.max(2, sz*0.09);
+  ctx.strokeStyle = "rgba(0,0,0,0.85)"; ctx.lineJoin = "round";
+  ctx.strokeText(title, W/2, H/2);
+  ctx.fillStyle = "#fff"; ctx.fillText(title, W/2, H/2);
+}
+document.title = "DONE";
+</script>
+</body>
+</html>

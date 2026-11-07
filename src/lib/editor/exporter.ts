@@ -61,6 +61,14 @@ function clampOffPct(v: number | undefined): number {
   return Math.max(-45, Math.min(45, n)) / 100;
 }
 
+/** v1.0.22: posisi vertikal langsung (% layar 0..100) -> fraksi 0..1.
+ * Setelan lama tanpa nilai otomatis memakai default (judul = 100 bawah,
+ * part = 0 atas) sesuai posisi bawaan baru. */
+function clampV(v: number | undefined, def: number): number {
+  const n = typeof v === "number" && isFinite(v) ? Math.round(v) : def;
+  return Math.max(0, Math.min(100, n)) / 100;
+}
+
 /**
  * Petakan segmen subtitle (waktu SUMBER video) ke waktu timeline.
  * Memakai rumus kebalikan srcTime engine: t = clip.start + ((S - inPoint) % srcSeg) / speed
@@ -423,6 +431,9 @@ export function buildSplitProject(
           // posisi dari kolom geser Part di menu Teks
           offX: clampOffPct(st.texts.partX),
           offY: clampOffPct(st.texts.partY),
+          // v1.0.22: posisi vertikal part — 0 = paling atas (DEFAULT),
+          // 100 = paling bawah, bisa digeser bebas dari menu Teks
+          posV: clampV(st.texts.partV, 0),
         },
       })
     );
@@ -455,6 +466,14 @@ export function buildSplitProject(
           offY: clampOffPct(st.texts.titleY),
           subOffX: clampOffPct(st.texts.descX),
           subOffY: clampOffPct(st.texts.descY),
+          // v1.0.22: posisi vertikal judul+deskripsi — 100 = paling bawah
+          // (DEFAULT), 0 = paling atas, bisa digeser bebas dari menu Teks
+          posV: clampV(st.texts.titleV, 100),
+          // v1.0.22: bingkai judul (10 gaya) — ukuran otomatis ikut tulisan
+          // + skala manual dari menu BINGKAI JUDUL
+          frame: st.texts.titleFrame || undefined,
+          frameW: st.texts.titleFrameW,
+          frameH: st.texts.titleFrameH,
         },
       })
     );

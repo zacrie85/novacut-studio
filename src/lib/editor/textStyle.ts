@@ -3,10 +3,11 @@
 // Disimpan di localStorage agar pengaturan bertahan setelah aplikasi ditutup.
 
 import type { TextsConfig } from "./types";
+import { saneFrameScale, saneTitleFrame } from "./titleFrames";
 
 const KEY = "novacut.textsStyle";
 /** versi skema — bila berubah, setelan lama dimigrasi otomatis */
-export const TEXT_STYLE_VERSION = 2;
+export const TEXT_STYLE_VERSION = 3;
 
 export const TEXT_STYLE_DEFAULTS = {
   /** ukuran huruf judul: 4.2% tinggi layar (sebelumnya 7% — terlalu besar) */
@@ -26,6 +27,18 @@ export const TEXT_STYLE_DEFAULTS = {
   /** posisi teks part/episode */
   partX: 0,
   partY: 0,
+  /** v1.0.22: posisi vertikal judul+deskripsi saat video berjalan —
+   * 0 = paling atas, 100 = paling bawah (DEFAULT: 100 = PALING BAWAH) */
+  titleV: 100,
+  /** v1.0.22: posisi vertikal part/episode — 0 = paling atas, 100 = paling
+   * bawah (DEFAULT: 0 = PALING ATAS) */
+  partV: 0,
+  /** v1.0.22: bingkai judul ("" = tanpa bingkai; lihat TITLE_FRAMES) */
+  titleFrame: "",
+  /** v1.0.22: skala lebar bingkai (1 = otomatis ikut lebar tulisan) */
+  titleFrameW: 1,
+  /** v1.0.22: skala tinggi bingkai (1 = otomatis ikut tinggi tulisan) */
+  titleFrameH: 1,
 };
 
 export type TextStyle = typeof TEXT_STYLE_DEFAULTS;
@@ -51,6 +64,13 @@ export function loadTextStyle(): TextStyle {
       descY: clampOffset(parsed.descY),
       partX: clampOffset(parsed.partX),
       partY: clampOffset(parsed.partY),
+      // v1.0.22: setelan lama tanpa titleV/partV otomatis memakai default baru
+      // (judul+deskripsi DI BAWAH, part DI ATAS) sesuai permintaan pengguna
+      titleV: clampPercent(parsed.titleV, TEXT_STYLE_DEFAULTS.titleV),
+      partV: clampPercent(parsed.partV, TEXT_STYLE_DEFAULTS.partV),
+      titleFrame: saneTitleFrame(parsed.titleFrame),
+      titleFrameW: saneFrameScale(parsed.titleFrameW),
+      titleFrameH: saneFrameScale(parsed.titleFrameH),
     };
     return merged;
   } catch {
@@ -84,4 +104,11 @@ function clampOffset(v: unknown): number {
   const n = typeof v === "number" ? v : Number(v);
   if (!isFinite(n)) return 0;
   return Math.round(Math.max(-45, Math.min(45, n)));
+}
+
+/** v1.0.22: posisi vertikal 0–100 (% layar); bila tidak valid pakai default */
+function clampPercent(v: unknown, def: number): number {
+  const n = typeof v === "number" ? v : Number(v);
+  if (!isFinite(n)) return def;
+  return Math.round(Math.max(0, Math.min(100, n)));
 }
