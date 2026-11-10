@@ -8,6 +8,9 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      # electron-builder butuh token utk mengunduh dist Electron dari GitHub
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
