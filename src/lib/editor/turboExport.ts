@@ -485,6 +485,13 @@ export async function exportSegmentTurbo(opts: TurboSegmentOptions): Promise<Tur
     }
   };
 
+  // v1.0.23 ANTI-KEDIP: pegang frame terakhir yang tergambar (hold). Pada sumber
+  // VFR (jarak antar frame tidak rata) atau saat decoder menyusul, kepala buffer
+  // bisa berada DI DEPAN waktu target > 50 ms — dulu frame dilewatkan null sehingga
+  // engine menggambar elemen <video> basi (gambar beku dari posisi lain) = video
+  // hasil KEDIP-KEDIP. Sekarang frame sebelumnya DIPERTAHANKAN sampai frame sumber
+  // berikutnya benar-benar waktunya — layar stabil, urutan konten tetap benar.
+  let lastAccepted: VideoFrame | null = null;
   try {
     for (let f = 0; f < totalFrames; f++) {
       if (pullErr) throw pullErr; // decode gagal → gagal bersih → fallback mesin kilat
@@ -493,16 +500,35 @@ export async function exportSegmentTurbo(opts: TurboSegmentOptions): Promise<Tur
       if (t >= clip.start - 1e-4 && t < clip.start + clip.duration) {
         const srcT = srcTimeOf(clip, t);
         // majukan buffer: buang frame yang waktunya sudah lewat
+        // (frame yang sedang dipegang lastAccepted jangan ditutup — masih dipakai)
         while (buf.length >= 2 && buf[1].pts <= srcT + 0.002) {
-          buf.shift()!.frame.close();
+          const dropped = buf.shift()!;
+          if (dropped.frame !== lastAccepted) dropped.frame.close();
         }
         while (buf.length < 2 && !streamDone) {
           const got = await pull();
           if (!got) break;
-          while (buf.length >= 2 && buf[1].pts <= srcT + 0.002) buf.shift()!.frame.close();
+          while (buf.length >= 2 && buf[1].pts <= srcT + 0.002) {
+            const dropped = buf.shift()!;
+            if (dropped.frame !== lastAccepted) dropped.frame.close();
+          }
         }
         const head = buf[0];
-        if (head && head.pts <= srcT + 0.05) frame = head.frame;
+        if (head && head.pts <= srcT + 0.05) {
+          // frame sumber berikutnya sudah waktunya — ganti yang dipegang
+          if (lastAccepted && lastAccepted !== head.frame) lastAccepted.close();
+          lastAccepted = head.frame;
+          frame = head.frame;
+        } else if (lastAccepted) {
+          // decoder belum sampai / frame berikutnya masih jauh di depan
+          // (VFR/gap) — pertahankan frame terakhir, JANGAN fallback elemen
+          frame = lastAccepted;
+        } else if (head && head.pts <= srcT + 0.5) {
+          // awal bagian: belum ada frame tergambar — terima frame pertama walau
+          // sedikit di depan (geser cts B-frame ±2 tick) supaya tidak kilatan hitam
+          lastAccepted = head.frame;
+          frame = head.frame;
+        }
         // isi ulang buffer di belakang (decode tetap berjalan mendahului)
         if (buf.length < 6 && !streamDone) void pull();
       }
@@ -523,8 +549,15 @@ export async function exportSegmentTurbo(opts: TurboSegmentOptions): Promise<Tur
     }
   } finally {
     await gen.return(undefined as never).catch(() => undefined); // tutup decoder + sisa frame
-    for (const b of buf) b.frame.close(); // sisa buffer tidak boleh bocor
+    for (const b of buf) {
+      if (b.frame !== lastAccepted) b.frame.close(); // sisa buffer tidak boleh bocor
+    }
     buf.length = 0;
+    try {
+      lastAccepted?.close(); // frame yang dipegang ditutup paling akhir
+    } catch {
+      /* sudah tertutup */
+    }
   }
 
   opts.onStage?.("Menyelesaikan berkas...");

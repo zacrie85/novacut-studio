@@ -1280,8 +1280,15 @@ export async function runBatchExport(assetIds: string[]) {
         const direct = s.exportDir && isDesktopFS() ? { dir: s.exportDir } : null;
         const directSave = direct ? { dir: direct.dir, name: `${slugify(job.title)}-${slugify(partTxt)}` } : undefined;
         const bitrate = pl.quality === "ringan" ? 4_500_000 : pl.quality === "maksimal" ? 14_000_000 : 9_000_000;
-        // geser cover — rumus SAMA dengan buildSplitProject
-        const shift = s.includeCover && coverAssetId ? Math.max(2, Math.min(5, s.coverDuration)) : 0;
+        // v1.0.23 ANTI-KEDIP: panjang cover (shift) diambil dari KLIP VIDEO proyek
+        // yang baru dibangun — satu sumber kebenaran. Dulu dihitung ulang dari
+        // snapshot setelan `s` yang sudah BASI (includeCover ditimpa dari
+        // pl.showTitleScreen di awal batch) sehingga bisa BEDA dengan
+        // buildSplitProject: mesin Turbo mengira konten mulai di detik 0, padahal
+        // klip video mulai di detik ke-2 → 60 frame pertama bagian tergambar
+        // bukan isi video (gambar cover/layar kosong) → video hasil KEDIP-KEDIP.
+        const vclipProj = proj.clips.find((c) => c.kind === "video");
+        const shift = vclipProj ? vclipProj.start : 0;
         const onProgress = (p: number) => {
           const frac = ((segDone.get(vi)?.size ?? 0) + p) / total;
           jobProgress[vi] = frac;
@@ -1298,7 +1305,7 @@ export async function runBatchExport(assetIds: string[]) {
           try {
             const t = await exportSegmentTurbo({
               rs,
-              clip: proj.clips.find((c) => c.kind === "video")!,
+              clip: vclipProj!,
               asset: job.asset,
               start: r.start,
               end: r.end,

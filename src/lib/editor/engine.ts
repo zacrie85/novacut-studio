@@ -679,11 +679,17 @@ class EditorEngine {
     if (clip.kind === "video") {
       // v1.0.17: bila work.videoFrames berisi frame utk asset ini (mesin Turbo
       // WebCodecs), gambar langsung dari VideoFrame hasil decoder — tanpa elemen video
-      const vf = work?.videoFrames?.get(clip.assetId ?? clip.id);
+      const vkey = clip.assetId ?? clip.id;
+      const vf = work?.videoFrames?.get(vkey);
       if (vf) {
         src = vf;
         sw = vf.displayWidth;
         sh = vf.displayHeight;
+      } else if (work?.videoFrames?.has(vkey)) {
+        // v1.0.23: mesin Turbo AKTIF tapi frame sumber tidak tersedia pada tick ini.
+        // JANGAN menggambar elemen <video> — posisinya basi (bukan waktu klip ini)
+        // dan itulah yang membuat video hasil export tampak KEDIP-KEDIP. Biarkan
+        // kosong sebentar; mesin Turbo kini memegang frame terakhir (hold) sendiri.
       } else {
         // noSync: elemen sudah diposisikan exporter (pump/seek) — ambil saja elemennya
         const el = noSync ? (this.elFor(clip, rs?.assets) as HTMLVideoElement | null) : this.syncMedia(clip, track ?? { id: "", kind: "video", name: "", muted: false, hidden: false }, t, this.playing, true);
