@@ -465,7 +465,13 @@ export async function exportSegmentTurbo(opts: TurboSegmentOptions): Promise<Tur
       streamDone = true;
       return false;
     }
-    buf.push(r.value);
+    // v1.0.24 ANTI-KEDIP: jaga buf SELALU terurut pts — sebagian dekoder hardware
+    // (mis. Windows) bisa mengeluarkan frame tidak sepenuhnya urut presentasi;
+    // logika ambil/buang di loop render mengasumsikan urut. Sisipkan terurut.
+    const v = r.value;
+    let k = buf.length;
+    while (k > 0 && buf[k - 1].pts > v.pts + 1e-9) k--;
+    buf.splice(k, 0, v);
     return true;
   };
   const fillBuf = async (n: number) => {

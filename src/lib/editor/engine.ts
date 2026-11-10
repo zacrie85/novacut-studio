@@ -29,6 +29,12 @@ export interface ComposeWork {
   tmpA?: HTMLCanvasElement;
   tmpB?: HTMLCanvasElement;
   scratch?: HTMLCanvasElement;
+  /** v1.0.24 ANTI-KEDIP: elemen media MILIK tugas render (mesin kilat paralel).
+   * key = "video:assetId" dst. (format sama dengan engine.elKey). Dulu semua
+   * bagian paralel memakai SATU elemen <video> per aset — pompa tiap bagian +
+   * sinkronisasi pratinjau saling men-seek currentTime elemen yang sama sehingga
+   * kanvas bergantian menggambar posisi BERBEDA = video hasil KEDIP-KEDIP. */
+  elementOverrides?: Map<string, HTMLVideoElement | HTMLAudioElement | HTMLImageElement>;
 }
 
 /** status render mandiri untuk satu pekerjaan export (dipakai mode paralel:
@@ -442,6 +448,13 @@ class EditorEngine {
     return `${clip.kind}:${clip.assetId ?? clip.id}`;
   }
 
+  /** v1.0.24 ANTI-KEDIP: kunci batch export PARALEL sedang berjalan. Selama
+   * terkunci, syncMedia PRATINJAU tidak boleh men-seek elemen bersama — dulu
+   * setiap pembaruan progres memicu render pratinjau yang men-seek elemen
+   * <video> yang SAMA dengan pompa mesin kilat → posisi lompat-lompat =
+   * video hasil export KEDIP-KEDIP di posisi sembarangan (awal/tengah/akhir). */
+  exportLock = false;
+
   /** (dibuat publik: exporter kilat perlu elemen media untuk pump decode) */
   elFor(clip: Clip, assets?: MediaAsset[]): HTMLVideoElement | HTMLAudioElement | HTMLImageElement | null {
     const st = useEditor.getState();
@@ -499,6 +512,9 @@ class EditorEngine {
   private syncMedia(clip: Clip, track: Track, t: number, playing: boolean, forDraw: boolean): HTMLVideoElement | null {
     const el = this.elFor(clip);
     if (!el || !(el instanceof HTMLVideoElement)) return null;
+    // v1.0.24 ANTI-KEDIP: saat batch export paralel berjalan, pratinjau TIDAK
+    // boleh menyentuh elemen bersama (pompa mesin kilat pemiliknya sekarang)
+    if (this.exportLock) return forDraw ? el : null;
     const local = t - clip.start;
     const srcSeg = (clip.duration * clip.speed) / Math.max(1, clip.loopCount);
     const srcTime = clip.inPoint + ((local * clip.speed) % Math.max(0.033, srcSeg));
@@ -691,8 +707,11 @@ class EditorEngine {
         // dan itulah yang membuat video hasil export tampak KEDIP-KEDIP. Biarkan
         // kosong sebentar; mesin Turbo kini memegang frame terakhir (hold) sendiri.
       } else {
-        // noSync: elemen sudah diposisikan exporter (pump/seek) — ambil saja elemennya
-        const el = noSync ? (this.elFor(clip, rs?.assets) as HTMLVideoElement | null) : this.syncMedia(clip, track ?? { id: "", kind: "video", name: "", muted: false, hidden: false }, t, this.playing, true);
+        // noSync: elemen sudah diposisikan exporter (pump/seek) — ambil saja elemennya.
+        // v1.0.24 ANTI-KEDIP: utamakan elemen MILIK tugas render (elementOverrides)
+        // agar pompa bagian paralel tidak berebut satu elemen <video> per aset.
+        const ov = work?.elementOverrides?.get(`${clip.kind}:${clip.assetId ?? clip.id}`);
+        const el = (ov as HTMLVideoElement | undefined) ?? (noSync ? (this.elFor(clip, rs?.assets) as HTMLVideoElement | null) : this.syncMedia(clip, track ?? { id: "", kind: "video", name: "", muted: false, hidden: false }, t, this.playing, true));
         if (el && el.videoWidth) {
           src = el;
           sw = el.videoWidth;

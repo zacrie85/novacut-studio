@@ -1337,10 +1337,12 @@ export async function runBatchExport(assetIds: string[]) {
     };
 
     /** Penjadwal antrean global: prep film (maks 2 bersamaan, kerja AI/IO) +
-     * segmen (maks 5 bersamaan & sesuai anggaran RAM ~1,5 GB). */
+     * segmen (maks sesuai setelan PARALEL pengguna, clamp 1-5, & anggaran RAM ~1,5 GB). */
     const runTurboQueue = async (): Promise<number> => {
       const RAM_BUDGET_MB = 1500;
-      const MAX_CONC = 5;
+      // v1.0.24: hormati setelan PARALEL pengguna (dulu selalu 5 paksa dan setelan
+      // tidak pernah dipakai — makin besar paralel makin banyak dekoder aktif)
+      const MAX_CONC = Math.max(1, Math.min(5, Math.round(Number(pl.parallel) || 3)));
       const PREP_CONC = Math.min(2, Math.max(1, jobs.length));
       let prepNext = 0;
       let prepRunning = 0;
@@ -1471,7 +1473,14 @@ export async function runBatchExport(assetIds: string[]) {
     if (fast) {
       // v1.0.17: ANTREAN GLOBAL PER BAGIAN — semua bagian dari seluruh batch
       // dikerjakan bersamaan sesuai anggaran RAM (maks 5 bagian berjalan).
-      failedCount = await runTurboQueue();
+      // v1.0.24 ANTI-KEDIP: kunci pratinjau selama batch paralel — syncMedia
+      // pratinjau tidak boleh men-seek elemen yang dipakai pompa render.
+      engine.exportLock = true;
+      try {
+        failedCount = await runTurboQueue();
+      } finally {
+        engine.exportLock = false;
+      }
     } else {
       for (let vi = 0; vi < jobs.length; vi++) {
         await renderJobLegacy(jobs[vi], vi);

@@ -15,7 +15,7 @@
 
 import { Muxer as Mp4Muxer, ArrayBufferTarget as Mp4Target, StreamTarget as Mp4StreamTarget } from "mp4-muxer";
 import { Muxer as WebmMuxer, ArrayBufferTarget as WebmTarget, StreamTarget as WebmStreamTarget } from "webm-muxer";
-import { engine, type RenderState } from "./engine";
+import { engine, type ComposeWork, type RenderState } from "./engine";
 import { ensureAppFonts } from "./fonts";
 import { DiskFileWriter } from "./fsBridge";
 import { getMusicBuffer, musicDefById } from "./music";
@@ -605,14 +605,26 @@ class VideoPump {
   }
 }
 
-/** siapkan semua klip video aktif pada waktu t: elemen ada + di-seek ke posisi awal */
-async function primeVideoAt(start: number, rs: RenderState): Promise<Map<string, VideoPump>> {
+/** siapkan semua klip video aktif pada waktu t: elemen ada + di-seek ke posisi awal.
+ * v1.0.24 ANTI-KEDIP: setiap render membuat elemen <video> PRIVAT sendiri
+ * (didatakan ke overrides) — DULU memakai elemen bersama engine (satu per aset)
+ * sehingga pompa bagian paralel + sinkronisasi pratinjau saling men-seek elemen
+ * yang sama: hasil export KEDIP-KEDIP (dua adegan bergantian) / bagian gagal
+ * dimuat (readyState tak pernah siap karena elemen di-seek terus-menerus). */
+async function primeVideoAt(start: number, rs: RenderState, overrides: Map<string, HTMLVideoElement>): Promise<Map<string, VideoPump>> {
   const pumps = new Map<string, VideoPump>();
   for (const clip of rs.clips) {
     if (clip.kind !== "video") continue;
     if (start < clip.start || start >= clip.start + clip.duration) continue;
-    const el = engine.elFor(clip, rs.assets);
-    if (!(el instanceof HTMLVideoElement)) continue;
+    const asset = rs.assets.find((a) => a.id === clip.assetId);
+    if (!asset || asset.musicId) continue;
+    const el = document.createElement("video");
+    el.src = asset.url;
+    el.preload = "auto";
+    el.playsInline = true;
+    el.muted = true;
+    el.crossOrigin = "anonymous";
+    overrides.set(`video:${clip.assetId ?? clip.id}`, el);
     // tunggu elemen benar-benar siap (metadata + frame pertama) — bila video
     // tidak bisa didekode (codec tidak didukung), beri pesan jelas, bukan video hitam
     const t0 = performance.now();
@@ -776,7 +788,31 @@ export async function exportRangeFast(opts: FastExportOptions): Promise<FastExpo
 
   // posisikan elemen & mulai pompa
   engine.pause();
-  let pumps = await primeVideoAt(opts.start, rs);
+  // v1.0.24 ANTI-KEDIP: elemen <video> + kanvas bantu MILIK render ini — dulu
+  // pompa memakai elemen bersama engine (satu per aset) dan composeFrame memakai
+  // tmpA/tmpB/scratch bersama engine, sehingga bagian paralel saling menimpa:
+  // hasil export KEDIP-KEDIP (dua adegan bergantian) & bagian gagal dimuat.
+  const elementOverrides = new Map<string, HTMLVideoElement>();
+  const work: ComposeWork = {
+    elementOverrides,
+    tmpA: document.createElement("canvas"),
+    tmpB: document.createElement("canvas"),
+    scratch: document.createElement("canvas"),
+  };
+  const releaseRenderEls = () => {
+    for (const p of pumps.values()) p.stop();
+    for (const el of elementOverrides.values()) {
+      try {
+        el.pause();
+        el.removeAttribute("src");
+        el.load();
+      } catch {
+        /* abaikan */
+      }
+    }
+    elementOverrides.clear();
+  };
+  let pumps = await primeVideoAt(opts.start, rs, elementOverrides);
 
   const gopSize = fps * 2;
   // v1.0.14: progres dikirim maksimal ~4x/detik (dulu SETIAP frame = 30x/detik
@@ -795,8 +831,8 @@ export async function exportRangeFast(opts: FastExportOptions): Promise<FastExpo
     const actives = activeVideoClips(t, rs);
     const missing = actives.filter((c) => !pumps.has(c.id));
     if (missing.length) {
-      for (const p of pumps.values()) p.stop();
-      pumps = await primeVideoAt(t, rs);
+      releaseRenderEls();
+      pumps = await primeVideoAt(t, rs, elementOverrides);
     }
     // pastikan decode sudah mencapai posisi yang dibutuhkan (akurasi gerak)
     for (const clip of actives) {
@@ -804,7 +840,7 @@ export async function exportRangeFast(opts: FastExportOptions): Promise<FastExpo
       if (pump) await pump.waitFor(srcTimeOf(clip, t));
     }
     if (f % (fps >> 1) === 0) await ensureImagesReady(t, rs);
-    engine.composeFrame(ctx, t, true, rs);
+    engine.composeFrame(ctx, t, true, rs, work);
     const frame = new VideoFrame(canvas, {
       timestamp: Math.round((t - opts.start) * 1e6),
       duration: Math.round(1e6 / fps),
@@ -818,7 +854,7 @@ export async function exportRangeFast(opts: FastExportOptions): Promise<FastExpo
   opts.onStage?.("Menyelesaikan berkas...");
   await encoder.flush();
   encoder.close();
-  for (const p of pumps.values()) p.stop();
+  releaseRenderEls();
   if (localCache) decodeCache.dispose();
   muxer.finalize();
   // v1.0.14: bila menulis langsung ke disk, tutup file & kembalikan path

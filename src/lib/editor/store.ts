@@ -462,3 +462,13 @@ export function selectedClip(state: EditorState): Clip | undefined {
 if (typeof window !== "undefined") {
   (window as unknown as Record<string, unknown>).__NOVA__ = useEditor;
 }
+// hook uji otomatis (HANYA development — di-build production baris ini hilang):
+// memaparkan mesin export langsung untuk harness E2E tanpa lewat UI
+if (process.env.NODE_ENV !== "production" && typeof window !== "undefined") {
+  void Promise.all([import("./fastExport"), import("./turboExport")]).then(([fe, te]) => {
+    (window as unknown as Record<string, unknown>).__NOVA_TEST__ = {
+      exportRangeFast: fe.exportRangeFast,
+      exportSegmentTurbo: te.exportSegmentTurbo,
+    };
+  });
+}

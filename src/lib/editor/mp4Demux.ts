@@ -418,7 +418,12 @@ export async function parseMp4(blob: Blob): Promise<Mp4Info> {
   return { tracks, size };
 }
 
-/** indeks sampel keyframe terdekat DENGAN cts <= t (titik mulai decode) */
+/** indeks sampel keyframe untuk MULAI DECODE sehingga semua frame ber-cts >= t
+ * ter-decode benar. v1.0.24: pencarian biner memakai DTS (sampel TERURUT dts)
+ * — dulu memakai cts yang TIDAK monoton pada sumber ber-B-frame sehingga hasil
+ * pencarian bisa mendarat di posisi salah (decode mulai mid-GOP → awal bagian
+ * rusak/kedip). Keyframe dengan dts <= t menjamin seluruh referensi (yang di-
+ * decode lebih dulu) sudah ikut ter-decode sebelum frame presentasi >= t. */
 export function keyframeIndexAt(tr: DemuxTrackInfo, t: number): number {
   const s = tr.samples;
   let lo = 0;
@@ -426,7 +431,7 @@ export function keyframeIndexAt(tr: DemuxTrackInfo, t: number): number {
   let ans = 0;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
-    if (s[mid].cts <= t + 0.02) {
+    if (s[mid].dts <= t + 0.02) {
       ans = mid;
       lo = mid + 1;
     } else {
