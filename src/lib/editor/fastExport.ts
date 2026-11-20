@@ -183,6 +183,8 @@ export function silenceEnvelope(mono: Float32Array, sampleRate: number): { rms: 
  *
  * @param speed laju klip playlist (waktu timeline = waktu sumber / speed)
  * @param durSumber durasi sumber (detik) — batas di luar cakupan dibiarkan
+ * @param srcOffset v1.0.25: titik MULAI sumber (detik) saat video dipotong
+ * (trim mulai) — batas rentang timeline dinilai ke audio sumber dengan offset ini
  */
 export function adjustRangesToSilence(
   ranges: { start: number; end: number }[],
@@ -190,13 +192,14 @@ export function adjustRangesToSilence(
   sampleRate: number,
   speed: number,
   durSumber: number,
+  srcOffset = 0,
 ): { start: number; end: number }[] {
   const { rms, sec } = silenceEnvelope(mono, sampleRate);
   const out = ranges.map((r) => ({ ...r }));
   const WIN = 8; // detik sumber
   for (let k = 0; k < out.length - 1; k++) {
     const b = out[k].end;
-    const s = b * Math.max(0.05, speed);
+    const s = srcOffset + b * Math.max(0.05, speed);
     if (s <= 1 || s >= durSumber - 0.5) continue; // di luar audio sumber — biarkan
     const lo = Math.max(0, s - WIN);
     const hi = Math.min(durSumber - 0.25, s + WIN);

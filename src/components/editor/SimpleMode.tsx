@@ -23,6 +23,8 @@ import { saveUiMode } from "@/lib/editor/uiPrefs";
 import { useToast } from "@/hooks/use-toast";
 import { PlaylistSettingsForm } from "./panels/PlaylistSettingsForm";
 import { TextStyleSettings } from "./panels/TextStyleSettings";
+import { TrimControls } from "./TrimControls";
+import { WatermarkControls } from "./WatermarkControls";
 
 const STEPS = [
   { n: 1, label: "Pilih Video" },
@@ -119,7 +121,17 @@ export function SimpleMode() {
   };
 
   const D = selected.reduce((m, v) => m + v.duration, 0);
-  const estParts = settings.mode === "single" ? selected.length : settings.splitBy === "count" ? Math.max(1, Math.min(50, settings.parts)) * selected.length : Math.max(selected.length, Math.ceil(D / Math.max(1, settings.partSeconds)));
+  // v1.0.25: durasi terpotong per video (POTONG MULAI & AKHIR) — estimasi jumlah
+  // part & estimasi waktu mengikuti rentang yang benar-benar dirender
+  const Dmax = selected.reduce((m, v) => Math.max(m, v.duration), 0);
+  const trimLen = (d: number) => {
+    if (!settings.trimOn) return d;
+    const s0 = Math.min(Math.max(0, settings.trimStart || 0), Math.max(0, d - 0.1));
+    const e0 = settings.trimEnd && settings.trimEnd > s0 ? Math.min(settings.trimEnd, d) : d;
+    return Math.max(0.1, e0 - s0);
+  };
+  const DTrim = selected.reduce((m, v) => m + trimLen(v.duration), 0);
+  const estParts = settings.mode === "single" ? selected.length : settings.splitBy === "count" ? Math.max(1, Math.min(50, settings.parts)) * selected.length : Math.max(selected.length, Math.ceil(DTrim / Math.max(1, settings.partSeconds)));
 
   const firstSel = selected[0];
   // Langkah TEKS: selaraskan judul/deskripsi/label dengan setelan langkah "Atur"
@@ -128,7 +140,7 @@ export function SimpleMode() {
   useEffect(() => {
     if (step !== 3) return;
     const title = pl.autoTitle ? autoName : pl.titleCustom.trim() || autoName;
-    const perVideoParts = settings.mode === "single" ? 1 : settings.splitBy === "count" ? Math.max(1, Math.min(50, settings.parts)) : Math.max(1, Math.ceil((firstSel?.duration || 1) / Math.max(1, settings.partSeconds)));
+    const perVideoParts = settings.mode === "single" ? 1 : settings.splitBy === "count" ? Math.max(1, Math.min(50, settings.parts)) : Math.max(1, Math.ceil(trimLen(firstSel?.duration || 1) / Math.max(1, settings.partSeconds)));
     useEditor.getState().setTexts({ title, description: pl.description, labelStyle: pl.labelStyle, parts: perVideoParts });
   }, [step, autoName, firstSel?.id, pl.autoTitle, pl.titleCustom, pl.description, pl.labelStyle, settings.mode, settings.splitBy, settings.parts, settings.partSeconds]);
 
@@ -315,11 +327,17 @@ export function SimpleMode() {
                       )}
                     </div>
                     <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 font-mono text-[11px] text-blue-300">
-                      {fmtTime(D)} → ±{estParts} video hasil
+                      {fmtTime(DTrim)} → ±{estParts} video hasil
                     </div>
                   </div>
                 )}
               </div>
+
+              {/* ===== v1.0.25: POTONG MULAI & AKHIR (RENTANG DETIK) ===== */}
+              <TrimControls durMax={Dmax} />
+
+              {/* ===== v1.0.25: WATERMARK (LOGO GAMBAR PNG/JPEG) ===== */}
+              <WatermarkControls />
 
               {/* ===== COVER OTOMATIS DI DEPAN ===== */}
               <div className="space-y-3 rounded-xl border border-white/[0.07] bg-card p-3.5">

@@ -5,7 +5,7 @@ import type { PlaylistEnhance, PlaylistExportConfig } from "./types";
 
 const KEY = "novacut.playlistExport";
 /** versi skema setelan — bila berubah, setelan lama dimigrasi otomatis */
-const CFG_VERSION = 4;
+const CFG_VERSION = 5;
 
 /** bawaan efek & klip untuk export playlist (netral: tanpa perubahan) */
 export const PLAYLIST_ENHANCE_DEFAULTS: PlaylistEnhance = {
@@ -58,6 +58,16 @@ export const PLAYLIST_EXPORT_DEFAULTS: PlaylistExportConfig = {
   skipExisting: true,
   soundDone: true,
   autoShutdown: false,
+  // v1.0.25: watermark (tanda air gambar PNG/JPEG) — mati = tanpa watermark
+  wmOn: false,
+  wmSrc: "",
+  wmX: 85,
+  wmY: 88,
+  wmW: 22,
+  wmH: 22,
+  wmOpacity: 65,
+  wmTint: "#ffffff",
+  wmTintAmt: 0,
   cfgVersion: CFG_VERSION,
 };
 
@@ -72,11 +82,23 @@ export function loadPlaylistExportConfig(): PlaylistExportConfig {
       ...PLAYLIST_EXPORT_DEFAULTS,
       ...parsed,
       enhance: normalizeEnhance(parsed.enhance),
+      // v1.0.25: normalisasi angka watermark agar aman dari data lama/rusak
+      wmOn: parsed.wmOn === true,
+      wmSrc: typeof parsed.wmSrc === "string" ? parsed.wmSrc : "",
+      wmX: clampNum(parsed.wmX, 0, 100, 85),
+      wmY: clampNum(parsed.wmY, 0, 100, 88),
+      wmW: clampNum(parsed.wmW, 3, 100, 22),
+      wmH: clampNum(parsed.wmH, 3, 100, 22),
+      wmOpacity: clampNum(parsed.wmOpacity, 2, 100, 65),
+      wmTint: typeof parsed.wmTint === "string" && /^#[0-9a-fA-F]{3,8}$/.test(parsed.wmTint) ? parsed.wmTint : "#ffffff",
+      wmTintAmt: clampNum(parsed.wmTintAmt, 0, 100, 0),
       cfgVersion: CFG_VERSION,
     };
-    if (parsed.cfgVersion !== CFG_VERSION) {
+    if ((parsed.cfgVersion ?? 0) < 4) {
       // Setelan versi lama (sebelum v1.0.7): aktifkan "teks tampil selama video"
       // agar judul, deskripsi & part langsung terlihat di dalam video hasil export.
+      // v1.0.25: syarat diperketat ke versi < 4 supaya setelan v4/v5 yang sudah
+      // dimatikan penggunanya tidak dipaksa menyala lagi.
       merged.titleDuringVideo = true;
     }
     return merged;
@@ -101,12 +123,23 @@ export function savePlaylistExportConfig(cfg: PlaylistExportConfig) {
 
 const PRESET_KEY = "novacut.playlistPresets";
 
+/** v1.0.25: jepit angka ke rentang aman (fallback default bila tidak valid) */
+function clampNum(v: unknown, min: number, max: number, def: number): number {
+  const n = typeof v === "number" ? v : Number(v);
+  if (!isFinite(n)) return def;
+  return Math.max(min, Math.min(max, n));
+}
+
 /** potongan setelan split yang ikut tersimpan dalam preset */
 export interface PresetSplit {
   mode: "single" | "split";
   splitBy: "count" | "duration";
   parts: number;
   partSeconds: number;
+  /** v1.0.25: potong mulai & akhir (rentang detik) ikut tersimpan juga */
+  trimOn?: boolean;
+  trimStart?: number;
+  trimEnd?: number;
 }
 
 export interface PlaylistPreset {

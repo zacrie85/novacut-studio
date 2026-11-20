@@ -38,8 +38,40 @@ function FrameThumb({ id }: { id: TitleFrameId }) {
     const fw = w * 0.74; // lebar kotak bingkai
     const fx = w / 2 - fw / 2;
     const fy = h / 2 - fh / 2 + h * 0.05;
-    drawTitleFrame(ctx, id, fx, fy, fw, fh);
-    // contoh tulisan judul DI DALAM bingkai (bingkai digambar dulu, teks di atas)
+    // v1.0.25: gaya komposit "t7" menampilkan contoh teks PART di pita merah atas
+    drawTitleFrame(
+      ctx,
+      id,
+      fx,
+      fy,
+      fw,
+      fh,
+      id === "t7"
+        ? {
+            partLine: "PART 1",
+            drawPart: (c, cx, cy, _mw, fp) => {
+              c.font = `900 ${fp}px system-ui, sans-serif`;
+              c.textAlign = "center";
+              c.textBaseline = "middle";
+              c.lineJoin = "round";
+              c.lineWidth = Math.max(1.5, fp * 0.16);
+              c.strokeStyle = "rgba(0,0,0,0.9)";
+              c.strokeText("PART 1", cx, cy);
+              c.fillStyle = "#ffffff";
+              c.fillText("PART 1", cx, cy);
+            },
+          }
+        : undefined
+    );
+    // contoh tulisan judul DI DALAM bingkai (bingkai digambar dulu, teks di atas);
+    // v1.0.25: gaya t7 tulisan ikut MIRING mengikuti bentuk pita
+    const sk = id === "t7" ? -0.22 : 0;
+    ctx.save();
+    if (sk) {
+      ctx.translate(w / 2, h / 2 + h * 0.05);
+      ctx.transform(1, 0, sk, 1, 0, 0);
+      ctx.translate(-w / 2, -(h / 2 + h * 0.05));
+    }
     ctx.font = `900 ${sz}px system-ui, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -49,6 +81,7 @@ function FrameThumb({ id }: { id: TitleFrameId }) {
     ctx.strokeText(title, w / 2, h / 2 + h * 0.05);
     ctx.fillStyle = "#ffffff";
     ctx.fillText(title, w / 2, h / 2 + h * 0.05);
+    ctx.restore();
   }, [id]);
   return <canvas ref={ref} width={96} height={54} className="block h-auto w-full rounded-[3px]" />;
 }

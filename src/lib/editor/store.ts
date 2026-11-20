@@ -148,6 +148,10 @@ export const useEditor = create<EditorState>((set, get) => ({
     engineMode: "fast",
     autoSub: false,
     subLevel: "ringan",
+    // v1.0.25: potong mulai & akhir (rentang detik) — mati = video utuh
+    trimOn: false,
+    trimStart: 0,
+    trimEnd: 0,
   },
   exportState: emptyExport,
   playlistExport: {
@@ -169,6 +173,16 @@ export const useEditor = create<EditorState>((set, get) => ({
     skipExisting: true,
     soundDone: true,
     autoShutdown: false,
+    // v1.0.25: watermark (tanda air gambar PNG/JPEG) — mati = tanpa watermark
+    wmOn: false,
+    wmSrc: "",
+    wmX: 85,
+    wmY: 88,
+    wmW: 22,
+    wmH: 22,
+    wmOpacity: 65,
+    wmTint: "#ffffff",
+    wmTintAmt: 0,
   },
   editorList: [],
   exportList: [],
@@ -465,10 +479,17 @@ if (typeof window !== "undefined") {
 // hook uji otomatis (HANYA development — di-build production baris ini hilang):
 // memaparkan mesin export langsung untuk harness E2E tanpa lewat UI
 if (process.env.NODE_ENV !== "production" && typeof window !== "undefined") {
-  void Promise.all([import("./fastExport"), import("./turboExport")]).then(([fe, te]) => {
+  void Promise.all([import("./fastExport"), import("./turboExport"), import("./titleFrames"), import("./engine"), import("./exporter")]).then(([fe, te, tf, en, ex]) => {
     (window as unknown as Record<string, unknown>).__NOVA_TEST__ = {
       exportRangeFast: fe.exportRangeFast,
       exportSegmentTurbo: te.exportSegmentTurbo,
+      // v1.0.25: uji visual bingkai & tulisan miring — gaya, penggambar & overlay teks
+      TITLE_FRAMES: tf.TITLE_FRAMES,
+      drawTitleFrame: tf.drawTitleFrame,
+      titleFrameTextSkew: tf.titleFrameTextSkew,
+      drawTextOverlay: en.drawTextOverlay,
+      // v1.0.25: jalur batch penuh (buildBatchClip = cangkok POTONG MULAI & AKHIR)
+      runBatchExport: ex.runBatchExport,
     };
   });
 }

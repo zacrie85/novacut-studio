@@ -4,8 +4,9 @@ import { fontStack, fmtTime, partLabel } from "./constants";
 import { getMusicBuffer, musicDefById } from "./music";
 import { useEditor, totalDuration, type EditorState } from "./store";
 import { wrapCanvasText } from "./textwrap";
-import { drawTitleFrame, saneFrameScale, saneTitleFrame } from "./titleFrames";
+import { drawTitleFrame, frameTopExtraFrac, saneFrameScale, saneTitleFrame, titleFrameTextSkew } from "./titleFrames";
 import type { Clip, MediaAsset, TextData, Track } from "./types";
+import { drawWatermark } from "./watermark";
 import { applyGradeTints, applyOverlays, applyTransition, clipTransform, drawCover, easeOut, framingLayout, gradeFilterString } from "./visual";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -109,13 +110,19 @@ export function drawTextOverlay(
   // v1.0.22: posisi vertikal LANGSUNG (posV: 0 = paling atas, 1 = paling
   // bawah) — dipakai menu Posisi Vertikal baru; bila tidak ada, pakai pos lama
   const posV = typeof td.posV === "number" && isFinite(td.posV) ? Math.max(0, Math.min(1, td.posV)) : null;
+  // v1.0.25: id bingkai ternormalisasi + mode komposit pita ganda (t7) —
+  // komposit menggambar pita PART DI ATAS kotak bingkai sehingga perlu
+  // ruang ekstra saat posisi dijepit ke tepi layar
+  const frIdSane = td.frame ? saneTitleFrame(td.frame) : "";
+  const dualRibbon = frIdSane === "t7" && !!td.partLine;
   const posYBase = posV !== null ? posV * h : td.pos === "top" ? h * 0.16 + blockH / 2 : td.pos === "center" ? h / 2 : h * 0.86 - blockH / 2;
   let posY = posYBase + offY;
   // v1.0.22: di ujung slider (paling atas/bawah), blok tetap UTUH terlihat —
   // tepi blok (termasuk bingkai) menempel di tepi layar, tidak terpotong.
   if (posV !== null) {
     const frH = td.frame ? Math.max(size * 1.7, (blockH + size * 0.84) * saneFrameScale(td.frameH)) : 0;
-    const half = Math.max(blockH / 2, frH / 2) + size * 0.12;
+    const frHx = frH * (1 + (dualRibbon ? frameTopExtraFrac(frIdSane) : 0));
+    const half = Math.max(blockH / 2, frHx / 2) + size * 0.12;
     posY = Math.min(Math.max(posY, half), h - half);
   }
 
@@ -183,18 +190,57 @@ export function drawTextOverlay(
   // ikut geser horizontal (offX) & animasi (skala/dy) persis seperti teks.
   // Ukuran otomatis mengikuti panjang & lebar tulisan + skala manual (menu).
   if (td.frame) {
-    const frId = saneTitleFrame(td.frame);
+    const frId = frIdSane;
     if (frId) {
       const offXf = clampOff(td.offX) * w;
       ctx.save();
       ctx.translate(offXf, 0);
       const padX = size * 0.85;
       const padY = size * 0.42;
-      const fw = Math.max(size * 1.6, (layout.textW + padX * 2) * saneFrameScale(td.frameW));
       const fh = Math.max(size * 1.7, (blockH + padY * 2) * saneFrameScale(td.frameH));
-      drawTitleFrame(ctx, frId, w / 2 - fw / 2, posY + dy - fh / 2, fw, fh);
+      // v1.0.25: gaya ber-medali (t8/t9/t10) butuh ruang kiri ekstra agar
+      // tulisan tidak menabrak lingkaran/bola — kotak digeser agar tulisan
+      // tetap di TENGAH area banner, bukan di tengah kotak
+      const medL = frId === "t8" || frId === "t9" || frId === "t10" ? fh * 0.62 : 0;
+      const fw = Math.max(size * 1.6, (layout.textW + padX * 2 + medL) * saneFrameScale(td.frameW));
+      const fx = w / 2 - fw / 2 - (medL * saneFrameScale(td.frameW)) / 2;
+      drawTitleFrame(ctx, frId, fx, posY + dy - fh / 2, fw, fh, {
+        // gaya komposit t7: teks part digambar di pita merah atas (ikut miring);
+        // tanpa teks part → versi PITA MERAH SAJA (bingkai teks part)
+        partLine: td.partLine,
+        partOnly: frId === "t7" && !td.partLine,
+        drawPart: td.partLine
+          ? (pctx, cx, cy, maxW, fontPx) => {
+              pctx.save();
+              pctx.font = `900 ${fontPx}px ${fontStack(td.font)}`;
+              pctx.textAlign = "center";
+              pctx.textBaseline = "middle";
+              pctx.lineJoin = "round";
+              pctx.lineWidth = Math.max(1.5, fontPx * 0.16);
+              pctx.strokeStyle = "rgba(0,0,0,0.9)";
+              const ls = wrapCanvasText(pctx, td.partLine!, maxW);
+              ls.forEach((ln, i) => {
+                const yy = (i - (ls.length - 1) / 2) * fontPx * 1.05;
+                pctx.strokeText(ln, cx, cy + yy);
+                pctx.fillStyle = "#ffffff";
+                pctx.fillText(ln, cx, cy + yy);
+              });
+              pctx.restore();
+            }
+          : undefined,
+      });
       ctx.restore();
     }
+  }
+
+  // v1.0.25: tulisan DIMIRINGKAN mengikuti bentuk bingkai (gaya pita t7 —
+  // permintaan pengguna: "cara penulisannya mengikuti bentuk framenya")
+  const txtSkew = frIdSane ? titleFrameTextSkew(frIdSane) : 0;
+  if (txtSkew) {
+    ctx.save();
+    ctx.translate(w / 2, posY + dy);
+    ctx.transform(1, 0, txtSkew, 1, 0, 0);
+    ctx.translate(-w / 2, -(posY + dy));
   }
 
   const drawLines = (drawer: (ln: string, i: number) => void) => {
@@ -326,6 +372,7 @@ export function drawTextOverlay(
     });
     ctx.restore();
   }
+  if (txtSkew) ctx.restore(); // akhir kemiringan tulisan ikut bingkai
   ctx.restore();
 }
 
@@ -851,6 +898,12 @@ class EditorEngine {
     if (st.textPreview && !st.exportState.running && !noSync) {
       this.drawAutoTextPreview(ctx, w, h, tt);
     }
+
+    // v1.0.25 WATERMARK — tanda air gambar di PALING ATAS (di atas semua track
+    // & teks). Satu jalur untuk pratinjau + mesin kilat + mesin Turbo (WYSIWYG);
+    // gambar dibaca dari cache (decode dilakukan di menu & awal export).
+    const pex = st.playlistExport;
+    if (pex.wmOn && pex.wmSrc) drawWatermark(ctx, w, h, pex);
   }
 
   /** Gambar tulisan otomatis (judul+deskripsi di atas, part di bawah) di atas
@@ -866,6 +919,11 @@ class EditorEngine {
     const hasDesc = !!(texts.description && texts.description.trim());
     const titleOn = st.exportSettings.showTitleText || st.playlistExport.titleDuringVideo || st.playlistExport.showTitleScreen;
     const partOn = st.exportSettings.autoPartText || st.playlistExport.showPartText;
+    // v1.0.25: gaya komposit "t7" (Pita Ganda TV) — teks part masuk ke pita
+    // merah yang menempel di atas pita judul, bukan digambar terpisah
+    const n = Math.max(1, texts.parts || 1);
+    const partTxt = partLabel(texts.labelStyle || "Part", n, n, true);
+    const dualTitle = (texts.titleFrame || "") === "t7" && titleOn && (hasTitle || hasDesc);
     if ((hasTitle || hasDesc) && titleOn) {
       drawTextOverlay(
         ctx,
@@ -892,31 +950,37 @@ class EditorEngine {
           frame: texts.titleFrame || undefined,
           frameW: texts.titleFrameW,
           frameH: texts.titleFrameH,
+          // v1.0.25: teks part utk slot pita merah gaya komposit t7
+          partLine: dualTitle ? partTxt : undefined,
         },
         10,
         t,
         12
       );
     }
-    if (partOn) {
-      const n = Math.max(1, texts.parts || 1);
+    if (partOn && !dualTitle) {
       drawTextOverlay(
         ctx,
         w,
         h,
         {
-          content: partLabel(texts.labelStyle || "Part", n, n, true),
+          content: partTxt,
           size: rel(texts.partSize, 0.052),
           color: "#ffffff",
           font: fontAuto,
           anim: "slam",
           pos: "bottom",
-          bg: "bar",
+          // v1.0.25: bingkai part menggantikan bar hitam sebagai latar
+          bg: texts.partFrame ? "none" : "bar",
           stroke: true,
           offX: pct(texts.partX),
           offY: pct(texts.partY),
           // v1.0.22: posisi vertikal part — default PALING ATAS
           posV: (typeof texts.partV === "number" ? texts.partV : 0) / 100,
+          // v1.0.25: bingkai teks part/episode (gaya t7-t12 & gaya lama)
+          frame: texts.partFrame || undefined,
+          frameW: texts.partFrameW,
+          frameH: texts.partFrameH,
         },
         10,
         t,

@@ -15,6 +15,8 @@ import { isDesktopFS, openInFolder } from "@/lib/editor/fsBridge";
 import { requestApplyTarget } from "../ApplyTargetSwitch";
 import { useToast } from "@/hooks/use-toast";
 import { PlaylistSettingsForm } from "./PlaylistSettingsForm";
+import { TrimControls } from "../TrimControls";
+import { WatermarkControls } from "../WatermarkControls";
 
 function statusColor(status: string) {
   if (status === "jalan") return "text-blue-400";
@@ -151,6 +153,10 @@ export function PlaylistExportPanel() {
 
       {/* ===== SETELAN ===== */}
       <PlaylistSettingsForm />
+
+      {/* ===== v1.0.25: POTONG MULAI & AKHIR + WATERMARK ===== */}
+      <TrimControls durMax={videos.reduce((m, v) => Math.max(m, v.duration), 0)} />
+      <WatermarkControls />
 
       {/* ===== AKSES CEPAT EFEK / TEKS / KLIP ===== */}
       <div className="shrink-0 space-y-2 rounded-xl border border-white/[0.07] bg-card p-2.5">

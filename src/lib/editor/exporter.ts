@@ -18,6 +18,7 @@ import { dimsFor, useEditor, totalDuration } from "./store";
 import { transcribeAsset, type SubSegment } from "./subtitles";
 import { audioCopyAllowed, exportSegmentTurbo, releaseTurboParse, turboEligible } from "./turboExport";
 import type { BatchJobView, Clip, CoverFrameStyle, MediaAsset, Track } from "./types";
+import { ensureWatermark } from "./watermark";
 import { fillZoomFor } from "./visual";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -408,7 +409,14 @@ export function buildSplitProject(
   }
 
   const contentStart = shift;
-  if (s.autoPartText) {
+  // v1.0.25: bingkai teks PART/EPISODE — pilihan sendiri di menu Teks ("" = tanpa).
+  // Latar bar hitam digantikan bingkai (bingkai sudah jadi "latarnya").
+  const partFrameId = (st.texts.partFrame || "").trim();
+  // v1.0.25: gaya komposit "t7" (Pita Ganda TV) — teks part DIGAMBAR di pita
+  // merah yang menempel di atas pita judul (satu kesatuan persis seperti
+  // referensi pengguna), jadi klip teks part terpisah TIDAK dibuat.
+  const dualTitle = st.texts.titleFrame === "t7" && s.showTitleText && !!st.texts.title;
+  if (s.autoPartText && !dualTitle) {
     const tt = ensureTextTrack(tracks);
     tracks = tt.tracks;
     clips.push(
@@ -426,7 +434,7 @@ export function buildSplitProject(
           font: fontAuto,
           anim: "slam",
           pos: "bottom",
-          bg: "bar",
+          bg: partFrameId ? "none" : "bar",
           stroke: true,
           // posisi dari kolom geser Part di menu Teks
           offX: clampOffPct(st.texts.partX),
@@ -434,6 +442,11 @@ export function buildSplitProject(
           // v1.0.22: posisi vertikal part — 0 = paling atas (DEFAULT),
           // 100 = paling bawah, bisa digeser bebas dari menu Teks
           posV: clampV(st.texts.partV, 0),
+          // v1.0.25: bingkai part (gaya baru t7-t12 + gaya lama) — ukuran
+          // otomatis ikut tulisan + skala manual dari menu BINGKAI PART
+          frame: partFrameId || undefined,
+          frameW: st.texts.partFrameW,
+          frameH: st.texts.partFrameH,
         },
       })
     );
@@ -469,11 +482,14 @@ export function buildSplitProject(
           // v1.0.22: posisi vertikal judul+deskripsi — 100 = paling bawah
           // (DEFAULT), 0 = paling atas, bisa digeser bebas dari menu Teks
           posV: clampV(st.texts.titleV, 100),
-          // v1.0.22: bingkai judul (10 gaya) — ukuran otomatis ikut tulisan
+          // v1.0.22: bingkai judul — ukuran otomatis ikut tulisan
           // + skala manual dari menu BINGKAI JUDUL
           frame: st.texts.titleFrame || undefined,
           frameW: st.texts.titleFrameW,
           frameH: st.texts.titleFrameH,
+          // v1.0.25: teks part utk slot pita merah gaya komposit "t7" (Pita
+          // Ganda TV) — gaya lain mengabaikan field ini
+          partLine: s.autoPartText ? label : undefined,
         },
       })
     );
@@ -583,6 +599,8 @@ export async function runExport() {
   const fast = s.engineMode === "fast" ? await fastSupported() : null;
 
   try {
+    // v1.0.25: decode gambar watermark sebelum render (satu jalur composeFrame)
+    if (st0.playlistExport.wmOn && st0.playlistExport.wmSrc) await ensureWatermark(st0.playlistExport.wmSrc);
     const firstVideo = st0.clips.map((c) => snapshot.assets.find((a) => a.id === c.assetId)).find((a) => a?.type === "video");
     // mode "tiap bagian beda": AI analisis sekali, tiap bagian hasil split pakai adegan berbeda
     let frameTimes: number[] | null = null;
@@ -905,6 +923,9 @@ export async function runBatchExport(assetIds: string[]) {
     const targetDims = dimsFor(pl.ratio, pl.quality === "ringan" ? 720 : 1080);
     useEditor.getState().setProject({ ratio: pl.ratio, ...targetDims });
     engine.syncSize();
+    // v1.0.25: pastikan gambar watermark sudah ter-decode SEBELUM render paralel
+    // (drawWatermark menggambar dari cache — decode asinkron dilakukan di sini)
+    if (pl.wmOn && pl.wmSrc) await ensureWatermark(pl.wmSrc);
     const fast = s.engineMode === "fast" ? await fastSupported() : null;
     useEditor.getState().setExportSettings({ includeCover: pl.showTitleScreen, autoPartText: pl.showPartText, showTitleText: pl.titleDuringVideo });
 
@@ -1042,12 +1063,22 @@ export async function runBatchExport(assetIds: string[]) {
       const enOn = !!en.enabled;
       const speed = enOn ? en.speed : 1;
       const loop = enOn ? en.loopCount : 1;
+      // v1.0.25 POTONG MULAI & AKHIR: hanya rentang sumber trimStart..trimEnd
+      // yang dirender (di luar rentang diabaikan). trimEnd 0 = sampai habis.
+      // Dicangkok di sini (inPoint + durasi) sehingga SEMUA turunannya ikut:
+      // pembagian bagian, durasi tiap part, smart split, cover & teks —
+      // mesin kilat maupun Turbo sudah menghormati inPoint sejak awal.
+      const D = Math.max(0.1, job.asset.duration || 0);
+      const tOn = !!s.trimOn;
+      const tStart = tOn ? Math.max(0, Math.min(s.trimStart || 0, Math.max(0, D - 0.1))) : 0;
+      const tEnd = tOn && (s.trimEnd || 0) > tStart ? Math.min(s.trimEnd, D) : D;
       const clip = baseClip({
         trackId: "batch-video",
         kind: "video",
         assetId: job.asset.id,
         start: 0,
-        duration: (job.asset.duration / speed) * loop,
+        duration: (Math.max(0.1, tEnd - tStart) / speed) * loop,
+        inPoint: tStart,
         speed,
         loopCount: loop,
         volume: enOn ? en.volume : 1,
@@ -1208,7 +1239,9 @@ export async function runBatchExport(assetIds: string[]) {
           const asrc = await audio.get(job.asset.id, job.asset.url);
           const sr = asrc.sampleRate || 48000;
           if (asrc.mono && asrc.mono.length > sr) {
-            ranges = adjustRangesToSilence(ranges, asrc.mono, sr, clip.speed, asrc.mono.length / sr);
+            // v1.0.25: srcOffset = inPoint (mulai potong) — cari jeda sunyi pada
+            // audio SUMBER yang benar (batas rentang timeline + offset potongan)
+            ranges = adjustRangesToSilence(ranges, asrc.mono, sr, clip.speed, asrc.mono.length / sr, clip.inPoint);
           }
         } catch {
           /* analisis gagal — pakai pembagian rata biasa */

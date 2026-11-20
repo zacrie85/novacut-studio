@@ -63,6 +63,9 @@ export interface TextData {
   frameW?: number;
   /** v1.0.22: skala TINGGI bingkai (0.6–2.5; 1 = otomatis ikut tinggi tulisan) */
   frameH?: number;
+  /** v1.0.25: teks part/episode untuk slot pita atas gaya komposit "t7" (Pita
+   * Ganda TV). Hanya dipakai bingkai t7 — teks digambar miring di pita merah. */
+  partLine?: string;
 }
 
 export interface TransitionSpec {
@@ -126,6 +129,12 @@ export interface TextsConfig {
   titleFrameW?: number;
   /** v1.0.22: skala TINGGI bingkai judul (0.6–2.5; 1 = otomatis ikut tulisan) */
   titleFrameH?: number;
+  /** v1.0.25: bingkai teks PART/EPISODE — id dari TITLE_FRAMES ("" = tanpa bingkai) */
+  partFrame?: string;
+  /** v1.0.25: skala LEBAR bingkai part (0.6–2.5; 1 = otomatis ikut tulisan) */
+  partFrameW?: number;
+  /** v1.0.25: skala TINGGI bingkai part (0.6–2.5; 1 = otomatis ikut tulisan) */
+  partFrameH?: number;
 }
 
 /** v1.0.19: gaya bingkai di sekeliling gambar cover — dipilih manual pengguna */
@@ -216,6 +225,25 @@ export interface PlaylistExportConfig {
   soundDone?: boolean;
   /** v1.0.16: matikan PC otomatis 60 detik setelah batch selesai tanpa gagal */
   autoShutdown?: boolean;
+  // ===== v1.0.25: WATERMARK (tanda air gambar PNG/JPEG di atas video) =====
+  /** watermark aktif — digambar di paling atas setiap frame hasil */
+  wmOn?: boolean;
+  /** gambar watermark sebagai dataURL (png/jpeg; diturunkan skalanya ≤640px) */
+  wmSrc?: string;
+  /** posisi pusat horizontal % lebar layar (0–100) */
+  wmX?: number;
+  /** posisi pusat vertikal % tinggi layar (0–100) */
+  wmY?: number;
+  /** LEBAR watermark % lebar layar (diatur manual, boleh melesihat rasio asli) */
+  wmW?: number;
+  /** TINGGI watermark % tinggi layar (diatur manual) */
+  wmH?: number;
+  /** tingkat tampil 0–100 (100 = penuh / tidak transparan) */
+  wmOpacity?: number;
+  /** warna tint (hex) — mewarnai piksel buram gambar */
+  wmTint?: string;
+  /** kekuatan warna 0–100 (0 = warna asli gambar) */
+  wmTintAmt?: number;
   /** versi skema setelan (internal, untuk migrasi setelan lama) */
   cfgVersion?: number;
 }
@@ -240,6 +268,13 @@ export interface ExportSettings {
   autoSub: boolean;
   /** tingkat akurasi model AI subtitle */
   subLevel: SubLevel;
+  // ===== v1.0.25: POTONG MULAI & AKHIR (rentang detik untuk Export & Split) =====
+  /** potong rentang aktif — hanya bagian video antara trimStart..trimEnd yang dirender */
+  trimOn: boolean;
+  /** detik MULAI potong (mis. 120 = mulai dari menit ke-2) */
+  trimStart: number;
+  /** detik AKHIR potong (mis. 245; 0 = sampai habis) */
+  trimEnd: number;
 }
 
 export interface ExportResult {

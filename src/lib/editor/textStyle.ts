@@ -7,7 +7,7 @@ import { saneFrameScale, saneTitleFrame } from "./titleFrames";
 
 const KEY = "novacut.textsStyle";
 /** versi skema — bila berubah, setelan lama dimigrasi otomatis */
-export const TEXT_STYLE_VERSION = 3;
+export const TEXT_STYLE_VERSION = 4;
 
 export const TEXT_STYLE_DEFAULTS = {
   /** ukuran huruf judul: 4.2% tinggi layar (sebelumnya 7% — terlalu besar) */
@@ -39,6 +39,14 @@ export const TEXT_STYLE_DEFAULTS = {
   titleFrameW: 1,
   /** v1.0.22: skala tinggi bingkai (1 = otomatis ikut tinggi tulisan) */
   titleFrameH: 1,
+  /** v1.0.25: bingkai teks PART/EPISODE ("" = tanpa bingkai; lihat TITLE_FRAMES).
+   * Catatan: bila bingkai judul "t7" (Pita Ganda TV), teks part otomatis masuk
+   * ke pita merah atas judul — setelan ini dipakai bila judul tanpa t7. */
+  partFrame: "",
+  /** v1.0.25: skala lebar bingkai part (1 = otomatis ikut lebar tulisan) */
+  partFrameW: 1,
+  /** v1.0.25: skala tinggi bingkai part (1 = otomatis ikut tinggi tulisan) */
+  partFrameH: 1,
 };
 
 export type TextStyle = typeof TEXT_STYLE_DEFAULTS;
@@ -71,6 +79,11 @@ export function loadTextStyle(): TextStyle {
       titleFrame: saneTitleFrame(parsed.titleFrame),
       titleFrameW: saneFrameScale(parsed.titleFrameW),
       titleFrameH: saneFrameScale(parsed.titleFrameH),
+      // v1.0.25: bingkai teks part/episode — setelan lama tanpa field ini
+      // otomatis memakai default baru ("" = tanpa bingkai)
+      partFrame: saneTitleFrame(parsed.partFrame),
+      partFrameW: saneFrameScale(parsed.partFrameW),
+      partFrameH: saneFrameScale(parsed.partFrameH),
     };
     return merged;
   } catch {

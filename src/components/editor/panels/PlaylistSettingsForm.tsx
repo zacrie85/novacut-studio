@@ -51,14 +51,16 @@ export function PlaylistSettingsForm({ showSave = true, hideTitleScreen = false 
       toast({ title: "Tulis nama preset dulu", description: "Contoh: Novel 8 Bagian" });
       return;
     }
-    savePlaylistPreset(presetName, st.playlistExport, { mode: st.exportSettings.mode, splitBy: st.exportSettings.splitBy, parts: st.exportSettings.parts, partSeconds: st.exportSettings.partSeconds });
+    // v1.0.25: potong mulai & akhir ikut tersimpan dalam preset
+    savePlaylistPreset(presetName, st.playlistExport, { mode: st.exportSettings.mode, splitBy: st.exportSettings.splitBy, parts: st.exportSettings.parts, partSeconds: st.exportSettings.partSeconds, trimOn: st.exportSettings.trimOn, trimStart: st.exportSettings.trimStart, trimEnd: st.exportSettings.trimEnd });
     setPresets(loadPlaylistPresets());
     toast({ title: `Preset "${presetName.trim()}" disimpan ✓`, description: "Klik chip presetnya kapan saja untuk menerapkan satu klik." });
     setPresetName("");
   };
   const applyPreset = (p: PlaylistPreset) => {
     useEditor.getState().setPlaylistExport({ ...p.cfg });
-    useEditor.getState().setExportSettings({ mode: p.split.mode, splitBy: p.split.splitBy, parts: p.split.parts, partSeconds: p.split.partSeconds });
+    // v1.0.25: preset lama tanpa rentang potong → trimOn false (video utuh)
+    useEditor.getState().setExportSettings({ mode: p.split.mode, splitBy: p.split.splitBy, parts: p.split.parts, partSeconds: p.split.partSeconds, trimOn: !!p.split.trimOn, trimStart: Number(p.split.trimStart) || 0, trimEnd: Number(p.split.trimEnd) || 0 });
     savePlaylistExportConfig(p.cfg);
     toast({ title: `Preset "${p.name}" diterapkan ✓`, description: "Semua setelan teks, rasio, kualitas & split diganti sesuai preset." });
   };

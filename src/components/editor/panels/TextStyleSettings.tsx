@@ -98,6 +98,10 @@ function LivePreview({ ratioOverride }: { ratioOverride?: Ratio }) {
       const title = texts.title.trim() || "Judul Video Muncul Di Sini";
       const desc = texts.description.trim() || "Deskripsi video di bawah judul";
       const n = Math.max(1, texts.parts || 1);
+      // v1.0.25: gaya komposit "t7" (Pita Ganda TV) — teks part masuk ke pita
+      // merah atas judul (satu kesatuan), bukan digambar terpisah
+      const partTxt = partLabel(texts.labelStyle || "Part", n, n, true);
+      const dualTitle = (texts.titleFrame || "") === "t7";
       drawTextOverlay(
         ctx,
         w,
@@ -123,33 +127,42 @@ function LivePreview({ ratioOverride }: { ratioOverride?: Ratio }) {
           frame: texts.titleFrame || undefined,
           frameW: texts.titleFrameW,
           frameH: texts.titleFrameH,
+          // v1.0.25: teks part utk slot pita merah gaya komposit t7
+          partLine: dualTitle ? partTxt : undefined,
         },
         10,
         0,
         12
       );
-      drawTextOverlay(
-        ctx,
-        w,
-        h,
-        {
-          content: partLabel(texts.labelStyle || "Part", n, n, true),
-          size: rel(texts.partSize, TEXT_STYLE_DEFAULTS.partSize),
-          color: "#ffffff",
-          font: fontAuto,
-          anim: "slam",
-          pos: "bottom",
-          bg: "bar",
-          stroke: true,
-          offX: pct(texts.partX),
-          offY: pct(texts.partY),
-          // v1.0.22: posisi vertikal part — default PALING ATAS
-          posV: (typeof texts.partV === "number" ? texts.partV : 0) / 100,
-        },
-        10,
-        0,
-        12
-      );
+      if (!dualTitle) {
+        drawTextOverlay(
+          ctx,
+          w,
+          h,
+          {
+            content: partTxt,
+            size: rel(texts.partSize, TEXT_STYLE_DEFAULTS.partSize),
+            color: "#ffffff",
+            font: fontAuto,
+            anim: "slam",
+            pos: "bottom",
+            // v1.0.25: bingkai part menggantikan bar hitam sebagai latar
+            bg: texts.partFrame ? "none" : "bar",
+            stroke: true,
+            offX: pct(texts.partX),
+            offY: pct(texts.partY),
+            // v1.0.22: posisi vertikal part — default PALING ATAS
+            posV: (typeof texts.partV === "number" ? texts.partV : 0) / 100,
+            // v1.0.25: bingkai teks part/episode
+            frame: texts.partFrame || undefined,
+            frameW: texts.partFrameW,
+            frameH: texts.partFrameH,
+          },
+          10,
+          0,
+          12
+        );
+      }
     };
     void ensureAppFonts().then(draw);
     draw();
@@ -214,6 +227,10 @@ export function TextStyleSettings({ ratioOverride }: { ratioOverride?: Ratio }) 
   const titleFrame = texts.titleFrame || "";
   const frameW = typeof texts.titleFrameW === "number" ? texts.titleFrameW : 1;
   const frameH = typeof texts.titleFrameH === "number" ? texts.titleFrameH : 1;
+  // v1.0.25: bingkai teks part/episode
+  const partFrame = texts.partFrame || "";
+  const partFrameW = typeof texts.partFrameW === "number" ? texts.partFrameW : 1;
+  const partFrameH = typeof texts.partFrameH === "number" ? texts.partFrameH : 1;
 
   /** simpan gaya tulisan ke localStorage agar bertahan setelah aplikasi ditutup */
   const persistStyle = (p: Partial<TextStyle>) => {
@@ -234,6 +251,10 @@ export function TextStyleSettings({ ratioOverride }: { ratioOverride?: Ratio }) 
       titleFrame: t.titleFrame ?? "",
       titleFrameW: typeof t.titleFrameW === "number" ? t.titleFrameW : 1,
       titleFrameH: typeof t.titleFrameH === "number" ? t.titleFrameH : 1,
+      // v1.0.25: bingkai teks part/episode
+      partFrame: t.partFrame ?? "",
+      partFrameW: typeof t.partFrameW === "number" ? t.partFrameW : 1,
+      partFrameH: typeof t.partFrameH === "number" ? t.partFrameH : 1,
       ...p,
     });
   };
@@ -338,10 +359,10 @@ export function TextStyleSettings({ ratioOverride }: { ratioOverride?: Ratio }) 
       {/* ===== v1.0.22: BINGKAI JUDUL (10 GAYA) ===== */}
       <div className="space-y-1.5 rounded-md border border-amber-500/25 bg-amber-500/[0.05] p-2">
         <div className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-amber-300">
-          <Frame className="h-3.5 w-3.5" /> BINGKAI JUDUL (10 GAYA — INTERIOR KOSONG)
+          <Frame className="h-3.5 w-3.5" /> BINGKAI JUDUL (16 GAYA — INTERIOR KOSONG)
         </div>
         <p className="text-[11px] leading-relaxed text-gray-500">
-          Pilih bingkai untuk tulisan judul di dalam video: <b className="text-amber-300">6 gaya referensi</b> + <b className="text-amber-300">4 futuristik</b>. Bagian dalam bingkai <b className="text-gray-400">kosong</b> — video tetap terlihat. Besar bingkai <b className="text-blue-400">otomatis mengikuti panjang &amp; lebar tulisan</b>, atau atur sendiri lewat slider di bawah.
+          Pilih bingkai untuk tulisan judul di dalam video: <b className="text-amber-300">6 gaya referensi</b> + <b className="text-amber-300">4 futuristik</b> + <b className="text-amber-300">6 gaya referensi baru</b> (Pita Ganda TV, Banner Hitam Merah, Bola Glossy Biru/Merah, Pita Oranye 3D, Neon Biru-Pink). Bagian dalam bingkai <b className="text-gray-400">kosong</b> — video tetap terlihat. Besar bingkai <b className="text-blue-400">otomatis mengikuti panjang &amp; lebar tulisan</b>, atau atur sendiri lewat slider di bawah.
         </p>
         <TitleFramePicker
           value={titleFrame}
@@ -369,6 +390,46 @@ export function TextStyleSettings({ ratioOverride }: { ratioOverride?: Ratio }) 
             className="rounded p-1 text-gray-500 hover:bg-white/10 hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-30"
             aria-label="Reset ukuran bingkai ke otomatis"
             title="Kembalikan ukuran bingkai ke otomatis (ikut tulisan)"
+          >
+            <RotateCcw className="h-3 w-3" />
+          </button>
+        </div>
+      </div>
+
+      {/* ===== v1.0.25: BINGKAI PART/EPISODE (6 gaya referensi baru) ===== */}
+      <div className="space-y-1.5 rounded-md border border-rose-500/25 bg-rose-500/[0.05] p-2">
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-rose-300">
+          <Frame className="h-3.5 w-3.5" /> BINGKAI PART/EPISODE (BARU)
+        </div>
+        <p className="text-[11px] leading-relaxed text-gray-500">
+          Bingkai untuk tulisan <b className="text-rose-300">part/episode</b> — termasuk 6 gaya referensi baru (Pita Ganda TV, Banner Hitam Merah, Bola Glossy, Pita Oranye 3D, Neon). Catatan: bila BINGKAI JUDUL memakai <b className="text-amber-300">Pita Ganda TV</b>, teks part otomatis masuk ke pita merah di atasnya — setelan ini diabaikan saat itu.
+        </p>
+        <TitleFramePicker
+          value={partFrame}
+          onChange={(id) => {
+            st.setTexts({ partFrame: id });
+            persistStyle({ partFrame: id });
+          }}
+        />
+        <div className={`flex items-center gap-2 text-[11px] text-gray-400 ${partFrame ? "" : "pointer-events-none opacity-40"}`}>
+          <span className="w-16 shrink-0">Lebar</span>
+          <Slider value={[Math.round(partFrameW * 100)]} min={60} max={250} step={5} onValueChange={([v]) => { st.setTexts({ partFrameW: v / 100 }); persistStyle({ partFrameW: v / 100 }); }} className="flex-1" aria-label="Lebar bingkai part" />
+          <span className="w-10 text-right font-mono text-blue-400">{partFrameW === 1 ? "Otomatis" : `${partFrameW.toFixed(2)}x`}</span>
+        </div>
+        <div className={`flex items-center gap-2 text-[11px] text-gray-400 ${partFrame ? "" : "pointer-events-none opacity-40"}`}>
+          <span className="w-16 shrink-0">Tinggi</span>
+          <Slider value={[Math.round(partFrameH * 100)]} min={60} max={250} step={5} onValueChange={([v]) => { st.setTexts({ partFrameH: v / 100 }); persistStyle({ partFrameH: v / 100 }); }} className="flex-1" aria-label="Tinggi bingkai part" />
+          <span className="w-10 text-right font-mono text-blue-400">{partFrameH === 1 ? "Otomatis" : `${partFrameH.toFixed(2)}x`}</span>
+          <button
+            type="button"
+            onClick={() => {
+              st.setTexts({ partFrameW: 1, partFrameH: 1 });
+              persistStyle({ partFrameW: 1, partFrameH: 1 });
+            }}
+            disabled={!partFrame || (partFrameW === 1 && partFrameH === 1)}
+            className="rounded p-1 text-gray-500 hover:bg-white/10 hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-30"
+            aria-label="Reset ukuran bingkai part ke otomatis"
+            title="Kembalikan ukuran bingkai part ke otomatis (ikut tulisan)"
           >
             <RotateCcw className="h-3 w-3" />
           </button>
