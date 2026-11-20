@@ -23,3 +23,7 @@ db/*.db
 download/*.exe
 tool-results/
 tsconfig.tsbuildinfo
+
+# hasil uji & artefak unduhan lokal (sandbox) — tidak untuk repo
+download/*
+!download/README.md
