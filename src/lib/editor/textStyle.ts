@@ -40,8 +40,9 @@ export const TEXT_STYLE_DEFAULTS = {
   /** v1.0.22: skala tinggi bingkai (1 = otomatis ikut tinggi tulisan) */
   titleFrameH: 1,
   /** v1.0.25: bingkai teks PART/EPISODE ("" = tanpa bingkai; lihat TITLE_FRAMES).
-   * Catatan: bila bingkai judul "t7" (Pita Ganda TV), teks part otomatis masuk
-   * ke pita merah atas judul — setelan ini dipakai bila judul tanpa t7. */
+   * Catatan: bila bingkai judul gaya PITA GANDA komposit (t7 & g1-g10),
+   * teks part otomatis masuk ke pita atas judul — setelan ini dipakai bila
+   * judul tanpa gaya komposit. */
   partFrame: "",
   /** v1.0.25: skala lebar bingkai part (1 = otomatis ikut lebar tulisan) */
   partFrameW: 1,

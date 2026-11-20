@@ -4,7 +4,7 @@ import { fontStack, fmtTime, partLabel } from "./constants";
 import { getMusicBuffer, musicDefById } from "./music";
 import { useEditor, totalDuration, type EditorState } from "./store";
 import { wrapCanvasText } from "./textwrap";
-import { drawTitleFrame, frameTopExtraFrac, saneFrameScale, saneTitleFrame, titleFrameTextSkew } from "./titleFrames";
+import { drawTitleFrame, frameTopExtraFrac, isCompositeFrame, saneFrameScale, saneTitleFrame, titleFrameTextSkew } from "./titleFrames";
 import type { Clip, MediaAsset, TextData, Track } from "./types";
 import { drawWatermark } from "./watermark";
 import { applyGradeTints, applyOverlays, applyTransition, clipTransform, drawCover, easeOut, framingLayout, gradeFilterString } from "./visual";
@@ -110,11 +110,11 @@ export function drawTextOverlay(
   // v1.0.22: posisi vertikal LANGSUNG (posV: 0 = paling atas, 1 = paling
   // bawah) — dipakai menu Posisi Vertikal baru; bila tidak ada, pakai pos lama
   const posV = typeof td.posV === "number" && isFinite(td.posV) ? Math.max(0, Math.min(1, td.posV)) : null;
-  // v1.0.25: id bingkai ternormalisasi + mode komposit pita ganda (t7) —
+  // v1.0.25/26: id bingkai ternormalisasi + mode komposit PITA GANDA (t7 & g1-g10) —
   // komposit menggambar pita PART DI ATAS kotak bingkai sehingga perlu
   // ruang ekstra saat posisi dijepit ke tepi layar
   const frIdSane = td.frame ? saneTitleFrame(td.frame) : "";
-  const dualRibbon = frIdSane === "t7" && !!td.partLine;
+  const dualRibbon = isCompositeFrame(frIdSane) && !!td.partLine;
   const posYBase = posV !== null ? posV * h : td.pos === "top" ? h * 0.16 + blockH / 2 : td.pos === "center" ? h / 2 : h * 0.86 - blockH / 2;
   let posY = posYBase + offY;
   // v1.0.22: di ujung slider (paling atas/bawah), blok tetap UTUH terlihat —
@@ -205,10 +205,10 @@ export function drawTextOverlay(
       const fw = Math.max(size * 1.6, (layout.textW + padX * 2 + medL) * saneFrameScale(td.frameW));
       const fx = w / 2 - fw / 2 - (medL * saneFrameScale(td.frameW)) / 2;
       drawTitleFrame(ctx, frId, fx, posY + dy - fh / 2, fw, fh, {
-        // gaya komposit t7: teks part digambar di pita merah atas (ikut miring);
-        // tanpa teks part → versi PITA MERAH SAJA (bingkai teks part)
+        // gaya komposit pita ganda (t7 & g1-g10): teks part digambar di pita atas
+        // (ikut miring); tanpa teks part → versi PITA SAJA (bingkai teks part)
         partLine: td.partLine,
-        partOnly: frId === "t7" && !td.partLine,
+        partOnly: isCompositeFrame(frId) && !td.partLine,
         drawPart: td.partLine
           ? (pctx, cx, cy, maxW, fontPx) => {
               pctx.save();
@@ -919,11 +919,11 @@ class EditorEngine {
     const hasDesc = !!(texts.description && texts.description.trim());
     const titleOn = st.exportSettings.showTitleText || st.playlistExport.titleDuringVideo || st.playlistExport.showTitleScreen;
     const partOn = st.exportSettings.autoPartText || st.playlistExport.showPartText;
-    // v1.0.25: gaya komposit "t7" (Pita Ganda TV) — teks part masuk ke pita
-    // merah yang menempel di atas pita judul, bukan digambar terpisah
+    // v1.0.25/26: gaya komposit PITA GANDA (t7 & g1-g10) — teks part masuk ke
+    // pita atas yang menempel di atas pita judul, bukan digambar terpisah
     const n = Math.max(1, texts.parts || 1);
     const partTxt = partLabel(texts.labelStyle || "Part", n, n, true);
-    const dualTitle = (texts.titleFrame || "") === "t7" && titleOn && (hasTitle || hasDesc);
+    const dualTitle = isCompositeFrame(texts.titleFrame || "") && titleOn && (hasTitle || hasDesc);
     if ((hasTitle || hasDesc) && titleOn) {
       drawTextOverlay(
         ctx,

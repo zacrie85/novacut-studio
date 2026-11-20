@@ -7,7 +7,7 @@
 
 import { useEffect, useRef } from "react";
 import { Check } from "lucide-react";
-import { TITLE_FRAMES, drawTitleFrame } from "@/lib/editor/titleFrames";
+import { TITLE_FRAMES, drawTitleFrame, isCompositeFrame, titleFrameTextSkew } from "@/lib/editor/titleFrames";
 import type { TitleFrameId } from "@/lib/editor/titleFrames";
 
 /** Kanvas kecil: latar ala adegan video + bingkai + contoh tulisan judul */
@@ -34,11 +34,15 @@ function FrameThumb({ id }: { id: TitleFrameId }) {
 
     const title = "JUDUL";
     const sz = h * 0.34;
-    const fh = sz * 2.1; // tinggi kotak bingkai
+    // v1.0.26: gaya PITA GANDA (t7 & g1-g10) menggambar pita PART DI ATAS kotak —
+    // kotak bingkai dibuat lebih pendek & digeser turun agar pita atas muat
+    const comp = isCompositeFrame(id);
+    const fh = sz * (comp ? 1.3 : 2.1); // tinggi kotak bingkai
     const fw = w * 0.74; // lebar kotak bingkai
     const fx = w / 2 - fw / 2;
-    const fy = h / 2 - fh / 2 + h * 0.05;
-    // v1.0.25: gaya komposit "t7" menampilkan contoh teks PART di pita merah atas
+    const fy = comp ? h * 0.42 : h / 2 - fh / 2 + h * 0.05;
+    const ty = comp ? fy + fh / 2 : h / 2 + h * 0.05;
+    // v1.0.25/26: gaya komposit menampilkan contoh teks PART di pita atas
     drawTitleFrame(
       ctx,
       id,
@@ -46,7 +50,7 @@ function FrameThumb({ id }: { id: TitleFrameId }) {
       fy,
       fw,
       fh,
-      id === "t7"
+      comp
         ? {
             partLine: "PART 1",
             drawPart: (c, cx, cy, _mw, fp) => {
@@ -64,13 +68,13 @@ function FrameThumb({ id }: { id: TitleFrameId }) {
         : undefined
     );
     // contoh tulisan judul DI DALAM bingkai (bingkai digambar dulu, teks di atas);
-    // v1.0.25: gaya t7 tulisan ikut MIRING mengikuti bentuk pita
-    const sk = id === "t7" ? -0.22 : 0;
+    // v1.0.25/26: gaya pita ganda miring — tulisan ikut MIRING mengikuti bentuk pita
+    const sk = titleFrameTextSkew(id);
     ctx.save();
     if (sk) {
-      ctx.translate(w / 2, h / 2 + h * 0.05);
+      ctx.translate(w / 2, ty);
       ctx.transform(1, 0, sk, 1, 0, 0);
-      ctx.translate(-w / 2, -(h / 2 + h * 0.05));
+      ctx.translate(-w / 2, -ty);
     }
     ctx.font = `900 ${sz}px system-ui, sans-serif`;
     ctx.textAlign = "center";
@@ -78,9 +82,9 @@ function FrameThumb({ id }: { id: TitleFrameId }) {
     ctx.lineWidth = Math.max(2, sz * 0.14);
     ctx.strokeStyle = "rgba(0,0,0,0.85)";
     ctx.lineJoin = "round";
-    ctx.strokeText(title, w / 2, h / 2 + h * 0.05);
+    ctx.strokeText(title, w / 2, ty);
     ctx.fillStyle = "#ffffff";
-    ctx.fillText(title, w / 2, h / 2 + h * 0.05);
+    ctx.fillText(title, w / 2, ty);
     ctx.restore();
   }, [id]);
   return <canvas ref={ref} width={96} height={54} className="block h-auto w-full rounded-[3px]" />;

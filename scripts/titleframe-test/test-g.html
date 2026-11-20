@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><style>
+  body { margin:0; background:#202028; font-family:sans-serif; }
+  h2 { color:#9fb4d8; font-size:14px; padding:10px 14px 0; margin:0; }
+  .grid { display:grid; grid-template-columns:repeat(2, 480px); gap:14px; padding:14px; }
+  .cell { background:#000; border-radius:8px; overflow:hidden; }
+  canvas { display:block; width:480px; height:270px; }
+  .lbl { color:#9fb4d8; font-size:12px; padding:4px 8px; background:#111118; }
+</style></head>
+<body>
+<h2>A. MODE KOMPOSIT — judul + deskripsi + teks PART dalam satu pita ganda</h2>
+<div class="grid" id="sec-comp"></div>
+<h2>B. MODE PITA PART — gaya baru dipakai sebagai bingkai teks part saja</h2>
+<div class="grid" id="sec-part"></div>
+<script src="./engine.module.js"></script>
+<script>
+// ===== UJI 10 PITA GANDA TV BARU (v1.0.26) lewat jalur ASLI drawTextOverlay =====
+const W = 480, H = 270;
+const compIds = ["t7", "g1", "g2", "g3", "g4", "g5", "g6", "g7", "g8", "g9", "g10"];
+const partIds = ["g1", "g2", "g3", "g4", "g5", "g6", "g7", "g8", "g9", "g10"];
+const secComp = document.getElementById("sec-comp");
+const secPart = document.getElementById("sec-part");
+
+function cell(parent, label, draw) {
+  const d = document.createElement("div");
+  d.className = "cell";
+  const cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  const l = document.createElement("div");
+  l.className = "lbl"; l.textContent = label;
+  d.appendChild(cv); d.appendChild(l);
+  parent.appendChild(d);
+  const ctx = cv.getContext("2d");
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, "#26466e"); bg.addColorStop(0.55, "#3d2f63"); bg.addColorStop(1, "#0b0d14");
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(255,196,88,0.9)";
+  ctx.beginPath(); ctx.arc(W * 0.76, H * 0.22, H * 0.1, 0, Math.PI * 2); ctx.fill();
+  draw(ctx);
+}
+
+for (const id of compIds) {
+  cell(secComp, `komposit ${id} — judul bawah + pita PART atas`, (ctx) => {
+    NovaDraw.drawTextOverlay(ctx, W, H, {
+      content: "JUDUL VIDEO KEREN",
+      sub: "Deskripsi singkat di bawah judul",
+      size: 0.052, subSize: 0.028,
+      color: "#ffffff", font: "condensed", subFont: "condensed",
+      anim: "rise", pos: "top", bg: "none", stroke: true,
+      posV: 0.86, frame: id, frameW: 1.15, frameH: 1.15,
+      partLine: "PART 1",
+    }, 10, 0, 12);
+  });
+}
+
+for (const id of partIds) {
+  cell(secPart, `bingkai part ${id} (pita saja, posisi atas)`, (ctx) => {
+    NovaDraw.drawTextOverlay(ctx, W, H, {
+      content: "PART 1",
+      size: 0.062, color: "#ffffff", font: "condensed",
+      anim: "slam", pos: "bottom", bg: "none", stroke: true,
+      posV: 0.08, frame: id, frameW: 1.2, frameH: 1.2,
+    }, 10, 0, 12);
+  });
+}
+
+document.title = "DONE";
+</script>
+</body>
+</html>

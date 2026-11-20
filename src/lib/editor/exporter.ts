@@ -17,6 +17,7 @@ import { normalizeEnhance } from "./playlistExport";
 import { dimsFor, useEditor, totalDuration } from "./store";
 import { transcribeAsset, type SubSegment } from "./subtitles";
 import { audioCopyAllowed, exportSegmentTurbo, releaseTurboParse, turboEligible } from "./turboExport";
+import { isCompositeFrame } from "./titleFrames";
 import type { BatchJobView, Clip, CoverFrameStyle, MediaAsset, Track } from "./types";
 import { ensureWatermark } from "./watermark";
 import { fillZoomFor } from "./visual";
@@ -412,10 +413,10 @@ export function buildSplitProject(
   // v1.0.25: bingkai teks PART/EPISODE — pilihan sendiri di menu Teks ("" = tanpa).
   // Latar bar hitam digantikan bingkai (bingkai sudah jadi "latarnya").
   const partFrameId = (st.texts.partFrame || "").trim();
-  // v1.0.25: gaya komposit "t7" (Pita Ganda TV) — teks part DIGAMBAR di pita
-  // merah yang menempel di atas pita judul (satu kesatuan persis seperti
+  // v1.0.25/26: gaya komposit PITA GANDA (t7 & g1-g10) — teks part DIGAMBAR di
+  // pita yang menempel di atas pita judul (satu kesatuan persis seperti
   // referensi pengguna), jadi klip teks part terpisah TIDAK dibuat.
-  const dualTitle = st.texts.titleFrame === "t7" && s.showTitleText && !!st.texts.title;
+  const dualTitle = isCompositeFrame(st.texts.titleFrame) && s.showTitleText && !!st.texts.title;
   if (s.autoPartText && !dualTitle) {
     const tt = ensureTextTrack(tracks);
     tracks = tt.tracks;

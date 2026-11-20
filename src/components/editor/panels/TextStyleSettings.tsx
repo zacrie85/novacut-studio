@@ -15,6 +15,7 @@ import { partLabel, TEXT_FONTS } from "@/lib/editor/constants";
 import { drawTextOverlay } from "@/lib/editor/engine";
 import { ensureAppFonts } from "@/lib/editor/fonts";
 import { useEditor } from "@/lib/editor/store";
+import { isCompositeFrame } from "@/lib/editor/titleFrames";
 import { TEXT_STYLE_DEFAULTS, saveTextStyle, type TextStyle } from "@/lib/editor/textStyle";
 import { TitleFramePicker } from "@/components/editor/TitleFramePicker";
 import type { Ratio } from "@/lib/editor/types";
@@ -98,10 +99,10 @@ function LivePreview({ ratioOverride }: { ratioOverride?: Ratio }) {
       const title = texts.title.trim() || "Judul Video Muncul Di Sini";
       const desc = texts.description.trim() || "Deskripsi video di bawah judul";
       const n = Math.max(1, texts.parts || 1);
-      // v1.0.25: gaya komposit "t7" (Pita Ganda TV) — teks part masuk ke pita
-      // merah atas judul (satu kesatuan), bukan digambar terpisah
+      // v1.0.25/26: gaya komposit PITA GANDA (t7 & g1-g10) — teks part masuk ke
+      // pita atas judul (satu kesatuan), bukan digambar terpisah
       const partTxt = partLabel(texts.labelStyle || "Part", n, n, true);
-      const dualTitle = (texts.titleFrame || "") === "t7";
+      const dualTitle = isCompositeFrame(texts.titleFrame || "");
       drawTextOverlay(
         ctx,
         w,
