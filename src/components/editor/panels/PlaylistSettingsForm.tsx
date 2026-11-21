@@ -201,7 +201,7 @@ export function PlaylistSettingsForm({ showSave = true, hideTitleScreen = false 
               </button>
             ))}
           </div>
-          <p className="text-[11px] leading-relaxed text-gray-500">Cepat = file SANGAT kecil (≤ ~50 MB per bagian, ukuran disesuaikan otomatis dari durasi — cocok untuk WhatsApp). Ringan = paling kecil di 1080p-umum. Maksimal = bitrate tertinggi, file terbesar.</p>
+          <p className="text-[11px] leading-relaxed text-gray-500">Cepat = file SANGAT kecil (≤ ~50 MB per bagian — bitrate video disesuaikan otomatis dari durasi; cocok untuk WhatsApp). Ringan = 720p file kecil. Tajam = 1080p seimbang. Maksimal = 1080p terbaik, file terbesar.</p>
         </div>
         {pl.ratio === "9:16" && (
           <div className="space-y-1">
