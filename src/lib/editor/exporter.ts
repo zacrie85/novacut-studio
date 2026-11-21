@@ -920,8 +920,8 @@ export async function runBatchExport(assetIds: string[]) {
   try {
     // rasio video hasil (pilihan di Menu Export Playlist): ganti ukuran proyek sementara
     // 16:9 = seperti aslinya; 9:16 = vertikal untuk Shorts/TikTok/Reels
-    // v1.0.16: preset kualitas menentukan resolusi hasil (ringan=720p, tajam/maksimal=1080p)
-    const targetDims = dimsFor(pl.ratio, pl.quality === "ringan" ? 720 : 1080);
+    // v1.0.16: preset kualitas menentukan resolusi hasil (cepat/ringan=720p, tajam/maksimal=1080p)
+    const targetDims = dimsFor(pl.ratio, pl.quality === "ringan" || pl.quality === "cepat" ? 720 : 1080);
     useEditor.getState().setProject({ ratio: pl.ratio, ...targetDims });
     engine.syncSize();
     // v1.0.25: pastikan gambar watermark sudah ter-decode SEBELUM render paralel
@@ -1313,7 +1313,20 @@ export async function runBatchExport(assetIds: string[]) {
         const rs = { clips: proj.clips, tracks: proj.tracks, assets: proj.assets, project: { width: targetDims.width, height: targetDims.height } };
         const direct = s.exportDir && isDesktopFS() ? { dir: s.exportDir } : null;
         const directSave = direct ? { dir: direct.dir, name: `${slugify(job.title)}-${slugify(partTxt)}` } : undefined;
-        const bitrate = pl.quality === "ringan" ? 4_500_000 : pl.quality === "maksimal" ? 14_000_000 : 9_000_000;
+        // v1.0.27: preset "cepat" — ukuran file DIJAGA ≤ ~50 MB per bagian:
+        // bitrate video dihitung dari DURASI bagian ini (reservasi audio 192 kbps
+        // + margin container), dibatasi maksimum setara "ringan" (4,5 Mbps) dan
+        // minimum 600 kbps agar tetap layak ditonton. Bagian pendek ≤ ~83 detik
+        // otomatis memakai 4,5 Mbps (tidak mungkin lebih besar dari Ringan).
+        const segDur = Math.max(1, r.end - r.start);
+        const bitrate =
+          pl.quality === "cepat"
+            ? Math.round(Math.min(4_500_000, Math.max(600_000, (47_000_000 * 8 - 192_000 * segDur) / segDur)))
+            : pl.quality === "ringan"
+              ? 4_500_000
+              : pl.quality === "maksimal"
+                ? 14_000_000
+                : 9_000_000;
         // v1.0.23 ANTI-KEDIP: panjang cover (shift) diambil dari KLIP VIDEO proyek
         // yang baru dibangun — satu sumber kebenaran. Dulu dihitung ulang dari
         // snapshot setelan `s` yang sudah BASI (includeCover ditimpa dari
@@ -1345,9 +1358,12 @@ export async function runBatchExport(assetIds: string[]) {
               end: r.end,
               shift,
               bitrate,
+              // preset "cepat": audio SELALU di-encode ulang AAC 128 kbps (bukan
+              // salinan asli) agar bitrate audio bisa dipastikan dan batas 50 MB
+              // tidak jebol oleh audio sumber berbitrate tinggi
+              ...(pl.quality === "cepat" ? { audioCopy: false } : { audioCopy: pr.audioCopy }),
               ...(directSave ? { directSave } : {}),
               audioCache: pr.audio,
-              audioCopy: pr.audioCopy,
               onProgress,
             });
             res = t;

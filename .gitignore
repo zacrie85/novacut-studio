@@ -27,3 +27,9 @@ tsconfig.tsbuildinfo
 # hasil uji & artefak unduhan lokal (sandbox) — tidak untuk repo
 download/*
 !download/README.md
+
+# artefak harness uji lokal (bundle esbuild & hasil render) — tidak untuk repo
+scripts/titleframe-test/engine.module.js
+scripts/titleframe-test/tf.module.js
+scripts/titleframe-test/titleframes.bundle.js
+scripts/titleframe-test/result*.png

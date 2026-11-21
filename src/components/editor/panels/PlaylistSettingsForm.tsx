@@ -180,11 +180,13 @@ export function PlaylistSettingsForm({ showSave = true, hideTitleScreen = false 
             </SelectContent>
           </Select>
         </div>
-        {/* v1.0.16: preset kualitas — resolusi & kepadatan bitrate */}
+        {/* v1.0.16: preset kualitas — resolusi & kepadatan bitrate. v1.0.27: preset
+            "cepat" menjaga ukuran file ≤ ~50 MB (bitrate dihitung dari durasi). */}
         <div className="space-y-1">
           <Label className="text-xs text-gray-300">Kualitas hasil</Label>
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-4 gap-1.5">
             {([
+              ["cepat", "Cepat", "720p · ≤50 MB"],
               ["ringan", "Ringan", "720p · file kecil"],
               ["tajam", "Tajam", "1080p · disarankan"],
               ["maksimal", "Maksimal", "1080p · terbaik"],
@@ -199,7 +201,7 @@ export function PlaylistSettingsForm({ showSave = true, hideTitleScreen = false 
               </button>
             ))}
           </div>
-          <p className="text-[11px] leading-relaxed text-gray-500">Ringan = render paling cepat &amp; file paling kecil (cocok untuk upload harian). Maksimal = bitrate tertinggi, file terbesar.</p>
+          <p className="text-[11px] leading-relaxed text-gray-500">Cepat = file SANGAT kecil (≤ ~50 MB per bagian, ukuran disesuaikan otomatis dari durasi — cocok untuk WhatsApp). Ringan = paling kecil di 1080p-umum. Maksimal = bitrate tertinggi, file terbesar.</p>
         </div>
         {pl.ratio === "9:16" && (
           <div className="space-y-1">

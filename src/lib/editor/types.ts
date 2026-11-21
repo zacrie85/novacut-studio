@@ -215,8 +215,8 @@ export interface PlaylistExportConfig {
   subLevel?: SubLevel;
   /** berapa video dirender BERSAMAAN (paralel) 1–5 */
   parallel?: number;
-  /** v1.0.16: kualitas hasil — ringan (720p, file kecil & tercepat) / tajam (1080p) / maksimal (1080p, bitrate tinggi) */
-  quality?: "ringan" | "tajam" | "maksimal";
+  /** v1.0.16: kualitas hasil — cepat (v1.0.27: 720p, file dijaga ≤ ~50 MB) / ringan (720p, file kecil & tercepat) / tajam (1080p) / maksimal (1080p, bitrate tinggi) */
+  quality?: "cepat" | "ringan" | "tajam" | "maksimal";
   /** v1.0.16: geser titik potong ke jeda sunyi audio — klip tidak motong kalimat */
   smartSplit?: boolean;
   /** v1.0.16: lanjutkan batch terputus — lewati bagian yang filenya sudah ada di folder hasil */
