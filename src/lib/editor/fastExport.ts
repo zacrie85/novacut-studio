@@ -288,6 +288,10 @@ export interface FastExportOptions {
   audioCache?: AudioDecodeCache;
   /** v1.0.16: bitrate video (bps). Bawaan 9 Mbps (preset "Tajam"). */
   bitrate?: number;
+  /** v1.0.29: audio HASIL wajib ada (sumber punya trek audio & klip tak dibisukan).
+   * Bila decode audio sumber gagal dan tidak ada kontributor audio → LEMPAR error
+   * alih-alih diam-diam meng-encode heganya murni (video bisu yang tampak sukses). */
+  requireAudio?: boolean;
 }
 
 export interface FastExportResult {
@@ -350,6 +354,15 @@ export async function encodeAudioRange(
     const bufDur = c.src.mono ? c.src.mono.length / Math.max(1, sr) : b?.duration ?? 0;
     return { clip: c.clip, track: c.track, kind: c.kind, ch0, ch1, sr, bufDur };
   });
+
+  // v1.0.29: JANGAN pernah meng-encode heganya murni dengan diam. Bila audio
+  // diwajibkan (sumber punya trek audio & klip tak dibisukan) tetapi tidak ada
+  // satu pun kontributor audio — decode PCM sumber gagal (film panjang → ±2 GB;
+  // AudioDecodeCache menelan error-nya) — lempar error agar bagian jatuh ke
+  // mesin lain / terlihat gagal, bukan video bisu yang tampak sukses.
+  if (opts.requireAudio && contributors.length === 0) {
+    throw new Error("Audio sumber gagal di-decode — bagian dihentikan agar tidak menghasilkan video tanpa suara");
+  }
 
   const encoder = new AudioEncoder({
     output: (chunk, meta) => {

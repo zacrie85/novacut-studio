@@ -403,10 +403,16 @@ export async function exportSegmentTurbo(opts: TurboSegmentOptions): Promise<Tur
   } else if (support.audioCodec && audioMux) {
     opts.onStage?.("Memproses audio...");
     const cache = opts.audioCache ?? new AudioDecodeCache(new OfflineAudioContext(1, 1, 48000));
+    // v1.0.29: sumber punya trek audio (atr) & klip utama tidak dibisukan →
+    // audio HASIL wajib ada. Bila decode PCM audio gagal (film panjang —
+    // AudioDecodeCache menelan error), encodeAudioRange melempar error sehingga
+    // bagian jatuh ke mesin kilat / terlihat gagal — bukan video bisu yang
+    // tampak "sukses" (bug lupa-suara v1.0.27–v1.0.28).
+    const audioWajib = !!atr && clip.volume > 0 && !rs.tracks.find((t) => t.id === clip.trackId)?.muted;
     await encodeAudioRange(
       muxer,
       support.audioCodec,
-      { start: 0, end: totalDur, rs, bitrate: opts.bitrate },
+      { start: 0, end: totalDur, rs, bitrate: opts.bitrate, ...(audioWajib ? { requireAudio: true } : {}) },
       cache,
       rs
     );

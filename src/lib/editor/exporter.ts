@@ -1253,18 +1253,19 @@ export async function runBatchExport(assetIds: string[]) {
       const chk = await turboEligible(job.asset);
       const turbo = !!chk.ok && clip.loopCount === 1;
       const copyOk = audioCopyAllowed({ clips: [clip], tracks, assets: [job.asset], project: { width: targetDims.width, height: targetDims.height } }, clip, job.asset);
-      // v1.0.28 FIX SUARA "cepat": re-encode audio hanya aman bila platform
-      // punya encoder AAC ("mp4a.40.2"). Tanpa itu, MP4 hasil re-encode bisa
-      // TANPA trek audio sama sekali, atau berisi opus-in-mp4 yang tidak bisa
-      // diputar pemutar umum (WhatsApp/Windows) — keduanya terdengar "tanpa
-      // suara". Solusi: audio asli DISALIN utuh (selalu AAC) dan bitrate video
-      // yang disesuaikan (reservasi audio 320 kbps — lihat rumus bitrate).
-      const cepatAac = pl.quality === "cepat" && (await fastSupported())?.audioCodec === "mp4a.40.2";
-      const audioCopy = turbo ? (pl.quality === "cepat" ? !cepatAac && copyOk : copyOk) : false;
+      // v1.0.29 FIX SUARA "cepat": SEMUA preset (termasuk cepat) memakai salinan
+      // audio asli bila memungkinkan — jalur stream-copy yang sudah terbukti
+      // bersuara. Re-encode audio menuntut decode PCM se-film (bisa ±2 GB utk
+      // film panjang) yang terbukti bisa GAGAL SENYAP: AudioDecodeCache menelan
+      // error → encodeAudioRange meng-encode HENUNGA MURNI tanpa pesan (video
+      // tampak "sukses" tapi bisu — laporan pengguna v1.0.27/v1.0.28).
+      // Batas ukuran preset cepat tetap dijaga lewat reservasi bitrate audio di
+      // rumus bitrate (320 kbps utk salinan, 192 kbps bila terpaksa re-encode).
+      const audioCopy = turbo ? copyOk : false;
       prepped.set(vi, { clip, tracks, ranges, audio, tlSubs, turbo, audioCopy });
       if (turbo) {
         useEditor.getState().patchExportState({
-          label: `${job.title} — mesin TURBO aktif (WebCodecs murni${audioCopy ? ", audio asli disalin" : pl.quality === "cepat" ? ", audio AAC 128 kbps" : ""})`,
+          label: `${job.title} — mesin TURBO aktif (WebCodecs murni${audioCopy ? ", audio asli disalin" : ", audio di-encode ulang"})`,
         });
       } else if (chk.reason) {
         markJob(jid, { label: `Mode kilat (Turbo mati: ${chk.reason})` });
@@ -1377,6 +1378,11 @@ export async function runBatchExport(assetIds: string[]) {
             });
             res = t;
           } catch (e) {
+            // v1.0.29: gagal DECODE AUDIO → JANGAN jatuh ke mesin kilat (bisa
+            // menghasilkan video bisu juga) — lempar agar bagian tercatat gagal
+            // dengan pesan jelas. Gagal lain (dekoder video, dsb.) tetap dicoba
+            // dengan mesin kilat lama seperti biasa.
+            if (e instanceof Error && e.message.includes("Audio sumber gagal")) throw e;
             // Turbo gagal untuk bagian ini — mesin kilat lama mengerjakan bagian ini
             console.warn(`Turbo gagal (${partTxt}) — pakai mesin kilat lama:`, e);
             res = await exportRangeFast({ start: 0, end: proj.duration, rs, audioCache: pr.audio, bitrate, ...(directSave ? { directSave } : {}), onProgress });
