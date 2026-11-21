@@ -1252,13 +1252,19 @@ export async function runBatchExport(assetIds: string[]) {
       // ===== keputusan mesin: sekali per film, bukan per bagian =====
       const chk = await turboEligible(job.asset);
       const turbo = !!chk.ok && clip.loopCount === 1;
-      const audioCopy = turbo
-        ? audioCopyAllowed({ clips: [clip], tracks, assets: [job.asset], project: { width: targetDims.width, height: targetDims.height } }, clip, job.asset)
-        : false;
+      const copyOk = audioCopyAllowed({ clips: [clip], tracks, assets: [job.asset], project: { width: targetDims.width, height: targetDims.height } }, clip, job.asset);
+      // v1.0.28 FIX SUARA "cepat": re-encode audio hanya aman bila platform
+      // punya encoder AAC ("mp4a.40.2"). Tanpa itu, MP4 hasil re-encode bisa
+      // TANPA trek audio sama sekali, atau berisi opus-in-mp4 yang tidak bisa
+      // diputar pemutar umum (WhatsApp/Windows) — keduanya terdengar "tanpa
+      // suara". Solusi: audio asli DISALIN utuh (selalu AAC) dan bitrate video
+      // yang disesuaikan (reservasi audio 320 kbps — lihat rumus bitrate).
+      const cepatAac = pl.quality === "cepat" && (await fastSupported())?.audioCodec === "mp4a.40.2";
+      const audioCopy = turbo ? (pl.quality === "cepat" ? !cepatAac && copyOk : copyOk) : false;
       prepped.set(vi, { clip, tracks, ranges, audio, tlSubs, turbo, audioCopy });
       if (turbo) {
         useEditor.getState().patchExportState({
-          label: `${job.title} — mesin TURBO aktif (WebCodecs murni${audioCopy ? ", audio asli disalin" : ""})`,
+          label: `${job.title} — mesin TURBO aktif (WebCodecs murni${audioCopy ? ", audio asli disalin" : pl.quality === "cepat" ? ", audio AAC 128 kbps" : ""})`,
         });
       } else if (chk.reason) {
         markJob(jid, { label: `Mode kilat (Turbo mati: ${chk.reason})` });
@@ -1314,14 +1320,18 @@ export async function runBatchExport(assetIds: string[]) {
         const direct = s.exportDir && isDesktopFS() ? { dir: s.exportDir } : null;
         const directSave = direct ? { dir: direct.dir, name: `${slugify(job.title)}-${slugify(partTxt)}` } : undefined;
         // v1.0.27: preset "cepat" — ukuran file DIJAGA ≤ ~50 MB per bagian:
-        // bitrate video dihitung dari DURASI bagian ini (reservasi audio 192 kbps
+        // bitrate video dihitung dari DURASI bagian ini (reservasi audio
         // + margin container), dibatasi maksimum setara "ringan" (4,5 Mbps) dan
-        // minimum 600 kbps agar tetap layak ditonton. Bagian pendek ≤ ~83 detik
-        // otomatis memakai 4,5 Mbps (tidak mungkin lebih besar dari Ringan).
+        // minimum 600 kbps agar tetap layak ditonton. Bagian pendek otomatis
+        // memakai 4,5 Mbps (tidak mungkin lebih besar dari Ringan).
+        // v1.0.28: reservasi audio mengikuti cara audio film ini diproses —
+        // 192 kbps bila re-encode AAC (Turbo 128k / kilat 192k), 320 kbps bila
+        // audio asli disalin (bitrate sumber tak diketahui, aman s.d. 320k).
         const segDur = Math.max(1, r.end - r.start);
+        const cepatReserve = pr.audioCopy ? 320_000 : 192_000;
         const bitrate =
           pl.quality === "cepat"
-            ? Math.round(Math.min(4_500_000, Math.max(600_000, (47_000_000 * 8 - 192_000 * segDur) / segDur)))
+            ? Math.round(Math.min(4_500_000, Math.max(600_000, (47_000_000 * 8 - cepatReserve * segDur) / segDur)))
             : pl.quality === "ringan"
               ? 4_500_000
               : pl.quality === "maksimal"
@@ -1358,10 +1368,9 @@ export async function runBatchExport(assetIds: string[]) {
               end: r.end,
               shift,
               bitrate,
-              // preset "cepat": audio SELALU di-encode ulang AAC 128 kbps (bukan
-              // salinan asli) agar bitrate audio bisa dipastikan dan batas 50 MB
-              // tidak jebol oleh audio sumber berbitrate tinggi
-              ...(pl.quality === "cepat" ? { audioCopy: false } : { audioCopy: pr.audioCopy }),
+              // keputusan copy vs re-encode audio sudah dibuat di prepFilm
+              // (cek dukungan encoder AAC platform) — ikuti saja di sini
+              audioCopy: pr.audioCopy,
               ...(directSave ? { directSave } : {}),
               audioCache: pr.audio,
               onProgress,
