@@ -1,23 +1,48 @@
 "use client";
 // v1.0.36: Kartu Kunci API Poster AI — pengguna menempel kunci API Z.ai miliknya
-// (disimpan lokal di PC, tak dikirim ke mana pun selain api.z.ai). Dengan kunci,
-// poster digambar AI publik GLM-Image (HD); tanpa kunci → mode cadangan lokal.
+// (disimpan lokal di PC, tak dikirim ke mana pun selain api.z.ai).
+// v1.0.38: PENYEDIA BISA DIPILIH — Z.ai (glm-image, per poster ±Rp250) ATAU
+// Cloudflare Workers AI (GRATIS: 10.000 Neuron/hari ≈ 170 poster, tanpa kartu) +
+// toggle kualitas HD/Hemat untuk jalur Z.ai. Semua kredensial hanya di PC lokal.
 import { useEffect, useState } from "react";
+
+type Provider = "zai" | "cloudflare";
+type Quality = "hd" | "standard";
 
 export default function AIKeyCard() {
   const [mounted, setMounted] = useState(false);
+  const [provider, setProvider] = useState<Provider>("zai");
+  const [quality, setQuality] = useState<Quality>("hd");
   const [hasKey, setHasKey] = useState(false);
+  const [hasCF, setHasCF] = useState(false);
   const [val, setVal] = useState("");
+  const [cfAcc, setCfAcc] = useState("");
+  const [cfTok, setCfTok] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
     setMounted(true);
     void window.novacutAI?.getAIKeyStatus?.().then((s) => setHasKey(!!s?.hasKey));
+    void window.novacutAI?.getCFKeyStatus?.().then((s) => setHasCF(!!s?.hasKey));
+    void window.novacutAI?.getAIPrefs?.().then((p) => {
+      if (p?.provider === "cloudflare") setProvider("cloudflare");
+      if (p?.quality === "standard") setQuality("standard");
+    });
   }, []);
 
   if (!mounted || !window.novacutAI?.setAIKey) return null;
 
+  const gantiProvider = (p: Provider) => {
+    setProvider(p);
+    setMsg(null);
+    void window.novacutAI?.setAIPrefs?.({ provider: p });
+  };
+  const gantiKualitas = (q: Quality) => {
+    setQuality(q);
+    void window.novacutAI?.setAIPrefs?.({ quality: q });
+    setMsg({ ok: true, text: q === "standard" ? "Kualitas Hemat aktif — poster digambar lebih cepat (±5-10 detik) via Z.ai." : "Kualitas HD aktif — poster paling detail (±20 detik) via Z.ai." });
+  };
   const simpan = async () => {
     if (busy || !val.trim()) return;
     setBusy(true);
@@ -27,7 +52,7 @@ export default function AIKeyCard() {
     if (r?.ok) {
       setHasKey(true);
       setVal("");
-      setMsg({ ok: true, text: "Kunci tersimpan di PC ini. Poster AI kini memakai AI publik GLM-Image (HD)." });
+      setMsg({ ok: true, text: "Kunci Z.ai tersimpan di PC ini. Poster AI kini memakai GLM-Image (harga ±Rp250/poster)." });
     } else {
       setMsg({ ok: false, text: r?.error || "Gagal menyimpan kunci." });
     }
@@ -38,7 +63,7 @@ export default function AIKeyCard() {
     setMsg(null);
     const r = await window.novacutAI?.testAIKey?.();
     setBusy(false);
-    setMsg(r?.ok ? { ok: true, text: "Koneksi AI publik OK — siap menggambar poster." } : { ok: false, text: r?.error || "Koneksi gagal." });
+    setMsg(r?.ok ? { ok: true, text: "Koneksi Z.ai OK — kunci valid (tes pakai model gratis, tak makan saldo)." } : { ok: false, text: r?.error || "Koneksi gagal." });
   };
   const hapus = async () => {
     if (busy) return;
@@ -46,58 +71,156 @@ export default function AIKeyCard() {
     await window.novacutAI?.clearAIKey?.();
     setBusy(false);
     setHasKey(false);
-    setMsg({ ok: true, text: "Kunci dihapus — poster kembali ke mode cadangan lokal." });
+    setMsg({ ok: true, text: "Kunci Z.ai dihapus." });
   };
+  const simpanCF = async () => {
+    if (busy || !cfAcc.trim() || !cfTok.trim()) return;
+    setBusy(true);
+    setMsg(null);
+    const r = await window.novacutAI?.setCFKey?.(cfAcc.trim(), cfTok.trim());
+    setBusy(false);
+    if (r?.ok) {
+      setHasCF(true);
+      setCfAcc("");
+      setCfTok("");
+      setMsg({ ok: true, text: "Kredensial Cloudflare tersimpan di PC ini. Poster kini GRATIS (kuota 10.000 Neuron/hari ≈ 170 poster)." });
+    } else {
+      setMsg({ ok: false, text: r?.error || "Gagal menyimpan kredensial." });
+    }
+  };
+  const tesCF = async () => {
+    if (busy) return;
+    setBusy(true);
+    setMsg(null);
+    const r = await window.novacutAI?.testCFKey?.();
+    setBusy(false);
+    setMsg(r?.ok ? { ok: true, text: "Koneksi Cloudflare OK — jalur poster GRATIS siap (tes tanpa memakai kuota)." } : { ok: false, text: r?.error || "Koneksi gagal." });
+  };
+  const hapusCF = async () => {
+    if (busy) return;
+    setBusy(true);
+    await window.novacutAI?.clearCFKey?.();
+    setBusy(false);
+    setHasCF(false);
+    setMsg({ ok: true, text: "Kredensial Cloudflare dihapus." });
+  };
+
+  const pill = (aktif: boolean) =>
+    `rounded-md px-2 py-1 text-[11px] font-semibold transition ${aktif ? "border border-cyan-400/60 bg-cyan-500/15 text-cyan-100" : "border border-white/10 bg-white/[0.03] text-gray-400 hover:text-gray-200"}`;
 
   return (
     <div className="space-y-1.5 rounded-md border border-cyan-500/25 bg-cyan-500/[0.06] p-2">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-[11px] font-bold uppercase tracking-wider text-cyan-300/90">Kunci API Poster AI</div>
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${hasKey ? "bg-emerald-500/15 text-emerald-300" : "bg-white/10 text-gray-400"}`}>
-          {hasKey ? "● Kunci aktif" : "○ Belum ada kunci"}
+        <div className="text-[11px] font-bold uppercase tracking-wider text-cyan-300/90">Mesin Poster AI</div>
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${provider === "cloudflare" ? (hasCF ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300") : hasKey ? "bg-emerald-500/15 text-emerald-300" : "bg-white/10 text-gray-400"}`}>
+          {provider === "cloudflare" ? (hasCF ? "● CF siap (gratis)" : "○ CF belum diisi") : hasKey ? "● Kunci Z.ai aktif" : "○ Z.ai belum ada kunci"}
         </span>
       </div>
-      {hasKey ? (
+
+      <div className="flex gap-1.5">
+        <button onClick={() => gantiProvider("zai")} className={pill(provider === "zai")}>Z.ai (±Rp250/poster)</button>
+        <button onClick={() => gantiProvider("cloudflare")} className={pill(provider === "cloudflare")}>Cloudflare (GRATIS)</button>
+      </div>
+
+      {provider === "zai" ? (
+        hasKey ? (
+          <>
+            <div className="text-[10px] leading-relaxed text-gray-500">
+              Poster digambar <b className="text-cyan-300/90">AI publik GLM-Image via Z.ai</b> — adegan videomu dibaca AI lalu dilukis ulang jadi poster sinematik. Kualitas:
+            </div>
+            <div className="flex gap-1.5">
+              <button onClick={() => gantiKualitas("hd")} className={pill(quality === "hd")}>HD (terbaik, ±20 dtk)</button>
+              <button onClick={() => gantiKualitas("standard")} className={pill(quality === "standard")}>Hemat (cepat, 5-10 dtk)</button>
+            </div>
+            <div className="flex gap-1.5">
+              <button onClick={tes} disabled={busy} className="rounded-md border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-[11px] font-medium text-cyan-100 transition hover:border-cyan-400 disabled:opacity-50">
+                {busy ? "Menguji…" : "Tes Koneksi"}
+              </button>
+              <button onClick={hapus} disabled={busy} className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-gray-300 transition hover:border-red-500/40 disabled:opacity-50">
+                Hapus Kunci
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="text-[10px] leading-relaxed text-gray-500">
+              Buat kunci API Z.ai <b className="text-cyan-300/90">gratis</b> (kartu tidak perlu; bayar hanya ±Rp250 per poster yang digambar), tempel di sini, lalu klik Buat Ulang Poster.
+            </div>
+            <div className="flex gap-1.5">
+              <input
+                type="password"
+                value={val}
+                onChange={(e) => setVal(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && void simpan()}
+                placeholder="Tempel kunci API Z.ai (xxxx…)"
+                className="min-w-0 flex-1 rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] text-gray-200 placeholder:text-gray-600 focus:border-cyan-500/50 focus:outline-none"
+                aria-label="Kunci API Z.ai"
+              />
+              <button onClick={() => void simpan()} disabled={busy || !val.trim()} className="rounded-md border border-cyan-500/40 bg-cyan-500/15 px-2 py-1 text-[11px] font-semibold text-cyan-100 transition hover:border-cyan-400 disabled:opacity-50">
+                Simpan
+              </button>
+            </div>
+            <button
+              onClick={() => void window.novacutAI?.openAIKeyPage?.()}
+              className="text-[10px] text-cyan-400/90 underline transition hover:text-cyan-300"
+            >
+              Cara dapat kunci: buka z.ai → API Keys (buat &quot;Standard API Key&quot;) ↗
+            </button>
+          </>
+        )
+      ) : !window.novacutAI?.setCFKey ? (
+        <div className="text-[10px] leading-relaxed text-amber-300/80">
+          Jalur Cloudflare tersedia di NOVACUT Studio v1.0.38+ — update aplikasimu.
+        </div>
+      ) : hasCF ? (
         <>
           <div className="text-[10px] leading-relaxed text-gray-500">
-            Poster digambar <b className="text-cyan-300/90">AI publik GLM-Image (kualitas HD)</b> via Z.ai — adegan videomu dibaca AI lalu dilukis ulang jadi poster sinematik.
+            Poster digambar <b className="text-emerald-300/90">GRATIS via Cloudflare Workers AI</b> (vision Llama + FLUX.1 schnell) — kuota 10.000 Neuron/hari ≈ 170 poster, reset jam 07.00 WIB. Tanpa kartu, tanpa tagihan.
           </div>
           <div className="flex gap-1.5">
-            <button onClick={tes} disabled={busy} className="rounded-md border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-[11px] font-medium text-cyan-100 transition hover:border-cyan-400 disabled:opacity-50">
+            <button onClick={tesCF} disabled={busy} className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-100 transition hover:border-emerald-400 disabled:opacity-50">
               {busy ? "Menguji…" : "Tes Koneksi"}
             </button>
-            <button onClick={hapus} disabled={busy} className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-gray-300 transition hover:border-red-500/40 disabled:opacity-50">
-              Hapus Kunci
+            <button onClick={hapusCF} disabled={busy} className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-gray-300 transition hover:border-red-500/40 disabled:opacity-50">
+              Hapus Kredensial
             </button>
           </div>
         </>
       ) : (
         <>
           <div className="text-[10px] leading-relaxed text-gray-500">
-            Tanpa kunci, poster hanya memakai <b>mode cadangan</b> (frame digelapkan + tulisan overlay — bukan lukisan AI). Untuk poster Hollywood sungguhan, buat kunci API Z.ai (ada gratisannya), tempel di sini, lalu klik Buat Ulang Poster.
+            100% GRATIS & tanpa kartu: daftar akun Cloudflare → salin <b>Account ID</b> (halaman Workers & AI) dan buat <b>API Token</b> ber-izin Workers AI: Run → tempel dua-duanya di sini.
           </div>
+          <input
+            value={cfAcc}
+            onChange={(e) => setCfAcc(e.target.value)}
+            placeholder="Account ID (32 huruf hex)"
+            className="w-full rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] text-gray-200 placeholder:text-gray-600 focus:border-emerald-500/50 focus:outline-none"
+            aria-label="Account ID Cloudflare"
+          />
           <div className="flex gap-1.5">
             <input
               type="password"
-              value={val}
-              onChange={(e) => setVal(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && void simpan()}
-              placeholder="Tempel kunci API Z.ai (xxxx…)"
-              className="min-w-0 flex-1 rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] text-gray-200 placeholder:text-gray-600 focus:border-cyan-500/50 focus:outline-none"
-              aria-label="Kunci API Z.ai"
+              value={cfTok}
+              onChange={(e) => setCfTok(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void simpanCF()}
+              placeholder="API Token (izin Workers AI: Run)"
+              className="min-w-0 flex-1 rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] text-gray-200 placeholder:text-gray-600 focus:border-emerald-500/50 focus:outline-none"
+              aria-label="API Token Cloudflare"
             />
-            <button onClick={() => void simpan()} disabled={busy || !val.trim()} className="rounded-md border border-cyan-500/40 bg-cyan-500/15 px-2 py-1 text-[11px] font-semibold text-cyan-100 transition hover:border-cyan-400 disabled:opacity-50">
+            <button onClick={() => void simpanCF()} disabled={busy || !cfAcc.trim() || !cfTok.trim()} className="rounded-md border border-emerald-500/40 bg-emerald-500/15 px-2 py-1 text-[11px] font-semibold text-emerald-100 transition hover:border-emerald-400 disabled:opacity-50">
               Simpan
             </button>
           </div>
           <button
-            onClick={() => void window.novacutAI?.openAIKeyPage?.()}
-            className="text-[10px] text-cyan-400/90 underline transition hover:text-cyan-300"
+            onClick={() => void window.novacutAI?.openCFDash?.()}
+            className="text-[10px] text-emerald-400/90 underline transition hover:text-emerald-300"
           >
-            Cara dapat kunci: buka z.ai → API Keys (buat "Standard API Key") ↗
+            Buka dash.cloudflare.com (Account ID & API Tokens) ↗
           </button>
         </>
       )}
+
       {msg && <div className={`text-[10px] leading-relaxed ${msg.ok ? "text-emerald-400/90" : "text-red-400/90"}`}>{msg.text}</div>}
     </div>
   );

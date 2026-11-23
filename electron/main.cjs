@@ -252,12 +252,13 @@ function registerFSIpc() {
     });
     return String(json?.choices?.[0]?.message?.content || "").trim();
   };
-  // glm-image: gambar poster Hollywood utuh (hd). Respons = URL sementara → unduh → base64.
-  const pubGeneratePoster = async (prompt, key, size) => {
+  // glm-image: gambar poster Hollywood utuh (hd/standard). Respons = URL sementara → unduh → base64.
+  // v1.0.38: quality mengikuti preferensi pengguna — hd (terbaik, ±20 dtk) atau standard (cepat, 5-10 dtk).
+  const pubGeneratePoster = async (prompt, key, size, quality) => {
     const json = await zaiPubFetch("/images/generations", key, {
       model: "glm-image",
       prompt: prompt.slice(0, 4000),
-      quality: "hd",
+      quality: quality === "standard" ? "standard" : "hd",
       size,
     });
     const url = json?.data?.[0]?.url;
@@ -316,8 +317,153 @@ function registerFSIpc() {
   });
   ipcMain.handle("app:open-url", (_e, payload) => {
     const url = String(payload?.url || "");
-    if (!/^https:\/\/(www\.)?(z\.ai|docs\.z\.ai|bigmodel\.cn)/.test(url)) return { ok: false, error: "url tidak diizinkan" };
+    if (!/^https:\/\/(www\.)?(z\.ai|docs\.z\.ai|bigmodel\.cn|dash\.cloudflare\.com|developers\.cloudflare\.com)/.test(url)) return { ok: false, error: "url tidak diizinkan" };
     return shell.openExternal(url).then(() => ({ ok: true })).catch((err) => ({ ok: false, error: String(err) }));
+  });
+
+  // ===== v1.0.38: CLOUDFLARE WORKERS AI — jalur poster GRATIS (tanpa kartu) =====
+  // Free plan: 10.000 Neuron/hari gratis (reset 00:00 UTC). Biaya per poster:
+  // vision llama-3.2-11b ±30 Neuron + flux-1-schnell (4 tile × 4.8 + 4 step × 9.6)
+  // ≈ 58 Neuron → ±170 poster/hari gratis. Pengguna hanya membuat Account ID +
+  // API Token gratis di dash.cloudflare.com — tidak perlu kartu kredit.
+  const CF_BASE = "https://api.cloudflare.com/client/v4";
+  const cfKeyPath = path.join(app.getPath("userData"), "cf_key.json");
+  const prefsPath = path.join(app.getPath("userData"), "ai_prefs.json");
+  const readCFKey = () => {
+    try {
+      const j = JSON.parse(fs.readFileSync(cfKeyPath, "utf-8"));
+      return { account: String(j.account || "").trim(), token: String(j.token || "").trim() };
+    } catch {
+      return { account: "", token: "" };
+    }
+  };
+  const readAIPrefs = () => {
+    try {
+      const j = JSON.parse(fs.readFileSync(prefsPath, "utf-8"));
+      return { provider: j.provider === "cloudflare" ? "cloudflare" : "zai", quality: j.quality === "standard" ? "standard" : "hd" };
+    } catch {
+      return { provider: "zai", quality: "hd" };
+    }
+  };
+  const cfRun = async (cf, model, body, timeoutMs = 120000) => {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const res = await fetch(`${CF_BASE}/accounts/${cf.account}/ai/run/${model}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${cf.token}` },
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.success === false) {
+        const msg = json?.errors?.[0]?.message || json?.messages?.[0]?.message || `HTTP ${res.status}`;
+        throw new Error(String(msg).slice(0, 160));
+      }
+      return json?.result ?? {};
+    } finally {
+      clearTimeout(to);
+    }
+  };
+  // Vision gratis: deskripsi adegan frame sebagai dasar lukisan poster (Inggris,
+  // ≤100 kata; takarir/watermark diabaikan) — llama-3.2-11b-vision-instruct.
+  const cfDescribeScene = async (dataUrl, cf) => {
+    const visPrompt =
+      "Describe this video frame as a cinematic movie-poster scene brief in English (max 100 words): " +
+      "main subject appearance, pose, emotion, setting, lighting, color mood. " +
+      "IGNORE any burned-in subtitles, captions or watermarks — do not mention them.";
+    try {
+      const r = await cfRun(cf, "@cf/meta/llama-3.2-11b-vision-instruct", {
+        messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: dataUrl } }, { type: "text", text: visPrompt }] }],
+        max_tokens: 300,
+      }, 90000);
+      return String(r?.response || "").trim();
+    } catch {
+      return ""; // vision gagal → lanjut tanpa deskripsi (prompt tetap membawa judul)
+    }
+  };
+  // FLUX.1 schnell: poster utuh (steps 4, ±58 Neuron). Coba ikut rasio proyek;
+  // bila skema menolak width/height → ulangi tanpa keduanya (hasil persegi).
+  const cfGeneratePoster = async (prompt, cf, wide) => {
+    const dasar = { prompt: prompt.slice(0, 1800), steps: 4 };
+    try {
+      const r = await cfRun(cf, "@cf/black-forest-labs/flux-1-schnell", { ...dasar, ...(wide ? { width: 1024, height: 576 } : { width: 576, height: 1024 }) });
+      if (r?.image) return `data:image/jpeg;charset=utf-8;base64,${r.image}`;
+      throw new Error("respons gambar kosong");
+    } catch (err) {
+      const r = await cfRun(cf, "@cf/black-forest-labs/flux-1-schnell", dasar);
+      if (r?.image) return `data:image/jpeg;charset=utf-8;base64,${r.image}`;
+      throw err;
+    }
+  };
+  const cfPosterPrompt = (prompt, deskripsi) =>
+    `Create ONE professional modern Hollywood movie poster, cinematic style. Follow these user instructions: ${prompt}. ` +
+    `Scene basis (from the user's video frame): ${deskripsi || "dramatic cinematic scene"}. ` +
+    `Rules: all text fully inside the image with safe margins from every edge; ` +
+    `no subtitles, no captions, no watermarks, no timestamps; single cohesive composition, dramatic lighting.`;
+
+  ipcMain.handle("cf:set-key", (_e, payload) => {
+    try {
+      const account = String(payload?.account || "").trim();
+      const token = String(payload?.token || "").trim();
+      if (!account || !token) return { ok: false, error: "Account ID dan API Token wajib diisi" };
+      fs.mkdirSync(path.dirname(cfKeyPath), { recursive: true });
+      fs.writeFileSync(cfKeyPath, JSON.stringify({ account, token }), { mode: 0o600 });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
+    }
+  });
+  ipcMain.handle("cf:key-status", () => {
+    const cf = readCFKey();
+    return { hasKey: !!(cf.account && cf.token) };
+  });
+  ipcMain.handle("cf:clear-key", () => {
+    try {
+      fs.rmSync(cfKeyPath, { force: true });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
+    }
+  });
+  // Tes Cloudflare: daftar model (0 Neuron) — validasi Account ID + Token sekaligus.
+  ipcMain.handle("cf:test-key", async () => {
+    const cf = readCFKey();
+    if (!cf.account || !cf.token) return { ok: false, error: "Account ID / Token belum lengkap" };
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 20000);
+    try {
+      const res = await fetch(`${CF_BASE}/accounts/${cf.account}/ai/models/search?per_page=1`, {
+        headers: { Authorization: `Bearer ${cf.token}` },
+        signal: ctrl.signal,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.success === false) {
+        const msg = json?.errors?.[0]?.message || `HTTP ${res.status}`;
+        return { ok: false, error: String(msg).slice(0, 160) };
+      }
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
+    } finally {
+      clearTimeout(to);
+    }
+  });
+  // Preferensi penyedia & kualitas poster (disimpan lokal, mode 0600).
+  ipcMain.handle("ai:get-prefs", () => readAIPrefs());
+  ipcMain.handle("ai:set-prefs", (_e, payload) => {
+    try {
+      const cur = readAIPrefs();
+      const next = {
+        provider: payload?.provider === "cloudflare" ? "cloudflare" : payload?.provider === "zai" ? "zai" : cur.provider,
+        quality: payload?.quality === "standard" ? "standard" : payload?.quality === "hd" ? "hd" : cur.quality,
+      };
+      fs.mkdirSync(path.dirname(prefsPath), { recursive: true });
+      fs.writeFileSync(prefsPath, JSON.stringify(next), { mode: 0o600 });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
+    }
   });
 
   // POSTER AI — jalur utama: kunci pengguna → API publik (vision + glm-image);
@@ -327,11 +473,25 @@ function registerFSIpc() {
     const prompt = String(payload?.prompt || "cinematic movie poster");
     const image = String(payload?.image || "");
     const sizePub = payload?.size === "768x1344" ? "960x1728" : "1728x960";
+    // v1.0.38: penyedia Cloudflare (GRATIS) — vision llama + FLUX.1 schnell;
+    // gagal → ok:false (fallback grade lokal), TIDAK diam-diam pindah ke z.ai
+    // supaya pengguna tidak terekspos biaya tanpa sengaja.
+    if (payload?.provider === "cloudflare") {
+      const cf = readCFKey();
+      if (!cf.account || !cf.token) return { ok: false, error: "Kredensial Cloudflare belum diisi" };
+      try {
+        const deskripsi = await cfDescribeScene(image, cf);
+        const poster = await cfGeneratePoster(cfPosterPrompt(prompt, deskripsi), cf, payload?.size !== "768x1344");
+        return { ok: true, image: poster, via: "cloudflare" };
+      } catch (err) {
+        return { ok: false, error: String((err && err.message) || err).slice(0, 200) };
+      }
+    }
     const key = readAIKey();
     if (key) {
       try {
         const deskripsi = await pubDescribeScene(image, key);
-        const poster = await pubGeneratePoster(posterPromptPublik(prompt, deskripsi || "dramatic cinematic scene"), key, sizePub);
+        const poster = await pubGeneratePoster(posterPromptPublik(prompt, deskripsi || "dramatic cinematic scene"), key, sizePub, payload?.quality);
         if (poster) return { ok: true, image: poster, via: "publik" };
       } catch (err) {
         // kunci ada tapi gagal (saldo/koneksi) → lanjut coba jalur SDK bila ada

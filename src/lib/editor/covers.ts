@@ -816,13 +816,17 @@ export function buildPosterPrompt(custom: string | undefined, title: string): st
 }
 
 /** Poster AI: kirim frame (dataURL) + prompt ke model gambar lewat Electron
- * (IPC ai:poster → z-ai-web-dev-sdk di main process). Bila bridge tidak ada
- * (web) atau gagal → null → pemanggil lanjut ke fallback frame ter-grade. */
+ * (IPC ai:poster). v1.0.38: penyedia & kualitas ikut preferensi tersimpan
+ * (Z.ai glm-image hd/standard ATAU Cloudflare Workers AI gratis). Bila bridge
+ * tidak ada (web) atau gagal → null → pemanggil lanjut ke fallback frame ter-grade. */
 export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size: "1344x768" | "768x1344" = "1344x768", timeoutMs = 180000): Promise<string | null> {
   if (typeof window === "undefined" || !window.novacutAI?.posterAI) return null;
   try {
+    const prefs = await window.novacutAI?.getAIPrefs?.().catch(() => null);
+    const provider = prefs?.provider === "cloudflare" ? "cloudflare" : "zai";
+    const quality = prefs?.quality === "standard" ? "standard" : "hd";
     const res = await Promise.race([
-      window.novacutAI.posterAI(frameUrl, prompt, size),
+      window.novacutAI.posterAI(frameUrl, prompt, size, provider, quality),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
     ]);
     return res?.ok && res.image ? res.image : null;

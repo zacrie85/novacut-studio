@@ -28,11 +28,23 @@ contextBridge.exposeInMainWorld("novacutFS", {
 // v1.0.31: API AI (opsional) — poster sinematik via z-ai-web-dev-sdk di main process.
 // Bila gagal/tanpa kredensial -> { ok:false } dan renderer lanjut memakai grade lokal.
 // v1.0.36: kunci API publik Z.ai milik pengguna (disimpan lokal) + tes koneksi.
+// v1.0.38: penyedia poster bisa dipilih — Z.ai (per poster) ATAU Cloudflare Workers AI
+// (GRATIS: 10.000 Neuron/hari ≈ 170 poster, tanpa kartu) + preferensi kualitas HD/Hemat.
 contextBridge.exposeInMainWorld("novacutAI", {
-  posterAI: (image, prompt, size) => ipcRenderer.invoke("ai:poster", { image, prompt, size }),
+  posterAI: (image, prompt, size, provider, quality) =>
+    ipcRenderer.invoke("ai:poster", { image, prompt, size, provider, quality }),
   setAIKey: (apiKey) => ipcRenderer.invoke("ai:set-key", { apiKey }),
   getAIKeyStatus: () => ipcRenderer.invoke("ai:key-status"),
   clearAIKey: () => ipcRenderer.invoke("ai:clear-key"),
   testAIKey: () => ipcRenderer.invoke("ai:test-key"),
   openAIKeyPage: () => ipcRenderer.invoke("app:open-url", { url: "https://z.ai/manage-apikey/apikey-list" }),
+  // v1.0.38: Cloudflare Workers AI (Account ID + API Token, keduanya gratis dibuat)
+  setCFKey: (account, token) => ipcRenderer.invoke("cf:set-key", { account, token }),
+  getCFKeyStatus: () => ipcRenderer.invoke("cf:key-status"),
+  clearCFKey: () => ipcRenderer.invoke("cf:clear-key"),
+  testCFKey: () => ipcRenderer.invoke("cf:test-key"),
+  openCFDash: () => ipcRenderer.invoke("app:open-url", { url: "https://dash.cloudflare.com/profile/api-tokens" }),
+  // v1.0.38: preferensi penyedia & kualitas poster (disimpan lokal)
+  getAIPrefs: () => ipcRenderer.invoke("ai:get-prefs"),
+  setAIPrefs: (prefs) => ipcRenderer.invoke("ai:set-prefs", prefs),
 });
