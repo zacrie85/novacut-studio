@@ -35,9 +35,15 @@ interface NovacutFS {
   shutdownPC?: () => Promise<SaveResult>;
 }
 
-/** v1.0.31: API AI dari main process (z-ai-web-dev-sdk) — opsional, gagal = fallback lokal */
+/** v1.0.31: API AI dari main process (z-ai-web-dev-sdk) — opsional, gagal = fallback lokal.
+ * v1.0.36: kunci API publik Z.ai milik pengguna + tes koneksi + buka halaman kunci. */
 interface NovacutAI {
   posterAI?: (image: string, prompt: string, size: string) => Promise<{ ok: boolean; image?: string; error?: string }>;
+  setAIKey?: (apiKey: string) => Promise<{ ok: boolean; error?: string }>;
+  getAIKeyStatus?: () => Promise<{ hasKey: boolean }>;
+  clearAIKey?: () => Promise<{ ok: boolean; error?: string }>;
+  testAIKey?: () => Promise<{ ok: boolean; error?: string }>;
+  openAIKeyPage?: () => Promise<{ ok: boolean; error?: string }>;
 }
 
 declare global {

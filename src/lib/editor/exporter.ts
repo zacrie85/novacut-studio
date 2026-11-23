@@ -7,7 +7,7 @@
 //  2) MODE KOMPATIBEL: rekam real-time via MediaRecorder (jalur lama).
 // Fitur: cover otomatis, teks judul/deskripsi/part, subtitle AI (bahasa Indonesia).
 
-import { grabFrame, aiRecommendTemplates, analyzeVideoFrames, buildPosterPrompt, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, posterFallbackDataURL, posterTimeRange, renderCoverToDataURL, aiPosterizeDataURL } from "./covers";
+import { bersihkanJudul, grabFrame, aiRecommendTemplates, analyzeVideoFrames, buildPosterPrompt, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, posterFallbackDataURL, posterTimeRange, renderCoverToDataURL, aiPosterizeDataURL } from "./covers";
 import { COVER_TEMPLATES, partLabel, slugify, uid } from "./constants";
 import { engine } from "./engine";
 import { adjustRangesToSilence, exportRangeFast, fastSupported, AudioDecodeCache } from "./fastExport";
@@ -756,7 +756,7 @@ export async function runExport() {
 async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: number): Promise<MediaAsset | undefined> {
   const st = useEditor.getState();
   if (st.cover.bgStyle !== "hitam" && (!sourceAsset || sourceAsset.type !== "video")) return undefined;
-  const title = st.texts.title || sourceAsset?.name.replace(/\.[^.]+$/, "") || "Video";
+  const title = bersihkanJudul(st.texts.title || sourceAsset?.name.replace(/\.[^.]+$/, "") || "Video");
   const { width, height } = st.project;
 
   // Latar hitam polos — pilihan pengguna, tanpa adegan video
@@ -867,7 +867,7 @@ export async function ensureCoverAsset(sourceAsset: MediaAsset | undefined, forc
     const m = st.assets.find((a) => a.id === st.cover.manualAssetId);
     if (!m) return undefined;
     const { width, height } = st.project;
-    const title = st.texts.title || m.name.replace(/\.[^.]+$/, "") || "Judul Video";
+    const title = bersihkanJudul(st.texts.title || m.name.replace(/\.[^.]+$/, "") || "Judul Video");
     const dataUrl = st.cover.manualPlain
       ? await plainCoverDataURL(m.url, width, height, st.cover.frameStyle)
       : renderCoverToDataURL({ img: await loadImage(m.url), title, template: COVER_TEMPLATES.find((t) => t.id === st.cover.templateId) ?? COVER_TEMPLATES[0], frame: st.cover.frameStyle }, width, height);
@@ -937,7 +937,7 @@ export async function regenCoverWithFrame(prevFrame: CoverFrameStyle = "none"): 
       // mode gambar unggahan — bangun ulang dari gambar asli pengguna
       const m = assets.find((a) => a.id === cover.manualAssetId);
       if (!m) return false;
-      const title = texts.title || m.name.replace(/\.[^.]+$/, "") || "Judul Video";
+      const title = bersihkanJudul(texts.title || m.name.replace(/\.[^.]+$/, "") || "Judul Video");
       const dataUrl = cover.manualPlain
         ? await plainCoverDataURL(m.url, width, height, frame)
         : renderCoverToDataURL({ img: await loadImage(m.url), title, template: COVER_TEMPLATES.find((t) => t.id === cover.templateId) ?? COVER_TEMPLATES[0], frame }, width, height);

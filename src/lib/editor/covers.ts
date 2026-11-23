@@ -793,16 +793,26 @@ export function aiRecommendTemplates(title: string, brightness: number, count = 
 
 // ===== v1.0.35: POSTER HOLLYWOOD AI (frame adegan video + prompt → poster sinematik) =====
 
+/** v1.0.36: bersihkan judul dari kode sampah yang menempel di nama file video —
+ * mis. "KONGLOMERAT... SEKETIK. [42TZYEQ7MOK]" → kode bracket alfanumerik dibuang,
+ * sisa pemisah kosong dipangkas. Judul yang diketik pengguna sendiri tak tersentuh
+ * selama tak membawa pola kode bracket. */
+export function bersihkanJudul(s: string): string {
+  let t = (s || "").replace(/\[[0-9A-Za-z_-]{4,}\]/g, " ").replace(/\s*[_|\-–—]\s*$/g, "");
+  t = t.replace(/\s{2,}/g, " ").trim();
+  return t || (s || "").trim();
+}
+
 /** Prompt DEFAULT pilihan pengguna. Judul video disisipkan otomatis sebagai judul poster. */
 export const POSTER_PROMPT_DEFAULT =
-  "Rubahlah gambar ini menjadi poster untuk sebuah film Hollywood. Buat poster dengan gaya modern sinematik";
+  "Rubahlah gambar ini menjadi poster untuk sebuah film Hollywood. Buat poster dengan gaya modern sinematik, tanpa takarir video, tanpa watermark";
 
 /** Rakit prompt final: prompt manual pengguna ATAU default + judul video, lalu
  * tambahkan ATURAN MARGIN (semua tulisan di dalam area gambar — tidak terpotong tepi). */
 export function buildPosterPrompt(custom: string | undefined, title: string): string {
-  const judul = (title || "").trim();
+  const judul = bersihkanJudul((title || "").trim());
   const dasar = (custom || "").trim() || (judul ? `${POSTER_PROMPT_DEFAULT} dengan menggunakan judul "${judul}" sebagai judul di poster` : POSTER_PROMPT_DEFAULT);
-  return `${dasar}. PENTING: semua tulisan pada poster harus berada di dalam area gambar dan diberi jarak aman (margin) dari tepi — tidak boleh terpotong di tepi kiri, kanan, atas, atau bawah.`;
+  return `${dasar}. PENTING: semua tulisan pada poster harus berada di dalam area gambar dan diberi jarak aman (margin) dari tepi — tidak boleh terpotong di tepi kiri, kanan, atas, atau bawah. Jangan menulis ulang takarir, caption, atau watermark dari gambar sumber.`;
 }
 
 /** Poster AI: kirim frame (dataURL) + prompt ke model gambar lewat Electron

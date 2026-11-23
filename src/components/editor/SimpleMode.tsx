@@ -14,7 +14,8 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useEditor } from "@/lib/editor/store";
 import { fmtEta, fmtSize, fmtTime } from "@/lib/editor/constants";
-import { COVER_FRAMES, POSTER_PROMPT_DEFAULT } from "@/lib/editor/covers";
+import { bersihkanJudul, COVER_FRAMES, POSTER_PROMPT_DEFAULT } from "@/lib/editor/covers";
+import AIKeyCard from "./AIKeyCard";
 import { ensureCoverAsset, regenAllCoverPrompts, regenCoverWithFrame, runBatchExport, triggerDownload } from "@/lib/editor/exporter";
 import type { CoverConfig, CoverFrameStyle } from "@/lib/editor/types";
 import { FramePicker } from "./FramePicker";
@@ -160,7 +161,7 @@ export function SimpleMode() {
   const firstSel = selected[0];
   // Langkah TEKS: selaraskan judul/deskripsi/label dengan setelan langkah "Atur"
   // (sama seperti yang dipakai saat render) agar pratinjau 100% representatif.
-  const autoName = firstSel ? firstSel.name.replace(/\.[^.]+$/, "") : "";
+  const autoName = firstSel ? bersihkanJudul(firstSel.name.replace(/\.[^.]+$/, "")) : "";
   useEffect(() => {
     if (step !== 3) return;
     const title = pl.autoTitle ? autoName : pl.titleCustom.trim() || autoName;
@@ -431,7 +432,7 @@ export function SimpleMode() {
                                 void ensureCoverAsset(videos[0], true).then((id) => {
                                   setPosterMaking(false);
                                   if (id) toast({ title: "Poster AI siap ✔", description: "Poster tampil di pratinjau dan dipakai saat export." });
-                                  else toast({ title: "AI gagal — pakai cadangan", description: "Cover memakai frame ter-grade; cek internet/kredensial AI." });
+                                  else toast({ title: "AI gagal — pakai cadangan", description: "Cover memakai frame ter-grade. Pasang/cek Kunci API Poster AI lalu coba lagi." });
                                 });
                               }}
                               disabled={posterMaking || !videos[0]}
@@ -456,6 +457,7 @@ export function SimpleMode() {
                               </button>
                             )}
                           </div>
+                          <AIKeyCard />
                         </div>
                       )}
                     </div>

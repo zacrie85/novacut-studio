@@ -27,6 +27,12 @@ contextBridge.exposeInMainWorld("novacutFS", {
 
 // v1.0.31: API AI (opsional) — poster sinematik via z-ai-web-dev-sdk di main process.
 // Bila gagal/tanpa kredensial -> { ok:false } dan renderer lanjut memakai grade lokal.
+// v1.0.36: kunci API publik Z.ai milik pengguna (disimpan lokal) + tes koneksi.
 contextBridge.exposeInMainWorld("novacutAI", {
   posterAI: (image, prompt, size) => ipcRenderer.invoke("ai:poster", { image, prompt, size }),
+  setAIKey: (apiKey) => ipcRenderer.invoke("ai:set-key", { apiKey }),
+  getAIKeyStatus: () => ipcRenderer.invoke("ai:key-status"),
+  clearAIKey: () => ipcRenderer.invoke("ai:clear-key"),
+  testAIKey: () => ipcRenderer.invoke("ai:test-key"),
+  openAIKeyPage: () => ipcRenderer.invoke("app:open-url", { url: "https://z.ai/manage-apikey/apikey-list" }),
 });

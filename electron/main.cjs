@@ -191,24 +191,165 @@ function registerFSIpc() {
     }
   });
 
-  // v1.0.31: POSTER AI SINEMATIK — frame cover diubah jadi latar poster dramatis
-  // lewat z-ai-web-dev-sdk (image edit). Gagal/limit/tanpa kredensial = ok:false,
-  // renderer otomatis lanjut memakai grade lokal (cover tetap jadi tanpa internet).
+  // ===== v1.0.36: MESIN POSTER AI PUBLIK (Z.ai API + kunci milik pengguna) =====
+  // v1.0.35 sebelumnya hanya jalan bila ada .z-ai-config (internal) — di PC pengguna
+  // file itu tidak ada, jadi AI TIDAK PERNAH jalan (selalu fallback). Kini: pengguna
+  // menempel kunci API Z.ai sendiri (disimpan lokal), aplikasi memanggil API publik:
+  //   frame → glm-5.3-flashx (vision: deskripsi adegan) → glm-image hd (poster utuh,
+  //   judul ditulis AI). Tanpa kunci → jalur SDK lama → fallback grade lokal.
+  const ZAI_PUB = "https://api.z.ai/api/paas/v4";
+  let lastAIPosterError = "";
+  const keyPath = path.join(app.getPath("userData"), "zai_key.json");
+  const readAIKey = () => {
+    try {
+      return String(JSON.parse(fs.readFileSync(keyPath, "utf-8")).apiKey || "").trim();
+    } catch {
+      return "";
+    }
+  };
+  const zaiPubFetch = async (endpoint, key, body) => {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 150000);
+    try {
+      const res = await fetch(`${ZAI_PUB}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = json?.error?.message || json?.message || `HTTP ${res.status}`;
+        throw new Error(String(msg).slice(0, 160));
+      }
+      return json;
+    } finally {
+      clearTimeout(to);
+    }
+  };
+  // Vision: deskripsikan adegan frame (subjek, suasana, cahaya, warna) untuk
+  // menjadi dasar lukisan poster — takarir/watermark pada frame diabaikan.
+  const pubDescribeScene = async (dataUrl, key) => {
+    const json = await zaiPubFetch("/chat/completions", key, {
+      model: "glm-5.3-flashx",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "image_url", image_url: { url: dataUrl } },
+            {
+              type: "text",
+              text:
+                "Describe this video frame as a cinematic movie-poster scene brief in English (max 100 words): " +
+                "main subject appearance, pose, emotion, setting, lighting, color mood. " +
+                "IGNORE any burned-in subtitles, captions or watermarks — do not mention them.",
+            },
+          ],
+        },
+      ],
+      max_tokens: 300,
+    });
+    return String(json?.choices?.[0]?.message?.content || "").trim();
+  };
+  // glm-image: gambar poster Hollywood utuh (hd). Respons = URL sementara → unduh → base64.
+  const pubGeneratePoster = async (prompt, key, size) => {
+    const json = await zaiPubFetch("/images/generations", key, {
+      model: "glm-image",
+      prompt: prompt.slice(0, 4000),
+      quality: "hd",
+      size,
+    });
+    const url = json?.data?.[0]?.url;
+    if (!url) throw new Error("respons gambar kosong");
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 60000);
+    try {
+      const r = await fetch(url, { signal: ctrl.signal });
+      if (!r.ok) throw new Error(`unduh poster gagal HTTP ${r.status}`);
+      return `data:image/png;base64,${Buffer.from(await r.arrayBuffer()).toString("base64")}`;
+    } finally {
+      clearTimeout(to);
+    }
+  };
+  const posterPromptPublik = (prompt, deskripsi) =>
+    `Create ONE professional modern Hollywood movie poster, cinematic style. Follow these user instructions: ${prompt}. ` +
+    `Scene basis (from the user's video frame): ${deskripsi}. ` +
+    `Rules: all text fully inside the image with safe margins from every edge; the movie title must be large, dramatic and spelled EXACTLY as given in the instructions; ` +
+    `no subtitles, no captions, no watermarks, no timestamps; single cohesive composition, dramatic lighting.`;
+
+  ipcMain.handle("ai:set-key", (_e, payload) => {
+    try {
+      const key = String(payload?.apiKey || "").trim();
+      if (!key) return { ok: false, error: "kunci kosong" };
+      fs.mkdirSync(path.dirname(keyPath), { recursive: true });
+      fs.writeFileSync(keyPath, JSON.stringify({ apiKey: key }), { mode: 0o600 });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
+    }
+  });
+  ipcMain.handle("ai:key-status", () => ({ hasKey: !!readAIKey() }));
+  ipcMain.handle("ai:clear-key", () => {
+    try {
+      fs.rmSync(keyPath, { force: true });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
+    }
+  });
+  // Tes kunci: chat ping murah — validasi kunci + saldo tanpa menggambar poster.
+  ipcMain.handle("ai:test-key", async () => {
+    const key = readAIKey();
+    if (!key) return { ok: false, error: "kunci belum dipasang" };
+    try {
+      await zaiPubFetch("/chat/completions", key, {
+        model: "glm-5.3-flashx",
+        messages: [{ role: "user", content: "Reply with exactly: OK" }],
+        max_tokens: 5,
+      });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
+    }
+  });
+  ipcMain.handle("app:open-url", (_e, payload) => {
+    const url = String(payload?.url || "");
+    if (!/^https:\/\/(www\.)?(z\.ai|docs\.z\.ai|bigmodel\.cn)/.test(url)) return { ok: false, error: "url tidak diizinkan" };
+    return shell.openExternal(url).then(() => ({ ok: true })).catch((err) => ({ ok: false, error: String(err) }));
+  });
+
+  // POSTER AI — jalur utama: kunci pengguna → API publik (vision + glm-image);
+  // tanpa kunci: jalur SDK lama (lingkungan yg punya .z-ai-config); keduanya
+  // gagal → ok:false, renderer lanjut memakai grade lokal (cover tetap jadi).
   ipcMain.handle("ai:poster", async (_event, payload) => {
+    const prompt = String(payload?.prompt || "cinematic movie poster");
+    const image = String(payload?.image || "");
+    const sizePub = payload?.size === "768x1344" ? "960x1728" : "1728x960";
+    const key = readAIKey();
+    if (key) {
+      try {
+        const deskripsi = await pubDescribeScene(image, key);
+        const poster = await pubGeneratePoster(posterPromptPublik(prompt, deskripsi || "dramatic cinematic scene"), key, sizePub);
+        if (poster) return { ok: true, image: poster, via: "publik" };
+      } catch (err) {
+        // kunci ada tapi gagal (saldo/koneksi) → lanjut coba jalur SDK bila ada
+        lastAIPosterError = String((err && err.message) || err).slice(0, 200);
+      }
+    }
     try {
       const mod = await import("z-ai-web-dev-sdk");
       const ZAI = mod.default ?? mod;
       const zai = await ZAI.create();
       const res = await zai.images.generations.edit({
-        prompt: String(payload?.prompt || "cinematic movie poster").slice(0, 1200),
-        images: [{ url: String(payload?.image || "") }],
+        prompt: prompt.slice(0, 1200),
+        images: [{ url: image }],
         size: payload?.size === "768x1344" ? "768x1344" : "1344x768",
       });
       const b64 = res?.data?.[0]?.base64;
-      if (!b64) return { ok: false, error: "respons AI kosong" };
-      return { ok: true, image: `data:image/png;base64,${b64}` };
+      if (!b64) return { ok: false, error: lastAIPosterError || "respons AI kosong" };
+      return { ok: true, image: `data:image/png;base64,${b64}`, via: "sdk" };
     } catch (err) {
-      return { ok: false, error: String((err && err.message) || err).slice(0, 200) };
+      return { ok: false, error: (lastAIPosterError || String((err && err.message) || err)).slice(0, 200) };
     }
   });
 

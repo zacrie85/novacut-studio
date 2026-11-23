@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { COVER_TEMPLATES, fmtTime, partLabel } from "@/lib/editor/constants";
 import type { CoverTemplate } from "@/lib/editor/constants";
 import { aiRecommendTemplates, analyzeVideoFrames, COVER_FRAMES, drawCoverFrame, grabFrame, loadImage, plainCoverDataURL, POSTER_PROMPT_DEFAULT, posterTimeRange, renderCover, renderCoverToDataURL } from "@/lib/editor/covers";
+import AIKeyCard from "../AIKeyCard";
 import { useEditor } from "@/lib/editor/store";
 import { uid } from "@/lib/editor/constants";
 import { ensureCoverAsset, regenCoverWithFrame } from "@/lib/editor/exporter";
@@ -371,7 +372,7 @@ export function CoverPanel() {
                       void ensureCoverAsset(source, true).then((id) => {
                         setBusy(null);
                         if (id) toast({ title: "Poster AI siap ✔", description: "Pratinjau menampilkan poster hasil AI." });
-                        else toast({ title: "AI gagal — cadangan dipakai", description: "Frame ter-grade dibuat; cek internet/kredensial AI." });
+                        else toast({ title: "AI gagal — cadangan dipakai", description: "Frame ter-grade dibuat. Pasang/cek Kunci API Poster AI di panel ini lalu coba lagi." });
                       });
                     }}
                     disabled={busy === "poster" || !source}
@@ -395,6 +396,7 @@ export function CoverPanel() {
                     ? "Judul & deskripsi ditulis mesin render DI ATAS poster — pakai bila prompt manualmu tidak menambahkan judul."
                     : "AI sudah menulis judul di poster — overlay judul otomatis dilewati agar tidak dobel; hanya badge Part kecil di bawah."}
                 </div>
+                <AIKeyCard />
               </>
             ) : (
               <div className="text-[11px] leading-relaxed text-gray-600">Latar hitam polos dengan tulisan judul — seperti gaya trailer klasik.</div>
