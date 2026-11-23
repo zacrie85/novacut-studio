@@ -7,8 +7,7 @@
 //  2) MODE KOMPATIBEL: rekam real-time via MediaRecorder (jalur lama).
 // Fitur: cover otomatis, teks judul/deskripsi/part, subtitle AI (bahasa Indonesia).
 
-import { grabFrame, aiRecommendTemplates, analyzeVideoFrames, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, posterTimeRange, renderCoverToDataURL, aiPosterizeDataURL } from "./covers";
-import { posterStyleById, type PosterStyle } from "./posterStyles";
+import { grabFrame, aiRecommendTemplates, analyzeVideoFrames, buildPosterPrompt, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, posterFallbackDataURL, posterTimeRange, renderCoverToDataURL, aiPosterizeDataURL } from "./covers";
 import { COVER_TEMPLATES, partLabel, slugify, uid } from "./constants";
 import { engine } from "./engine";
 import { adjustRangesToSilence, exportRangeFast, fastSupported, AudioDecodeCache } from "./fastExport";
@@ -396,30 +395,47 @@ export function buildSplitProject(
     );
     const tt = ensureTextTrack(tracks);
     tracks = tt.tracks;
+    // v1.0.35: poster AI SUDAH menulis judul di gambar (sesuai prompt) → overlay
+    // judul besar dilewati agar tidak dobel; hanya badge Part kecil di bawah.
+    // Bila pengguna mengaktifkan "Overlay Judul" (posterTitleOverlay), teks penuh tetap dibuat.
+    const aiPoster = !!st.assets.find((a) => a.id === st.cover.coverAssetId)?.aiMade && !st.cover.posterTitleOverlay;
     clips.push(
       baseClip({
         trackId: tt.textTrack.id,
         kind: "text",
         start: 0.15,
         duration: Math.max(1.2, shift - 0.25),
-        text: {
-          content: st.texts.title || st.project.name,
-          sub: `${st.texts.description ? st.texts.description + "  ·  " : ""}${label}`,
-          size: clampPct(titleSize * 1.5, 0.063),
-          subSize: clampPct(descSize * 1.15, 0.03),
-          color: "#ffffff",
-          font: fontAuto,
-          subFont: fontAuto,
-          anim: "slam",
-          pos: "center",
-          bg: "gradient",
-          stroke: true,
-          // posisi dari kolom geser di menu Teks
-          offX: clampOffPct(st.texts.titleX),
-          offY: clampOffPct(st.texts.titleY),
-          subOffX: clampOffPct(st.texts.descX),
-          subOffY: clampOffPct(st.texts.descY),
-        },
+        text: aiPoster
+          ? {
+              content: label,
+              size: clampPct(descSize * 1.15, 0.03),
+              color: "#ffffff",
+              font: fontAuto,
+              anim: "slam",
+              pos: "bottom",
+              bg: "bar",
+              stroke: true,
+              offX: clampOffPct(st.texts.descX),
+              offY: clampOffPct(st.texts.descY),
+            }
+          : {
+              content: st.texts.title || st.project.name,
+              sub: `${st.texts.description ? st.texts.description + "  ·  " : ""}${label}`,
+              size: clampPct(titleSize * 1.5, 0.063),
+              subSize: clampPct(descSize * 1.15, 0.03),
+              color: "#ffffff",
+              font: fontAuto,
+              subFont: fontAuto,
+              anim: "slam",
+              pos: "center",
+              bg: "gradient",
+              stroke: true,
+              // posisi dari kolom geser di menu Teks
+              offX: clampOffPct(st.texts.titleX),
+              offY: clampOffPct(st.texts.titleY),
+              subOffX: clampOffPct(st.texts.descX),
+              subOffY: clampOffPct(st.texts.descY),
+            },
       })
     );
   }
@@ -782,35 +798,34 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
   }
   const tpl = aiRecommendTemplates(title, brightness, 1)[0] ?? COVER_TEMPLATES[0];
   const posterOn = st.cover.bgStyle === "poster";
-  let posterStyle: PosterStyle | undefined;
-  if (posterOn) posterStyle = posterStyleById(st.cover.posterStyleId || "acak", title);
-  let img = frameUrl ? await loadImage(frameUrl).catch(() => null) : null;
-  if (posterOn && img && frameUrl && st.cover.posterAI) {
-    const aiUrl = await aiPosterizeDataURL(frameUrl, posterStyle!.ai, width > height ? "1344x768" : "768x1344");
-    if (aiUrl) img = await loadImage(aiUrl).catch(() => img);
-  }
-  // v1.0.33: JAMINAN COVER BUKAN HITAM — bila frame video tak terbaca sama sekali:
-  // mode poster memakai latar GRADASI SINEMATIK gayanya sendiri (furnitur tetap
-  // lengkap); mode adegan memakai gradasi sebagai gambar dasar template.
-  if (!img && posterOn) {
-    const gUrl = renderCoverToDataURL({ img: null, title: "", template: tpl, bgStyle: "poster", posterStyle, frame: st.cover.frameStyle }, width, height);
+  // v1.0.35: POSTER HOLLYWOOD AI — frame adegan (detik 5–60) + prompt → poster
+  // sinematik utuh dibuat AI (judul ditulis AI di poster sesuai prompt). Gagal AI
+  // → fallback frame ter-grade tanpa teks (judul ditulis overlay mesin render).
+  if (posterOn) {
+    if (frameUrl) {
+      const size = width > height ? "1344x768" : "768x1344";
+      const prompt = buildPosterPrompt(st.cover.posterPrompt, title);
+      const aiUrl = await aiPosterizeDataURL(frameUrl, prompt, size);
+      if (aiUrl) {
+        return { id: uid("as"), name: `Cover AI - ${title}`, type: "image", url: aiUrl, duration: 0, width, height, aiMade: true };
+      }
+      const fbUrl = await posterFallbackDataURL(frameUrl, width, height);
+      if (fbUrl) {
+        return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: fbUrl, duration: 0, width, height, aiMade: false };
+      }
+    }
+    // tanpa frame sama sekali → gradasi gelap sebagai dasar (aiMade=false → overlay judul aktif)
+    const gUrl = renderCoverToDataURL({ img: null, title: "", template: tpl, frame: st.cover.frameStyle }, width, height);
     if (!gUrl) return undefined;
-    return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: gUrl, duration: 0, width, height };
+    return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: gUrl, duration: 0, width, height, aiMade: false };
   }
+  let img = frameUrl ? await loadImage(frameUrl).catch(() => null) : null;
   if (!img) img = await gradientImage(width, height);
   if (!img) return undefined;
   // cover dibuat TANPA tulisan (latar saja) — judul/deskripsi/part ditulis oleh
   // clip teks di buildSplitProject agar judul panjang otomatis wrap & tak terpotong
   // v1.0.19: bingkai cover ikut ditanam sesuai pilihan pengguna
-  // v1.0.31: MODE POSTER HOLLYWOOD — pilih gaya (acak per judul / pilihan pengguna),
-  // opsional tingkatkan frame dgn AI Sinematik (fallback otomatis ke grade lokal)
-  const dataUrl = renderCoverToDataURL({ img, title: "", template: tpl, bgStyle: posterOn ? "poster" : undefined, posterStyle, frame: st.cover.frameStyle }, width, height);
-  if (!dataUrl && posterOn) {
-    // render gagal (jarang) — poster tetap tampil lewat latar gradasi gaya
-    const gUrl = renderCoverToDataURL({ img: null, title: "", template: tpl, bgStyle: "poster", posterStyle, frame: st.cover.frameStyle }, width, height);
-    if (!gUrl) return undefined;
-    return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: gUrl, duration: 0, width, height };
-  }
+  const dataUrl = renderCoverToDataURL({ img, title: "", template: tpl, frame: st.cover.frameStyle }, width, height);
   if (!dataUrl) return undefined;
   return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: dataUrl, duration: 0, width, height };
 }
@@ -821,11 +836,11 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
  * selamanya walau pengguna sudah ganti gaya → cover poster keluar hitam. */
 export function coverSignature(c: CoverConfig): string {
   return [
-    "v32",
+    "v35",
     c.mode,
     c.bgStyle,
-    c.posterStyleId ?? "acak",
-    c.posterAI ? "ai" : "lokal",
+    (c.posterPrompt ?? "").trim() ? "prompt" : "default",
+    c.posterTitleOverlay ? "ovl" : "ov0",
     c.templateId,
     c.frameStyle ?? "none",
     c.bgScope,
@@ -867,6 +882,37 @@ export async function ensureCoverAsset(sourceAsset: MediaAsset | undefined, forc
   useEditor.getState().addAsset(asset);
   useEditor.getState().setCover({ coverAssetId: asset.id, previewUrl: asset.url, frameTime: 0, coverSig: sig });
   return asset.id;
+}
+
+/** v1.0.35: TOMBOL "Terapkan ke semua video" — buat poster AI untuk SETIAP video
+ * di daftar export memakai prompt yang aktif sekarang (default/manual). Hasil masuk
+ * cache cover batch → saat export poster yang persis sama dipakai ulang (tidak
+ * dibuat dua kali). Mengembalikan jumlah poster yang berhasil dibuat. */
+export async function regenAllCoverPrompts(): Promise<number> {
+  const st = useEditor.getState();
+  const ids = st.exportList.length ? st.exportList : st.clips.map((c) => c.assetId).filter((x): x is string => !!x);
+  const vids = st.assets.filter((a) => a.type === "video" && ids.includes(a.id));
+  if (!vids.length) return 0;
+  let ok = 0;
+  let last: MediaAsset | undefined;
+  for (let i = 0; i < vids.length; i++) {
+    useEditor.getState().patchExportState({ label: `Poster AI ${i + 1}/${vids.length}: ${vids[i].name.slice(0, 44)}...` });
+    try {
+      const cov = await makeCoverAssetCached(vids[i]);
+      if (cov) {
+        ok++;
+        last = cov;
+        useEditor.getState().addAsset(cov);
+        useEditor.getState().setCover({ coverAssetId: cov.id, previewUrl: cov.url, frameTime: 0, coverSig: coverSignature(useEditor.getState().cover) });
+      }
+    } catch {
+      /* lanjut video berikutnya */
+    }
+  }
+  // pratinjau menampilkan poster TERAKHIR yang dibuat (video urut atas di daftar)
+  if (last) useEditor.getState().setCover({ previewUrl: last.url });
+  useEditor.getState().patchExportState({ label: `Poster AI selesai: ${ok}/${vids.length} video` });
+  return ok;
 }
 
 /** v1.0.19: buat ulang cover yang SUDAH ADA setelah gaya bingkai diubah, agar
@@ -963,7 +1009,7 @@ function coverCacheKey(a: MediaAsset | undefined, ft?: number): string {
   const st = useEditor.getState();
   // v1.0.33: gaya cover ikut kunci — dulu cover cache gaya lama bisa dipakai
   // lagi setelah pengguna ganti gaya (poster/hitam/adegan bertukar)
-  return `${a?.id ?? "-"}|${typeof ft === "number" ? ft.toFixed(2) : "auto"}|${st.project.width}x${st.project.height}|${st.cover.frameStyle ?? "none"}|${st.cover.mode}|${st.cover.bgStyle}|${st.cover.posterStyleId ?? "acak"}|${st.cover.posterAI ? "ai" : "lokal"}`;
+  return `${a?.id ?? "-"}|${typeof ft === "number" ? ft.toFixed(2) : "auto"}|${st.project.width}x${st.project.height}|${st.cover.frameStyle ?? "none"}|${st.cover.mode}|${st.cover.bgStyle}|${(st.cover.posterPrompt ?? "").trim() ? "prompt" : "default"}`;
 }
 
 async function makeCoverAssetCached(a: MediaAsset | undefined, ft?: number): Promise<MediaAsset | undefined> {

@@ -134,7 +134,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   snap: true,
   texts: { title: "", description: "", labelStyle: "Part", parts: 5 },
   textPreview: true,
-  cover: { frameTime: 0, templateId: "impact--cyber", duration: 3, useAI: true, mode: "auto" as const, bgStyle: "adegan" as const, bgScope: "sama" as const, frameStyle: "none" as const, posterStyleId: "acak", posterAI: false },
+  cover: { frameTime: 0, templateId: "impact--cyber", duration: 3, useAI: true, mode: "auto" as const, bgStyle: "adegan" as const, bgScope: "sama" as const, frameStyle: "none" as const, posterPrompt: "" },
   exportSettings: {
     mode: "split",
     splitBy: "duration",
@@ -479,7 +479,7 @@ if (typeof window !== "undefined") {
 // hook uji otomatis (HANYA development — di-build production baris ini hilang):
 // memaparkan mesin export langsung untuk harness E2E tanpa lewat UI
 if (process.env.NODE_ENV !== "production" && typeof window !== "undefined") {
-  void Promise.all([import("./fastExport"), import("./turboExport"), import("./titleFrames"), import("./engine"), import("./exporter"), import("./covers"), import("./posterStyles"), import("./constants")]).then(([fe, te, tf, en, ex, cov, ps, cs]) => {
+  void Promise.all([import("./fastExport"), import("./turboExport"), import("./titleFrames"), import("./engine"), import("./exporter"), import("./covers"), import("./constants")]).then(([fe, te, tf, en, ex, cov, cs]) => {
     (window as unknown as Record<string, unknown>).__NOVA_TEST__ = {
       exportRangeFast: fe.exportRangeFast,
       exportSegmentTurbo: te.exportSegmentTurbo,
@@ -490,9 +490,8 @@ if (process.env.NODE_ENV !== "production" && typeof window !== "undefined") {
       drawTextOverlay: en.drawTextOverlay,
       // v1.0.25: jalur batch penuh (buildBatchClip = cangkok POTONG MULAI & AKHIR)
       runBatchExport: ex.runBatchExport,
-      // v1.0.34: modul cover utk E2E end-to-end (grab frame, gaya poster, render)
+      // v1.0.34: modul cover utk E2E end-to-end (grab frame, prompt poster, render)
       COVERS: cov,
-      POSTER_STYLES: ps,
       CONSTANTS: cs,
     };
   });

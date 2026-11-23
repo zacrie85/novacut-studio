@@ -17,6 +17,9 @@ export interface MediaAsset {
   /** v1.0.17: objek File asli (tidak terserialisasi) — mesin Turbo membaca
    * film lewat akses acak File.slice tanpa memuat utuh ke memori */
   file?: File;
+  /** v1.0.35: true bila gambar ini poster hasil AI (judul sudah ditulis AI di
+   * poster → overlay judul mesin render dilewati agar tidak dobel) */
+  aiMade?: boolean;
 }
 
 export interface Track {
@@ -150,12 +153,14 @@ export interface CoverConfig {
   manualAssetId?: string; // asset gambar unggahan (PNG/JPG)
   manualPlain?: boolean; // mode manual: gambar apa adanya tanpa teks template
   /** Latar cover mode otomatis: "adegan" = gambar dari adegan video; "hitam" = hitam polos;
-   *  v1.0.31: "poster" = Poster Hollywood (grade sinematik + furnitur, 99 gaya referensi) */
+   *  v1.0.35: "poster" = POSTER HOLLYWOOD AI — adegan video + prompt → poster sinematik dibuat AI */
   bgStyle: "adegan" | "hitam" | "poster";
-  /** v1.0.31: gaya poster Hollywood — "acak" = dipilih otomatis per judul (deterministik) */
-  posterStyleId?: string;
-  /** v1.0.31: tingkatkan latar poster dgn AI (perlu internet; otomatis fallback ke grade lokal) */
-  posterAI?: boolean;
+  /** v1.0.35: prompt AI poster. Kosong/undefined = prompt default (poster Hollywood modern sinematik
+   * dgn judul video di poster). Diisi = prompt manual pengguna (aturan margin teks tetap ditambahkan). */
+  posterPrompt?: string;
+  /** v1.0.35: tulis JUDUL+deskripsi overlay mesin render di bawah poster AI (default MATI karena
+   * AI sudah menulis judul di poster). Aktifkan bila prompt manual tidak menambahkan judul. */
+  posterTitleOverlay?: boolean;
   /** Penyebaran latar saat export & split: "sama" = 1 latar untuk semua bagian; "beda" = tiap bagian adegan berbeda */
   bgScope: "sama" | "beda";
   /** v1.0.19: bingkai cover (klasik/modern/futuristik) — digambar transparan 75% mengelilingi gambar cover */

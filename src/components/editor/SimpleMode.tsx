@@ -14,9 +14,8 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useEditor } from "@/lib/editor/store";
 import { fmtEta, fmtSize, fmtTime } from "@/lib/editor/constants";
-import { COVER_FRAMES } from "@/lib/editor/covers";
-import { POSTER_STYLES, posterStyleById } from "@/lib/editor/posterStyles";
-import { ensureCoverAsset, regenCoverWithFrame, runBatchExport, triggerDownload } from "@/lib/editor/exporter";
+import { COVER_FRAMES, POSTER_PROMPT_DEFAULT } from "@/lib/editor/covers";
+import { ensureCoverAsset, regenAllCoverPrompts, regenCoverWithFrame, runBatchExport, triggerDownload } from "@/lib/editor/exporter";
 import type { CoverConfig, CoverFrameStyle } from "@/lib/editor/types";
 import { FramePicker } from "./FramePicker";
 import { importFiles } from "@/lib/editor/mediaImport";
@@ -87,6 +86,8 @@ export function SimpleMode() {
   };
 
   const videos = assets.filter((a) => a.type === "video");
+  // v1.0.35: status merender poster AI (menonaktifkan tombol saat berjalan)
+  const [posterMaking, setPosterMaking] = useState(false);
 
   /** v1.0.32: ubah setelan cover + buat ulang cover tersimpan agar gaya baru
    * langsung terpakai (dulu cover lama tetap dipakai di export berikutnya —
@@ -377,7 +378,7 @@ export function SimpleMode() {
                       <input type="range" min={2} max={5} step={0.5} value={settings.coverDuration} onChange={(e) => useEditor.getState().setExportSettings({ coverDuration: Number(e.target.value) })} className="h-1 flex-1 accent-blue-500" aria-label="Durasi cover" />
                       <span className="w-9 text-right font-mono text-blue-300">{settings.coverDuration}s</span>
                     </div>
-                    {/* v1.0.31: GAYA COVER — template klasik atau Poster Hollywood (99 referensi genre) */}
+                    {/* v1.0.35: GAYA COVER — template klasik atau POSTER HOLLYWOOD AI (frame video + prompt → poster sinematik) */}
                     <div className="space-y-1.5">
                       <div className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Gaya Cover</div>
                       <div className="grid grid-cols-2 gap-1.5">
@@ -391,31 +392,70 @@ export function SimpleMode() {
                           onClick={() => changeCover({ bgStyle: "poster" })}
                           className={`rounded-md border px-2 py-1.5 text-[11px] font-medium transition ${cover.bgStyle === "poster" ? "border-amber-400 bg-amber-500/15 text-amber-100" : "border-white/10 bg-white/[0.03] text-gray-300 hover:border-amber-500/40"}`}
                         >
-                          🎬 Poster Hollywood
+                          🎬 Poster Hollywood (AI)
                         </button>
                       </div>
                       {cover.bgStyle === "poster" && (
                         <div className="space-y-1.5">
-                          <Select value={cover.posterStyleId || "acak"} onValueChange={(v) => changeCover({ posterStyleId: v })}>
-                            <SelectTrigger className="h-8 border-white/10 bg-white/[0.04] text-xs" aria-label="Gaya poster Hollywood">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className="max-h-64 border-white/10 bg-popover text-xs">
-                              <SelectItem value="acak">🎲 Acak Otomatis per Judul (99 gaya)</SelectItem>
-                              {POSTER_STYLES.map((s) => (
-                                <SelectItem key={s.id} value={s.id}>
-                                  {s.genre} · {s.nama}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          {/* PROMPT AI — kosong = prompt default; diisi = prompt manual pengguna */}
+                          <div className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Prompt Poster AI</div>
+                          <textarea
+                            value={cover.posterPrompt ?? ""}
+                            onChange={(e) => useEditor.getState().setCover({ posterPrompt: e.target.value })}
+                            placeholder={POSTER_PROMPT_DEFAULT + ' dengan menggunakan judul video sebagai judul di poster'}
+                            rows={3}
+                            className="w-full resize-none rounded-md border border-white/10 bg-white/[0.04] px-2 py-1.5 text-[11px] leading-relaxed text-gray-200 placeholder:text-gray-600 focus:border-amber-500/50 focus:outline-none"
+                            aria-label="Prompt poster AI"
+                          />
                           <div className="text-[10px] leading-relaxed text-gray-500">
-                            Gaya: <span className="text-amber-400/90">{posterStyleById(cover.posterStyleId || "acak", videos[0]?.name ?? "").genre} — {posterStyleById(cover.posterStyleId || "acak", videos[0]?.name ?? "").nama}</span> · AI Sinematik: <b>{cover.posterAI ? "aktif" : "mati"}</b>{" — "}
-                            <button className="underline hover:text-gray-300" onClick={() => changeCover({ posterAI: !cover.posterAI })}>
-                              {cover.posterAI ? "matikan" : "aktifkan"}
-                            </button>
+                            {cover.posterPrompt?.trim() ? (
+                              <>
+                                <b className="text-amber-400/90">Prompt manual aktif.</b>{" "}
+                                <button className="underline hover:text-gray-300" onClick={() => useEditor.getState().setCover({ posterPrompt: "" })}>
+                                  kembali ke prompt default
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <b className="text-amber-400/90">Prompt default</b> — poster Hollywood modern sinematik, judul video ditulis AI di poster.
+                              </>
+                            )}{" "}
+                            Adegan diambil dari detik 5–60 video, rasio poster mengikuti rasio video (16:9 / 9:16), tulisan selalu dijaga di dalam tepi gambar.
                           </div>
-                          <div className="text-[10px] leading-relaxed text-gray-500">Grade sinematik + vignette + grain film + furnitur poster di atas; judul film tetap dinamis di bawah. AI Sinematik perlu internet — gagal otomatis pakai grade lokal.</div>
+                          <div className="flex flex-wrap gap-1.5">
+                            <button
+                              onClick={() => {
+                                if (posterMaking) return;
+                                setPosterMaking(true);
+                                toast({ title: "Membuat poster AI…", description: "Adegan video diubah jadi poster Hollywood (10–120 detik)." });
+                                void ensureCoverAsset(videos[0], true).then((id) => {
+                                  setPosterMaking(false);
+                                  if (id) toast({ title: "Poster AI siap ✔", description: "Poster tampil di pratinjau dan dipakai saat export." });
+                                  else toast({ title: "AI gagal — pakai cadangan", description: "Cover memakai frame ter-grade; cek internet/kredensial AI." });
+                                });
+                              }}
+                              disabled={posterMaking || !videos[0]}
+                              className="rounded-md border border-amber-500/40 bg-amber-500/15 px-2 py-1.5 text-[11px] font-semibold text-amber-100 transition hover:border-amber-400 disabled:opacity-50"
+                            >
+                              {posterMaking ? "🎨 Merender poster…" : "🎨 Buat Ulang Poster (AI)"}
+                            </button>
+                            {videos.length > 1 && (
+                              <button
+                                onClick={() => {
+                                  if (posterMaking) return;
+                                  setPosterMaking(true);
+                                  void regenAllCoverPrompts().then((n) => {
+                                    setPosterMaking(false);
+                                    toast({ title: `Poster AI: ${n} video ✔`, description: "Prompt ini dipakai poster semua video yang diproses." });
+                                  });
+                                }}
+                                disabled={posterMaking}
+                                className="rounded-md border border-blue-500/40 bg-blue-500/10 px-2 py-1.5 text-[11px] font-semibold text-blue-100 transition hover:border-blue-400 disabled:opacity-50"
+                              >
+                                ⚡ Terapkan prompt ini ke semua video
+                              </button>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
