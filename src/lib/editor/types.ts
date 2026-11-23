@@ -213,6 +213,13 @@ export interface PlaylistExportConfig {
   autoSub?: boolean;
   /** tingkat akurasi model AI subtitle: ringan (cepat) / sedang / akurat (paling teliti) */
   subLevel?: SubLevel;
+  // ===== v1.0.30: SUBTITLE MANUAL dari file (.srt/.vtt) — burn-in ke hasil export & split =====
+  /** aktifkan subtitle dari file yang dipilih pengguna (menimpa subtitle AI) */
+  subFileOn?: boolean;
+  /** nama file subtitle yang dipilih (tampilan saja) */
+  subFileName?: string;
+  /** cue subtitle hasil parse — waktu SUMBER video (detik); bentuk sama dgn SubSegment */
+  subCues?: { start: number; end: number; text: string }[];
   /** berapa video dirender BERSAMAAN (paralel) 1–5 */
   parallel?: number;
   /** v1.0.16: kualitas hasil — cepat (v1.0.27: 720p, file dijaga ≤ ~50 MB) / ringan (720p, file kecil & tercepat) / tajam (1080p) / maksimal (1080p, bitrate tinggi) */

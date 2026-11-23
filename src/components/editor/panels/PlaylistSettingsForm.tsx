@@ -3,7 +3,7 @@
 // NOVACUT Studio - Form setelan Export Langsung (dipakai di Playlist Export Panel
 // dan di Mode Sederhana langkah 2). Seksi berjudul yang bisa dilipat agar rapi.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Bookmark, BookmarkPlus, Bot, Captions, ChevronDown, Cpu, Monitor, Save, Type, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import { partLabel, LABEL_STYLES } from "@/lib/editor/constants";
 import { deletePlaylistPreset, loadPlaylistPresets, savePlaylistExportConfig, savePlaylistPreset, type PlaylistPreset } from "@/lib/editor/playlistExport";
 import { isDesktopFS } from "@/lib/editor/fsBridge";
 import { modelSizeLabel } from "@/lib/editor/subtitles";
+import { parseSrtOrVtt } from "@/lib/editor/srtParse";
 import { PlaylistFramingControls } from "../FramingControls";
 import { useToast } from "@/hooks/use-toast";
 import type { PlaylistExportConfig } from "@/lib/editor/types";
@@ -41,6 +42,24 @@ export function PlaylistSettingsForm({ showSave = true, hideTitleScreen = false 
   const desktop = isDesktopFS();
   const setPl = (p: Partial<PlaylistExportConfig>) => useEditor.getState().setPlaylistExport(p);
   const contohJudul = useEditor((s) => s.assets.filter((a) => a.type === "video")[0]?.name.replace(/\.[^.]+$/, "")) || "Nama Video";
+
+  // ===== v1.0.30: SUBTITLE MANUAL dari file (.srt/.vtt) — menu Teks =====
+  const subInputRef = useRef<HTMLInputElement>(null);
+  const onSubFile = async (f: File | undefined) => {
+    if (!f) return;
+    try {
+      const cues = parseSrtOrVtt(await f.text());
+      if (!cues.length) {
+        toast({ title: "Subtitle tidak terbaca", description: "File kosong atau format .srt/.vtt tidak dikenali. Pastikan ada baris waktu seperti 00:01:12,000 --> 00:01:15,500." });
+        return;
+      }
+      setPl({ subFileOn: true, subFileName: f.name, subCues: cues });
+      toast({ title: `Subtitle siap ✓ ${f.name}`, description: `${cues.length} baris akan langsung nempel di video hasil export & split.` });
+    } catch (e) {
+      toast({ title: "Gagal membaca file subtitle", description: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  const clearSubFile = () => setPl({ subFileName: undefined, subCues: undefined });
 
   // ===== v1.0.16: PRESET SATU-KLIK =====
   const [presets, setPresets] = useState<PlaylistPreset[]>(() => loadPlaylistPresets());
@@ -105,7 +124,7 @@ export function PlaylistSettingsForm({ showSave = true, hideTitleScreen = false 
       </Section>
 
       {/* ===== TEKS DI VIDEO ===== */}
-      <Section icon={<Type className="h-4 w-4" />} title="Teks di Video" hint="judul · deskripsi · part" defaultOpen>
+      <Section icon={<Type className="h-4 w-4" />} title="Teks di Video" hint="judul · deskripsi · subtitle" defaultOpen>
         <p className="text-[11px] leading-relaxed text-gray-500">Atur tulisan yang muncul di setiap hasil export &amp; split video.</p>
 
         <div className="flex items-center justify-between gap-3">
@@ -162,6 +181,37 @@ export function PlaylistSettingsForm({ showSave = true, hideTitleScreen = false 
         {pl.titleDuringVideo && (
           <p className="text-[11px] leading-relaxed text-emerald-400/90">✓ Judul &amp; deskripsi tampil terus di bagian atas, teks part di bagian bawah — sampai video selesai.</p>
         )}
+
+        {/* v1.0.30: subtitle manual dari file — langsung nempel (burn-in) di hasil export & split */}
+        <div className="space-y-2 rounded-lg border border-white/[0.06] bg-white/[0.02] p-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <Label className="text-xs leading-snug text-gray-300">Masukkan subtitle dari file (.srt / .vtt)</Label>
+            <Switch checked={!!pl.subFileOn} onCheckedChange={(v) => setPl({ subFileOn: v })} className="data-[state=checked]:bg-emerald-500" />
+          </div>
+          {!!pl.subFileOn && (
+            <>
+              <input ref={subInputRef} type="file" accept=".srt,.vtt,text/plain" className="hidden" onChange={(e) => void onSubFile(e.target.files?.[0])} />
+              {pl.subCues?.length ? (
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-[11px] font-semibold text-emerald-300">{pl.subFileName}</p>
+                    <p className="text-[10px] text-emerald-400/80">{pl.subCues.length} baris — nempel langsung di setiap bagian hasil export &amp; split</p>
+                  </div>
+                  <button className="shrink-0 text-gray-400 hover:text-white" onClick={clearSubFile} aria-label="Hapus subtitle">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <Button variant="outline" size="sm" className="w-full border-dashed text-xs" onClick={() => subInputRef.current?.click()}>
+                  Pilih file .srt / .vtt…
+                </Button>
+              )}
+              <p className="text-[10px] leading-relaxed text-gray-500">
+                Nama file sama dengan film → hanya film itu yang memakai; beda nama → dipakai semua film. Saat subtitle file aktif, Subtitle AI otomatis dilewati.
+              </p>
+            </>
+          )}
+        </div>
       </Section>
 
       {/* ===== RASIO & LAYAR ===== */}
