@@ -189,7 +189,11 @@ export default function AIKeyCard() {
       ) : (
         <>
           <div className="text-[10px] leading-relaxed text-gray-500">
-            100% GRATIS & tanpa kartu: daftar akun Cloudflare → salin <b>Account ID</b> (halaman Workers & AI) dan buat <b>API Token</b> ber-izin Workers AI: Run → tempel dua-duanya di sini.
+            <b className="text-emerald-300/90">100% GRATIS & tanpa kartu</b> — kuota 10.000 Neuron/hari (±110-170 poster), reset jam 07.00 WIB. Ikuti 4 langkah:
+            <br /><b>1.</b> Daftar akun gratis di dash.cloudflare.com (cukup email & password).
+            <br /><b>2.</b> Di beranda dash, salin <b>Account ID</b> (kotak di sisi kanan halaman) → tempel di bawah.
+            <br /><b>3.</b> Klik ikon profil kanan-atas → <b>My Profile → API Tokens → Create Token</b> → Create Custom Token → nama bebas (mis. &quot;NOVACUT&quot;) → Permissions: <b>Account · Workers AI · Run</b> → Continue → Create Token → salin token (hanya tampil sekali!).
+            <br /><b>4.</b> Tempel keduanya di sini → Simpan → Tes Koneksi → klik 🎨 Buat Ulang Poster.
           </div>
           <input
             value={cfAcc}
@@ -212,12 +216,20 @@ export default function AIKeyCard() {
               Simpan
             </button>
           </div>
-          <button
-            onClick={() => void window.novacutAI?.openCFDash?.()}
-            className="text-[10px] text-emerald-400/90 underline transition hover:text-emerald-300"
-          >
-            Buka dash.cloudflare.com (Account ID & API Tokens) ↗
-          </button>
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            <button
+              onClick={() => void window.novacutAI?.openCFHome?.()}
+              className="text-[10px] text-emerald-400/90 underline transition hover:text-emerald-300"
+            >
+              Buka dash.cloudflare.com (langkah 1-2) ↗
+            </button>
+            <button
+              onClick={() => void window.novacutAI?.openCFDash?.()}
+              className="text-[10px] text-emerald-400/90 underline transition hover:text-emerald-300"
+            >
+              Buka halaman API Tokens (langkah 3) ↗
+            </button>
+          </div>
         </>
       )}
 

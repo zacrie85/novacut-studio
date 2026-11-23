@@ -50,6 +50,7 @@ interface NovacutAI {
   clearCFKey?: () => Promise<{ ok: boolean; error?: string }>;
   testCFKey?: () => Promise<{ ok: boolean; error?: string }>;
   openCFDash?: () => Promise<{ ok: boolean; error?: string }>;
+  openCFHome?: () => Promise<{ ok: boolean; error?: string }>;
   getAIPrefs?: () => Promise<{ provider: string; quality: string }>;
   setAIPrefs?: (prefs: { provider?: string; quality?: string }) => Promise<{ ok: boolean; error?: string }>;
 }

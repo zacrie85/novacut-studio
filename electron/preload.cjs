@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld("novacutAI", {
   clearCFKey: () => ipcRenderer.invoke("cf:clear-key"),
   testCFKey: () => ipcRenderer.invoke("cf:test-key"),
   openCFDash: () => ipcRenderer.invoke("app:open-url", { url: "https://dash.cloudflare.com/profile/api-tokens" }),
+  openCFHome: () => ipcRenderer.invoke("app:open-url", { url: "https://dash.cloudflare.com" }),
   // v1.0.38: preferensi penyedia & kualitas poster (disimpan lokal)
   getAIPrefs: () => ipcRenderer.invoke("ai:get-prefs"),
   setAIPrefs: (prefs) => ipcRenderer.invoke("ai:set-prefs", prefs),
