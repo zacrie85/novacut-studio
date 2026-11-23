@@ -167,11 +167,13 @@ function writePresets(list: PlaylistPreset[]) {
   }
 }
 
-/** Simpan setelan SAAT INI sebagai preset bernama (menimpa nama yang sama) */
+/** Simpan setelan SAAT INI sebagai preset bernama (menimpa nama yang sama).
+ * v1.0.30: cue subtitle file TIDAK ikut preset (berat & spesifik sesi) —
+ * pengguna memilih ulang file .srt/.vtt setelah preset dipakai. */
 export function savePlaylistPreset(name: string, cfg: PlaylistExportConfig, split: PresetSplit) {
   const nm = name.trim().slice(0, 40) || "Preset";
   const list = loadPlaylistPresets().filter((p) => p.name !== nm);
-  list.unshift({ name: nm, cfg: { ...cfg }, split: { ...split } });
+  list.unshift({ name: nm, cfg: { ...cfg, subFileOn: false, subFileName: undefined, subCues: undefined }, split: { ...split } });
   writePresets(list);
 }
 

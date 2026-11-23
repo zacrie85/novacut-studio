@@ -96,6 +96,20 @@ function mapSubsToTimeline(segs: SubSegment[], clips: Clip[]): SubSegment[] {
   return out.sort((a, b) => a.start - b.start);
 }
 
+/** v1.0.30: cocokkan cue subtitle MANUAL (file .srt/.vtt dari menu Teks) dengan
+ * film — nama file subtitle sama (tanpa ekstensi/tanda baca) dengan nama video
+ * → hanya film itu yang memakai; playlist berisi SATU film → selalu dipakai;
+ * tidak cocok → film ini tanpa subtitle manual ( hindari srt episode-1 menempel
+ * di episode-2 ). */
+function manualSubsForJob(job: { asset: MediaAsset }, srtName: string | undefined, cues: SubSegment[], single: boolean): SubSegment[] {
+  if (single || !srtName) return cues;
+  const norm = (s: string) => s.replace(/\.[^.]+$/, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const base = norm(srtName);
+  const film = norm(job.asset.name);
+  if (!base || !film) return cues;
+  return base === film || film.includes(base) || base.includes(film) ? cues : [];
+}
+
 /** Sisipkan klip teks SUBTITLE (waktu timeline) ke proyek mentah — dipakai mode
  * "export saja" (tanpa split) karena proyek itu tidak lewat buildSplitProject. */
 function appendSubtitleClips(
@@ -1000,6 +1014,12 @@ export async function runBatchExport(assetIds: string[]) {
           markJob(jid, { label: "Menyiapkan cover..." });
           job.coverAssetId = await ensureCoverAsset(job.asset, true);
         }
+      }
+      // v1.0.30: subtitle MANUAL dari file (.srt/.vtt — menu Teks) — prioritas
+      // di atas subtitle AI; AI hanya jalan bila tidak ada cue manual
+      if (pl.subFileOn && pl.subCues?.length && !job.subs.length) {
+        job.subs = manualSubsForJob(job, pl.subFileName, pl.subCues, jobs.length === 1);
+        if (job.subs.length) markJob(jid, { label: `Subtitle file: ${pl.subFileName} (${job.subs.length} baris)` });
       }
       if (pl.autoSub && !job.subs.length) {
         await (subChain = subChain.then(async () => {
