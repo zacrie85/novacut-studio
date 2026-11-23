@@ -229,9 +229,10 @@ function registerFSIpc() {
   };
   // Vision: deskripsikan adegan frame (subjek, suasana, cahaya, warna) untuk
   // menjadi dasar lukisan poster — takarir/watermark pada frame diabaikan.
+  // v1.0.37: pakai glm-4.6v-flash yang GRATIS — satu-satunya biaya = gambar poster.
   const pubDescribeScene = async (dataUrl, key) => {
     const json = await zaiPubFetch("/chat/completions", key, {
-      model: "glm-5.3-flashx",
+      model: "glm-4.6v-flash",
       messages: [
         {
           role: "user",
@@ -297,13 +298,14 @@ function registerFSIpc() {
       return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
     }
   });
-  // Tes kunci: chat ping murah — validasi kunci + saldo tanpa menggambar poster.
+  // Tes kunci: chat ping — validasi kunci + saldo tanpa menggambar poster.
+  // v1.0.37: pakai glm-4.7-flash yang GRATIS — tes tidak makan saldo.
   ipcMain.handle("ai:test-key", async () => {
     const key = readAIKey();
     if (!key) return { ok: false, error: "kunci belum dipasang" };
     try {
       await zaiPubFetch("/chat/completions", key, {
-        model: "glm-5.3-flashx",
+        model: "glm-4.7-flash",
         messages: [{ role: "user", content: "Reply with exactly: OK" }],
         max_tokens: 5,
       });
