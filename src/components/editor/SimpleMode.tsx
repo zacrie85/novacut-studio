@@ -16,7 +16,7 @@ import { useEditor } from "@/lib/editor/store";
 import { fmtEta, fmtSize, fmtTime } from "@/lib/editor/constants";
 import { COVER_FRAMES } from "@/lib/editor/covers";
 import { POSTER_STYLES, posterStyleById } from "@/lib/editor/posterStyles";
-import { regenCoverWithFrame, runBatchExport, triggerDownload } from "@/lib/editor/exporter";
+import { ensureCoverAsset, regenCoverWithFrame, runBatchExport, triggerDownload } from "@/lib/editor/exporter";
 import type { CoverConfig, CoverFrameStyle } from "@/lib/editor/types";
 import { FramePicker } from "./FramePicker";
 import { importFiles } from "@/lib/editor/mediaImport";
@@ -97,6 +97,14 @@ export function SimpleMode() {
     if (st.cover.coverAssetId && st.assets.some((a) => a.id === st.cover.coverAssetId)) {
       void regenCoverWithFrame().then((ok) => {
         if (ok) toast({ title: "Cover diperbarui ✔", description: "Cover tersimpan dibuat ulang dengan gaya baru." });
+      });
+    } else if (patch.bgStyle && st.cover.mode === "auto" && videos[0]) {
+      // v1.0.33: belum ada cover sama sekali — buat CONTOH cover segera agar
+      // pengguna langsung melihat hasil gaya barunya (dulu baru muncul saat export)
+      toast({ title: "Membuat contoh cover…", description: "AI mengambil adegan terbaik dari video untuk cover/poster." });
+      void ensureCoverAsset(videos[0]).then((id) => {
+        if (id) toast({ title: "Contoh cover siap ✔", description: "Gaya baru sudah diterapkan dan akan dipakai saat export." });
+        else toast({ title: "Cover dibuat saat export", description: "Contoh cover belum bisa dibuat sekarang — akan dibuat otomatis saat export." });
       });
     }
   };

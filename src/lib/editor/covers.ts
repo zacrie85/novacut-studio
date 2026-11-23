@@ -102,11 +102,11 @@ function setTracking(ctx: CanvasRenderingContext2D, px: number) {
 function drawPosterBackground(ctx: CanvasRenderingContext2D, input: CoverRenderInput) {
   const { w, h } = input;
   const st = input.posterStyle ?? POSTER_STYLES[0];
-  ctx.fillStyle = "#000";
-  ctx.fillRect(0, 0, w, h);
   const sw = (input.img as HTMLCanvasElement | undefined)?.width || (input.img as HTMLImageElement | undefined)?.naturalWidth || 0;
   const sh = (input.img as HTMLCanvasElement | undefined)?.height || (input.img as HTMLImageElement | undefined)?.naturalHeight || 0;
   if (input.img && sw && sh) {
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, w, h);
     const s = Math.max(w / sw, h / sh) * 1.06;
     const dw = sw * s;
     const dh = sh * s;
@@ -137,6 +137,20 @@ function drawPosterBackground(ctx: CanvasRenderingContext2D, input: CoverRenderI
     ctx.filter = "brightness(1.35) blur(14px)";
     ctx.drawImage(input.img, dx, dy, dw, dh);
     ctx.restore();
+  } else {
+    // v1.0.33: frame video tak terbaca (semua percobaan decode menghasilkan hitam) —
+    // poster TETAP tampil dgn latar GRADASI SINEMATIK gaya Hollywood, bukan hitam
+    const g = ctx.createLinearGradient(0, 0, w, h);
+    g.addColorStop(0, st.glow);
+    g.addColorStop(0.55, st.tint);
+    g.addColorStop(1, "#05050a");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    const rg = ctx.createRadialGradient(w * 0.5, h * 0.42, 0, w * 0.5, h * 0.42, h * 0.78);
+    rg.addColorStop(0, "rgba(255,255,255,0.15)");
+    rg.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = rg;
+    ctx.fillRect(0, 0, w, h);
   }
   // vignette tepi
   const vg = ctx.createRadialGradient(w / 2, h / 2, h * 0.32, w / 2, h / 2, h * 0.98);
@@ -634,6 +648,28 @@ export async function plainCoverDataURL(url: string, w: number, h: number, frame
 // ===== AI AUTO-COVER =====
 
 /** Muat gambar dan tunggu sampai benar-benar siap digambar */
+/** v1.0.33: gambar gradasi sinematik sebagai pengganti frame video yang gagal
+ * di-decode (mode adegan) — cover tetap berwarna, bukan hitam */
+export async function gradientImage(w: number, h: number): Promise<HTMLImageElement | null> {
+  const c = document.createElement("canvas");
+  c.width = Math.max(2, w);
+  c.height = Math.max(2, h);
+  const ctx = c.getContext("2d");
+  if (!ctx) return null;
+  const g = ctx.createLinearGradient(0, 0, w, h);
+  g.addColorStop(0, "#14506b");
+  g.addColorStop(0.55, "#0d2f42");
+  g.addColorStop(1, "#05050a");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+  const rg = ctx.createRadialGradient(w * 0.5, h * 0.4, 0, w * 0.5, h * 0.4, h * 0.8);
+  rg.addColorStop(0, "rgba(255,177,80,0.28)");
+  rg.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = rg;
+  ctx.fillRect(0, 0, w, h);
+  return await loadImage(c.toDataURL("image/jpeg", 0.92)).catch(() => null);
+}
+
 export function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((res, rej) => {
     const img = new Image();
@@ -752,22 +788,71 @@ export async function analyzeVideoFrames(url: string, duration: number, count = 
 }
 
 /** Ambil frame video pada waktu tertentu sebagai dataURL */
-export async function grabFrame(url: string, time: number, maxW = 1280): Promise<string | null> {
-  const video = document.createElement("video");
-  video.src = url;
-  video.muted = true;
-  video.preload = "auto";
-  const ok = await loadVideo(video);
-  if (!ok) return null;
-  await seekVideo(video, time);
-  const scale = Math.min(1, maxW / video.videoWidth);
-  const c = document.createElement("canvas");
-  c.width = Math.round(video.videoWidth * scale);
-  c.height = Math.round(video.videoHeight * scale);
+/** v1.0.33: cek piksel kanvas — true bila frame benar-benar HITAM (decoder video
+ * gagal menggambar: sebagian GPU menolak decode elemen video yang tak ter-attach
+ * DOM → drawImage menghasilkan hitam murni). Sampling ±4 ribu piksel. */
+function canvasIsBlack(c: HTMLCanvasElement): boolean {
   const ctx = c.getContext("2d");
-  if (!ctx) return null;
-  ctx.drawImage(video, 0, 0, c.width, c.height);
-  return c.toDataURL("image/jpeg", 0.92);
+  if (!ctx || !c.width || !c.height) return true;
+  try {
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    let sum = 0;
+    let max = 0;
+    let n = 0;
+    const step = Math.max(4, Math.floor(d.length / 4 / 4096) * 4);
+    for (let i = 0; i < d.length; i += step) {
+      const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      sum += lum;
+      if (lum > max) max = lum;
+      n++;
+    }
+    return n === 0 || (sum / n < 5 && max < 24);
+  } catch {
+    return false;
+  }
+}
+
+export async function grabFrame(url: string, time: number, maxW = 1280): Promise<string | null> {
+  // v1.0.33: 3 percobaan — (1-2) elemen video lepas dgn offset waktu beda,
+  // (3) elemen DITEMPEL ke DOM tersembunyi (membuka jalur decode GPU normal)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const video = document.createElement("video");
+    video.src = url;
+    video.muted = true;
+    video.preload = "auto";
+    (video as HTMLVideoElement & { playsInline: boolean }).playsInline = true;
+    let attached = false;
+    if (attempt === 2 && typeof document !== "undefined" && document.body) {
+      video.style.cssText = "position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none;";
+      document.body.appendChild(video);
+      attached = true;
+    }
+    try {
+      const ok = await loadVideo(video);
+      if (!ok || !video.videoWidth) continue;
+      const t = attempt === 1 ? Math.max(0, time + 0.4) : time;
+      await seekVideo(video, t);
+      const scale = Math.min(1, maxW / video.videoWidth);
+      const c = document.createElement("canvas");
+      c.width = Math.max(2, Math.round(video.videoWidth * scale));
+      c.height = Math.max(2, Math.round(video.videoHeight * scale));
+      const ctx = c.getContext("2d");
+      if (!ctx) continue;
+      ctx.drawImage(video, 0, 0, c.width, c.height);
+      if (!canvasIsBlack(c)) return c.toDataURL("image/jpeg", 0.92);
+      // hitam → re-seek mundur sedikit (frame ini mungkin gagal decode) lalu gambar lagi
+      await seekVideo(video, Math.max(0, t - 0.1));
+      ctx.drawImage(video, 0, 0, c.width, c.height);
+      if (!canvasIsBlack(c)) return c.toDataURL("image/jpeg", 0.92);
+    } catch {
+      /* lanjut percobaan berikutnya */
+    } finally {
+      if (attached) video.remove();
+      video.removeAttribute("src");
+      video.load();
+    }
+  }
+  return null;
 }
 
 function mulberry32(seed: number) {

@@ -21,7 +21,7 @@ EOF
   ASSETS=$(python3 - "$TOK" "$REPO" <<'EOF'
 import json, sys, urllib.request
 tok, repo = sys.argv[1], sys.argv[2]
-req = urllib.request.Request(f"https://api.github.com/repos/{repo}/releases/tags/v1.0.32", headers={"Authorization": "token " + tok})
+req = urllib.request.Request(f"https://api.github.com/repos/{repo}/releases/tags/v1.0.33", headers={"Authorization": "token " + tok})
 with urllib.request.urlopen(req, timeout=20) as r:
     rel = json.load(r)
 assets = rel.get("assets", [])
