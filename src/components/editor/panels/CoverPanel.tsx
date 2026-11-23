@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { COVER_TEMPLATES, fmtTime, partLabel } from "@/lib/editor/constants";
 import type { CoverTemplate } from "@/lib/editor/constants";
 import { aiRecommendTemplates, analyzeVideoFrames, COVER_FRAMES, drawCoverFrame, grabFrame, loadImage, plainCoverDataURL, renderCover, renderCoverToDataURL } from "@/lib/editor/covers";
+import { POSTER_STYLES, posterStyleById } from "@/lib/editor/posterStyles";
 import { useEditor } from "@/lib/editor/store";
 import { uid } from "@/lib/editor/constants";
 import { regenCoverWithFrame } from "@/lib/editor/exporter";
@@ -40,6 +41,8 @@ export function CoverPanel() {
   const partText = partLabel(texts.labelStyle, 1, Math.max(1, texts.parts), true);
 
   const template = useMemo(() => COVER_TEMPLATES.find((t) => t.id === cover.templateId) ?? COVER_TEMPLATES[0], [cover.templateId]);
+  // v1.0.31: gaya poster Hollywood aktif — ditentukan pengguna atau acak per judul
+  const posterStyle = useMemo(() => (cover.bgStyle === "poster" ? posterStyleById(cover.posterStyleId || "acak", title) : undefined), [cover.bgStyle, cover.posterStyleId, title]);
   const recommended = useMemo(() => aiRecommendTemplates(title, cover.previewUrl ? 128 : 110, 6), [title, cover.previewUrl]);
 
   // ambil frame saat sumber/waktu berubah (mode otomatis saja)
@@ -66,7 +69,7 @@ export function CoverPanel() {
     const bgStyle = cover.mode === "auto" ? cover.bgStyle : undefined;
     const frame = cover.frameStyle;
     if (!bgUrl) {
-      renderCover(ctx, { img: null, title, part: partText, template, bgStyle, frame, w: c.width, h: c.height });
+      renderCover(ctx, { img: null, title, part: partText, template, bgStyle, posterStyle, frame, w: c.width, h: c.height });
       return;
     }
     const drawPlain = (img: HTMLImageElement) => {
@@ -83,12 +86,12 @@ export function CoverPanel() {
     void loadImage(bgUrl).then((img) => {
       if (!alive) return;
       if (cover.mode === "manual" && cover.manualPlain) drawPlain(img);
-      else renderCover(ctx, { img, title, part: partText, template, bgStyle, frame, w: c.width, h: c.height });
+      else renderCover(ctx, { img, title, part: partText, template, bgStyle, posterStyle, frame, w: c.width, h: c.height });
     });
     return () => {
       alive = false;
     };
-  }, [bgUrl, cover.mode, cover.manualPlain, cover.bgStyle, cover.frameStyle, template, title, partText]);
+  }, [bgUrl, cover.mode, cover.manualPlain, cover.bgStyle, cover.frameStyle, template, title, partText, posterStyle]);
 
   useEffect(() => {
     if (!showAll) return;
@@ -184,7 +187,7 @@ export function CoverPanel() {
         ? await plainCoverDataURL(srcUrl, project.width, project.height, cover.frameStyle)
         : isBlack
           ? renderCoverToDataURL({ img: null, title, part: partText, template, bgStyle: "hitam", frame: cover.frameStyle }, project.width, project.height)
-          : renderCoverToDataURL({ img: await loadImage(srcUrl), title, part: partText, template, bgStyle: cover.mode === "auto" ? cover.bgStyle : undefined, frame: cover.frameStyle }, project.width, project.height);
+          : renderCoverToDataURL({ img: await loadImage(srcUrl), title, part: partText, template, bgStyle: cover.mode === "auto" ? cover.bgStyle : undefined, posterStyle, frame: cover.frameStyle }, project.width, project.height);
     if (!dataUrl) {
       toast({ title: "Gagal membuat cover" });
       return;
@@ -273,6 +276,12 @@ export function CoverPanel() {
               >
                 Hitam Polos
               </button>
+              <button
+                onClick={() => useEditor.getState().setCover({ bgStyle: "poster" })}
+                className={`col-span-2 rounded-md border px-2 py-1.5 text-[11px] font-medium transition ${cover.bgStyle === "poster" ? "border-amber-400 bg-amber-500/15 text-amber-100" : "border-white/10 bg-white/[0.03] text-gray-300 hover:border-amber-500/40"}`}
+              >
+                🎬 Poster Hollywood (99 Gaya)
+              </button>
             </div>
             {cover.bgStyle === "adegan" ? (
               <>
@@ -295,6 +304,48 @@ export function CoverPanel() {
                   {cover.bgScope === "sama"
                     ? "Semua hasil split memakai 1 adegan yang sama."
                     : "AI memilih adegan yang berbeda untuk setiap hasil split."}
+                </div>
+              </>
+            ) : cover.bgStyle === "poster" ? (
+              <>
+                <div className="space-y-1">
+                  <div className="text-[11px] text-gray-400">Gaya poster (99 referensi genre Hollywood):</div>
+                  <Select value={cover.posterStyleId || "acak"} onValueChange={(v) => useEditor.getState().setCover({ posterStyleId: v })}>
+                    <SelectTrigger className="h-8 border-white/10 bg-white/[0.04] text-xs" aria-label="Gaya poster">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64 border-white/10 bg-popover text-xs">
+                      <SelectItem value="acak">🎲 Acak Otomatis per Judul (99 gaya)</SelectItem>
+                      {POSTER_STYLES.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.genre} · {s.nama}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="text-[10px] leading-relaxed text-gray-600">
+                    Gaya: <span className="text-amber-400/90">{posterStyle?.genre} — {posterStyle?.nama}</span> · "{posterStyle?.tagline}"
+                  </div>
+                </div>
+                <div className="text-[11px] text-gray-400">Latar AI Sinematik (beta):</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    onClick={() => useEditor.getState().setCover({ posterAI: true })}
+                    className={`rounded-md border px-2 py-1.5 text-[11px] font-medium transition ${cover.posterAI ? "border-amber-400 bg-amber-500/15 text-amber-100" : "border-white/10 bg-white/[0.03] text-gray-300 hover:border-amber-500/40"}`}
+                  >
+                    Aktif
+                  </button>
+                  <button
+                    onClick={() => useEditor.getState().setCover({ posterAI: false })}
+                    className={`rounded-md border px-2 py-1.5 text-[11px] font-medium transition ${!cover.posterAI ? "border-blue-400 bg-blue-500/15 text-blue-100" : "border-white/10 bg-white/[0.03] text-gray-300 hover:border-blue-500/40"}`}
+                  >
+                    Mati
+                  </button>
+                </div>
+                <div className="text-[10px] leading-relaxed text-gray-600">
+                  {cover.posterAI
+                    ? "Frame dikirim ke AI biar dramatis seperti poster sungguhan (perlu internet, lebih lambat). Gagal → otomatis pakai grade lokal. Pratinjau selalu versi lokal."
+                    : "Grade sinematik lokal: cepat, offline, dan pasti jadi — filter warna genre, bloom, vignette, grain film & furnitur poster."}
                 </div>
               </>
             ) : (

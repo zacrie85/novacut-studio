@@ -149,8 +149,13 @@ export interface CoverConfig {
   mode: "auto" | "manual"; // auto = ambil adegan dari video; manual = gambar unggahan pengguna
   manualAssetId?: string; // asset gambar unggahan (PNG/JPG)
   manualPlain?: boolean; // mode manual: gambar apa adanya tanpa teks template
-  /** Latar cover mode otomatis: "adegan" = gambar dari adegan video; "hitam" = hitam polos */
-  bgStyle: "adegan" | "hitam";
+  /** Latar cover mode otomatis: "adegan" = gambar dari adegan video; "hitam" = hitam polos;
+   *  v1.0.31: "poster" = Poster Hollywood (grade sinematik + furnitur, 99 gaya referensi) */
+  bgStyle: "adegan" | "hitam" | "poster";
+  /** v1.0.31: gaya poster Hollywood — "acak" = dipilih otomatis per judul (deterministik) */
+  posterStyleId?: string;
+  /** v1.0.31: tingkatkan latar poster dgn AI (perlu internet; otomatis fallback ke grade lokal) */
+  posterAI?: boolean;
   /** Penyebaran latar saat export & split: "sama" = 1 latar untuk semua bagian; "beda" = tiap bagian adegan berbeda */
   bgScope: "sama" | "beda";
   /** v1.0.19: bingkai cover (klasik/modern/futuristik) — digambar transparan 75% mengelilingi gambar cover */

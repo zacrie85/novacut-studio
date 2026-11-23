@@ -2,6 +2,7 @@
 
 import { COVER_TEMPLATES, fontStack, type CoverTemplate } from "./constants";
 import { wrapCanvasText } from "./textwrap";
+import { POSTER_ACADEMY_LINE, POSTER_BILLING_LINE, POSTER_STYLES, type PosterStyle } from "./posterStyles";
 import type { CoverFrameStyle } from "./types";
 
 export interface CoverRenderInput {
@@ -9,8 +10,11 @@ export interface CoverRenderInput {
   title: string;
   part?: string; // mis. "Part 2/5"
   template: CoverTemplate;
-  /** "hitam" = latar hitam polos (abaikan gambar); "adegan"/default = gambar adegan video */
-  bgStyle?: "adegan" | "hitam";
+  /** "hitam" = latar hitam polos (abaikan gambar); "adegan"/default = gambar adegan video;
+   *  v1.0.31: "poster" = Poster Hollywood (grade sinematik + vignette + grain + furnitur) */
+  bgStyle?: "adegan" | "hitam" | "poster";
+  /** v1.0.31: gaya poster Hollywood dari 99 referensi (wajib saat bgStyle "poster") */
+  posterStyle?: PosterStyle;
   /** v1.0.19: bingkai di sekeliling cover — digambar transparan 75% di atas latar & teks */
   frame?: CoverFrameStyle;
   w: number;
@@ -37,6 +41,8 @@ function drawBackground(ctx: CanvasRenderingContext2D, input: CoverRenderInput, 
     ctx.fillRect(0, 0, w, h);
     return;
   }
+  // v1.0.31: mode POSTER HOLLYWOOD — grade sinematik penuh (abaikan darken layout)
+  if (input.bgStyle === "poster") return drawPosterBackground(ctx, input);
   if (input.img) {
     const sw = (input.img as HTMLCanvasElement).width || (input.img as HTMLImageElement).naturalWidth || 2;
     const sh = (input.img as HTMLCanvasElement).height || (input.img as HTMLImageElement).naturalHeight || 2;
@@ -58,6 +64,126 @@ function drawBackground(ctx: CanvasRenderingContext2D, input: CoverRenderInput, 
   g2.addColorStop(1, `rgba(0,0,0,${darken})`);
   ctx.fillStyle = g2;
   ctx.fillRect(0, 0, w, h);
+}
+
+// ===== v1.0.31: MESIN POSTER HOLLYWOOD (metode sama dgn pembuat poster foto) =====
+
+/** kanvas noise utk grain film — dibuat sekali lalu dipakai semua render */
+let GRAIN: HTMLCanvasElement | null = null;
+function grainCanvas(): HTMLCanvasElement {
+  if (GRAIN) return GRAIN;
+  const c = document.createElement("canvas");
+  c.width = 128;
+  c.height = 128;
+  const g = c.getContext("2d")!;
+  const data = g.createImageData(128, 128);
+  for (let i = 0; i < data.data.length; i += 4) {
+    const v = 110 + Math.random() * 90;
+    data.data[i] = v;
+    data.data[i + 1] = v;
+    data.data[i + 2] = v;
+    data.data[i + 3] = 255;
+  }
+  g.putImageData(data, 0, 0);
+  GRAIN = c;
+  return c;
+}
+
+/** jarak antar huruf (tracking) — ctx.letterSpacing tersedia di Chromium Electron */
+function setTracking(ctx: CanvasRenderingContext2D, px: number) {
+  (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = `${px}px`;
+}
+
+/** POSTER HOLLYWOOD: frame di-grade sinematik (filter + tint bayangan + sorot
+ * cahaya + bloom), lalu vignette, grain film, scrim atas/bawah, dan furnitur
+ * poster di ZONA ATAS (garis "NOVACUT PICTURES MEMPERSEMBAHKAN", tagline gaya,
+ * kredit). Judul film TIDAK dibakar di sini — ditulis dinamis oleh klip teks
+ * (judul & deskripsi default di bawah layar, jadi zona atas aman). */
+function drawPosterBackground(ctx: CanvasRenderingContext2D, input: CoverRenderInput) {
+  const { w, h } = input;
+  const st = input.posterStyle ?? POSTER_STYLES[0];
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, w, h);
+  const sw = (input.img as HTMLCanvasElement | undefined)?.width || (input.img as HTMLImageElement | undefined)?.naturalWidth || 0;
+  const sh = (input.img as HTMLCanvasElement | undefined)?.height || (input.img as HTMLImageElement | undefined)?.naturalHeight || 0;
+  if (input.img && sw && sh) {
+    const s = Math.max(w / sw, h / sh) * 1.06;
+    const dw = sw * s;
+    const dh = sh * s;
+    const dx = (w - dw) / 2;
+    const dy = (h - dh) / 2;
+    ctx.save();
+    ctx.filter = st.filter;
+    ctx.drawImage(input.img, dx, dy, dw, dh);
+    ctx.filter = "none";
+    // tint bayangan (multiply) — warna genre masuk ke gelap frame
+    ctx.globalCompositeOperation = "multiply";
+    ctx.globalAlpha = st.tintA;
+    ctx.fillStyle = st.tint;
+    ctx.fillRect(0, 0, w, h);
+    // sorot cahaya (screen) — diagonal dari kiri-atas
+    ctx.globalCompositeOperation = "screen";
+    ctx.globalAlpha = st.glowA;
+    const gg = ctx.createLinearGradient(0, h * 0.15, w, h);
+    gg.addColorStop(0, st.glow);
+    gg.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = gg;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+    // bloom halus — salinan blur terang ditempel tipis (cahaya sinematik)
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+    ctx.globalAlpha = 0.13;
+    ctx.filter = "brightness(1.35) blur(14px)";
+    ctx.drawImage(input.img, dx, dy, dw, dh);
+    ctx.restore();
+  }
+  // vignette tepi
+  const vg = ctx.createRadialGradient(w / 2, h / 2, h * 0.32, w / 2, h / 2, h * 0.98);
+  vg.addColorStop(0, "rgba(0,0,0,0)");
+  vg.addColorStop(1, `rgba(0,0,0,${st.vignette})`);
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, w, h);
+  // grain film (blend overlay)
+  const pat = ctx.createPattern(grainCanvas(), "repeat");
+  if (pat && st.grain > 0) {
+    ctx.save();
+    ctx.globalCompositeOperation = "overlay";
+    ctx.globalAlpha = st.grain;
+    ctx.fillStyle = pat;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+  }
+  // scrim atas utk furnitur + bawah utk judul dinamis
+  const gTop = ctx.createLinearGradient(0, 0, 0, h * 0.28);
+  gTop.addColorStop(0, "rgba(0,0,0,0.6)");
+  gTop.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = gTop;
+  ctx.fillRect(0, 0, w, h * 0.28);
+  const gBot = ctx.createLinearGradient(0, h * 0.52, 0, h);
+  gBot.addColorStop(0, "rgba(0,0,0,0)");
+  gBot.addColorStop(1, `rgba(0,0,0,${Math.min(0.85, 0.35 + st.scrim * 0.5)})`);
+  ctx.fillStyle = gBot;
+  ctx.fillRect(0, h * 0.52, w, h * 0.48);
+  // === FURNITUR POSTER (zona atas) ===
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.shadowColor = "rgba(0,0,0,0.85)";
+  ctx.shadowBlur = Math.max(4, h * 0.012);
+  setTracking(ctx, h * 0.012);
+  ctx.font = `700 ${Math.max(9, h * 0.024)}px ${fontStack("condensed")}`;
+  ctx.fillStyle = st.accent;
+  ctx.fillText(POSTER_ACADEMY_LINE, w / 2, h * 0.055);
+  setTracking(ctx, h * 0.006);
+  ctx.font = `400 ${Math.max(10, h * 0.028)}px ${fontStack("condensed")}`;
+  ctx.fillStyle = "rgba(255,255,255,0.94)";
+  ctx.fillText(st.tagline.toUpperCase(), w / 2, h * 0.104);
+  setTracking(ctx, h * 0.01);
+  ctx.font = `400 ${Math.max(8, h * 0.019)}px ${fontStack("condensed")}`;
+  ctx.fillStyle = "rgba(228,228,228,0.72)";
+  ctx.fillText(POSTER_BILLING_LINE, w / 2, h * 0.15);
+  setTracking(ctx, 0);
+  ctx.restore();
 }
 
 function drawPartBadge(ctx: CanvasRenderingContext2D, part: string, pal: { fg: string; accent: string }, x: number, y: number, size: number, align: CanvasTextAlign = "left") {
@@ -467,7 +593,9 @@ export function renderCover(ctx: CanvasRenderingContext2D, input: CoverRenderInp
     },
   };
 
-  (layouts[template.layout] ?? layouts.impact)();
+  // v1.0.31: mode poster + judul kosong (cover export) — latar poster saja;
+  // judul/deskripsi/part ditulis oleh klip teks dinamis di atasnya
+  if (!(input.bgStyle === "poster" && !title)) (layouts[template.layout] ?? layouts.impact)();
 
   // v1.0.19: bingkai cover — digambar PALING ATAS mengelilingi tepi gambar
   if (input.frame && input.frame !== "none") drawCoverFrame(ctx, w, h, input.frame, accent);
@@ -699,4 +827,22 @@ export function aiRecommendTemplates(title: string, brightness: number, count = 
   }));
   scored.sort((a, b) => b.s - a.s);
   return scored.slice(0, count).map((x) => x.t);
+}
+
+// ===== v1.0.31: AI SINEMATIK (opsional, jalur Electron main + z-ai-web-dev-sdk) =====
+
+/** Tingkatkan frame jadi latar poster sinematik lewat AI. Mengembalikan null
+ * bila tidak tersedia (bukan desktop / SDK gagal / timeout) — pemanggil lanjut
+ * memakai grade lokal sehingga cover SELALU jadi walau tanpa internet. */
+export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size: "1344x768" | "768x1344" = "1344x768", timeoutMs = 180000): Promise<string | null> {
+  if (typeof window === "undefined" || !window.novacutAI?.posterAI) return null;
+  try {
+    const res = await Promise.race([
+      window.novacutAI.posterAI(frameUrl, prompt, size),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+    ]);
+    return res?.ok && res.image ? res.image : null;
+  } catch {
+    return null;
+  }
 }

@@ -7,7 +7,8 @@
 //  2) MODE KOMPATIBEL: rekam real-time via MediaRecorder (jalur lama).
 // Fitur: cover otomatis, teks judul/deskripsi/part, subtitle AI (bahasa Indonesia).
 
-import { grabFrame, aiRecommendTemplates, analyzeVideoFrames, drawCoverFrame, loadImage, plainCoverDataURL, renderCoverToDataURL } from "./covers";
+import { grabFrame, aiRecommendTemplates, analyzeVideoFrames, drawCoverFrame, loadImage, plainCoverDataURL, renderCoverToDataURL, aiPosterizeDataURL } from "./covers";
+import { posterStyleById, type PosterStyle } from "./posterStyles";
 import { COVER_TEMPLATES, partLabel, slugify, uid } from "./constants";
 import { engine } from "./engine";
 import { adjustRangesToSilence, exportRangeFast, fastSupported, AudioDecodeCache } from "./fastExport";
@@ -764,12 +765,23 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
   if (!frameUrl) frameUrl = await grabFrame(sourceAsset!.url, Math.min(sourceAsset!.duration - 0.2, sourceAsset!.duration * 0.3), 1280);
   if (!frameUrl) return undefined;
   const tpl = aiRecommendTemplates(title, brightness, 1)[0] ?? COVER_TEMPLATES[0];
-  const img = await loadImage(frameUrl).catch(() => null);
+  let img = await loadImage(frameUrl).catch(() => null);
   if (!img) return undefined;
   // cover dibuat TANPA tulisan (latar saja) — judul/deskripsi/part ditulis oleh
   // clip teks di buildSplitProject agar judul panjang otomatis wrap & tak terpotong
   // v1.0.19: bingkai cover ikut ditanam sesuai pilihan pengguna
-  const dataUrl = renderCoverToDataURL({ img, title: "", template: tpl, frame: st.cover.frameStyle }, width, height);
+  // v1.0.31: MODE POSTER HOLLYWOOD — pilih gaya (acak per judul / pilihan pengguna),
+  // opsional tingkatkan frame dgn AI Sinematik (fallback otomatis ke grade lokal)
+  const posterOn = st.cover.bgStyle === "poster";
+  let posterStyle: PosterStyle | undefined;
+  if (posterOn) {
+    posterStyle = posterStyleById(st.cover.posterStyleId || "acak", title);
+    if (st.cover.posterAI) {
+      const aiUrl = await aiPosterizeDataURL(frameUrl, posterStyle.ai, width > height ? "1344x768" : "768x1344");
+      if (aiUrl) img = await loadImage(aiUrl).catch(() => img);
+    }
+  }
+  const dataUrl = renderCoverToDataURL({ img, title: "", template: tpl, bgStyle: posterOn ? "poster" : undefined, posterStyle, frame: st.cover.frameStyle }, width, height);
   return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: dataUrl, duration: 0, width, height };
 }
 

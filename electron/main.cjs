@@ -191,6 +191,27 @@ function registerFSIpc() {
     }
   });
 
+  // v1.0.31: POSTER AI SINEMATIK — frame cover diubah jadi latar poster dramatis
+  // lewat z-ai-web-dev-sdk (image edit). Gagal/limit/tanpa kredensial = ok:false,
+  // renderer otomatis lanjut memakai grade lokal (cover tetap jadi tanpa internet).
+  ipcMain.handle("ai:poster", async (_event, payload) => {
+    try {
+      const mod = await import("z-ai-web-dev-sdk");
+      const ZAI = mod.default ?? mod;
+      const zai = await ZAI.create();
+      const res = await zai.images.generations.edit({
+        prompt: String(payload?.prompt || "cinematic movie poster").slice(0, 1200),
+        images: [{ url: String(payload?.image || "") }],
+        size: payload?.size === "768x1344" ? "768x1344" : "1344x768",
+      });
+      const b64 = res?.data?.[0]?.base64;
+      if (!b64) return { ok: false, error: "respons AI kosong" };
+      return { ok: true, image: `data:image/png;base64,${b64}` };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err).slice(0, 200) };
+    }
+  });
+
   // Matikan PC (Windows) setelah batch selesai — jeda 60 detik memberi kesempatan
   // membatalkan lewat terminal (`shutdown /a`) bila berubah pikiran.
   ipcMain.handle("app:shutdown", async () => {

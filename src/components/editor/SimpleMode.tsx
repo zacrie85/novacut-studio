@@ -9,11 +9,13 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, CheckCircle2, Download, FolderOpen, FolderSearch, Image as ImageIcon, Loader2, Rocket, Scissors, Sparkles, Upload, Video, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useEditor } from "@/lib/editor/store";
 import { fmtEta, fmtSize, fmtTime } from "@/lib/editor/constants";
 import { COVER_FRAMES } from "@/lib/editor/covers";
+import { POSTER_STYLES, posterStyleById } from "@/lib/editor/posterStyles";
 import { regenCoverWithFrame, runBatchExport, triggerDownload } from "@/lib/editor/exporter";
 import type { CoverFrameStyle } from "@/lib/editor/types";
 import { FramePicker } from "./FramePicker";
@@ -354,6 +356,48 @@ export function SimpleMode() {
                       <input type="range" min={2} max={5} step={0.5} value={settings.coverDuration} onChange={(e) => useEditor.getState().setExportSettings({ coverDuration: Number(e.target.value) })} className="h-1 flex-1 accent-blue-500" aria-label="Durasi cover" />
                       <span className="w-9 text-right font-mono text-blue-300">{settings.coverDuration}s</span>
                     </div>
+                    {/* v1.0.31: GAYA COVER — template klasik atau Poster Hollywood (99 referensi genre) */}
+                    <div className="space-y-1.5">
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Gaya Cover</div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          onClick={() => useEditor.getState().setCover({ bgStyle: "adegan" })}
+                          className={`rounded-md border px-2 py-1.5 text-[11px] font-medium transition ${cover.bgStyle !== "poster" ? "border-blue-400 bg-blue-500/15 text-blue-100" : "border-white/10 bg-white/[0.03] text-gray-300 hover:border-blue-500/40"}`}
+                        >
+                          Template AI (klasik)
+                        </button>
+                        <button
+                          onClick={() => useEditor.getState().setCover({ bgStyle: "poster" })}
+                          className={`rounded-md border px-2 py-1.5 text-[11px] font-medium transition ${cover.bgStyle === "poster" ? "border-amber-400 bg-amber-500/15 text-amber-100" : "border-white/10 bg-white/[0.03] text-gray-300 hover:border-amber-500/40"}`}
+                        >
+                          🎬 Poster Hollywood
+                        </button>
+                      </div>
+                      {cover.bgStyle === "poster" && (
+                        <div className="space-y-1.5">
+                          <Select value={cover.posterStyleId || "acak"} onValueChange={(v) => useEditor.getState().setCover({ posterStyleId: v })}>
+                            <SelectTrigger className="h-8 border-white/10 bg-white/[0.04] text-xs" aria-label="Gaya poster Hollywood">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="max-h-64 border-white/10 bg-popover text-xs">
+                              <SelectItem value="acak">🎲 Acak Otomatis per Judul (99 gaya)</SelectItem>
+                              {POSTER_STYLES.map((s) => (
+                                <SelectItem key={s.id} value={s.id}>
+                                  {s.genre} · {s.nama}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <div className="text-[10px] leading-relaxed text-gray-500">
+                            Gaya: <span className="text-amber-400/90">{posterStyleById(cover.posterStyleId || "acak", videos[0]?.name ?? "").genre} — {posterStyleById(cover.posterStyleId || "acak", videos[0]?.name ?? "").nama}</span> · AI Sinematik: <b>{cover.posterAI ? "aktif" : "mati"}</b>{" — "}
+                            <button className="underline hover:text-gray-300" onClick={() => useEditor.getState().setCover({ posterAI: !cover.posterAI })}>
+                              {cover.posterAI ? "matikan" : "aktifkan"}
+                            </button>
+                          </div>
+                          <div className="text-[10px] leading-relaxed text-gray-500">Grade sinematik + vignette + grain film + furnitur poster di atas; judul film tetap dinamis di bawah. AI Sinematik perlu internet — gagal otomatis pakai grade lokal.</div>
+                        </div>
+                      )}
+                    </div>
                     {/* v1.0.19: BINGKAI COVER — klasik / modern / futuristik, transparan 75% */}
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
@@ -369,7 +413,7 @@ export function SimpleMode() {
                       {cover.coverAssetId ? "✔ Cover siap dipakai (dibuat di Cover Studio)." : "Belum ada cover — AI akan membuatkan otomatis dari video."}
                     </div>
                     <div className="rounded-lg border border-blue-500/20 bg-blue-500/[0.06] px-2.5 py-1.5 text-[11px] leading-relaxed text-blue-200/90">
-                      Latar cover: <b>{cover.bgStyle === "hitam" ? "hitam polos" : "adegan dari video"}</b>
+                      Latar cover: <b>{cover.bgStyle === "hitam" ? "hitam polos" : cover.bgStyle === "poster" ? "Poster Hollywood" : "adegan dari video"}</b>
                       {cover.bgStyle === "adegan" ? (<> · semua bagian <b>{cover.bgScope === "beda" ? "berbeda adegan" : "sama"}</b></>) : null}
                       {cover.frameStyle && cover.frameStyle !== "none" ? (<> · bingkai <b>{COVER_FRAMES.find((f) => f.id === cover.frameStyle)?.label}</b></>) : null}
                       {cover.mode === "auto" ? " — ubah di Mode Pro → tab Cover" : " · gambar pilihanmu"}

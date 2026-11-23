@@ -24,3 +24,9 @@ contextBridge.exposeInMainWorld("novacutFS", {
   // v1.0.16: matikan PC otomatis setelah batch selesai (jeda 60 detik)
   shutdownPC: () => ipcRenderer.invoke("app:shutdown"),
 });
+
+// v1.0.31: API AI (opsional) — poster sinematik via z-ai-web-dev-sdk di main process.
+// Bila gagal/tanpa kredensial -> { ok:false } dan renderer lanjut memakai grade lokal.
+contextBridge.exposeInMainWorld("novacutAI", {
+  posterAI: (image, prompt, size) => ipcRenderer.invoke("ai:poster", { image, prompt, size }),
+});
