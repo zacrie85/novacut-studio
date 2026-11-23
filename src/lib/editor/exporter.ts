@@ -19,7 +19,7 @@ import { dimsFor, useEditor, totalDuration } from "./store";
 import { transcribeAsset, type SubSegment } from "./subtitles";
 import { audioCopyAllowed, exportSegmentTurbo, releaseTurboParse, turboEligible } from "./turboExport";
 import { isCompositeFrame } from "./titleFrames";
-import type { BatchJobView, Clip, CoverFrameStyle, MediaAsset, Track } from "./types";
+import type { BatchJobView, Clip, CoverConfig, CoverFrameStyle, MediaAsset, Track } from "./types";
 import { ensureWatermark } from "./watermark";
 import { fillZoomFor } from "./visual";
 
@@ -624,7 +624,10 @@ export async function runExport() {
       frameTimes = await pickFrameTimes(firstVideo);
       if (frameTimes) useEditor.getState().patchExportState({ label: "AI memilih adegan berbeda untuk tiap bagian..." });
     }
-    const coverAssetReady = !!st0.cover.coverAssetId && st0.assets.some((a) => a.id === st0.cover.coverAssetId);
+    // v1.0.32: coverAssetReady kini cek TANDA GAYA juga — cover lama dgn gaya beda
+    // (mis. masih hitam padahal pengguna pilih Poster Hollywood) dibuat ulang
+    const coverAssetReady =
+      !!st0.cover.coverAssetId && st0.assets.some((a) => a.id === st0.cover.coverAssetId) && st0.cover.coverSig === coverSignature(st0.cover);
     if (s.includeCover && !coverAssetReady && !frameTimes) {
       useEditor.getState().patchExportState({ label: "AI membuat cover otomatis..." });
       await ensureCoverAsset(firstVideo);
@@ -785,13 +788,55 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
   return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: dataUrl, duration: 0, width, height };
 }
 
+/** v1.0.32: tanda tangan gaya cover — bila berubah (mis. pilih Poster Hollywood
+ * setelah cover lama ada), cover lama TIDAK dipakai ulang lagi tapi dibuat ulang
+ * otomatis saat export. Bug v1.0.31: cover lama (mis. gaya hitam) dipakai
+ * selamanya walau pengguna sudah ganti gaya → cover poster keluar hitam. */
+export function coverSignature(c: CoverConfig): string {
+  return [
+    "v32",
+    c.mode,
+    c.bgStyle,
+    c.posterStyleId ?? "acak",
+    c.posterAI ? "ai" : "lokal",
+    c.templateId,
+    c.frameStyle ?? "none",
+    c.bgScope,
+    c.manualAssetId ?? "-",
+    c.manualPlain ? "plain" : "tpl",
+    c.frameAssetId ?? "-",
+  ].join("|");
+}
+
 async function ensureCoverAsset(sourceAsset: MediaAsset | undefined, force = false, frameTime?: number): Promise<string | undefined> {
   const st = useEditor.getState();
-  if (!force && st.cover.coverAssetId && st.assets.some((a) => a.id === st.cover.coverAssetId)) return st.cover.coverAssetId;
+  const sig = coverSignature(st.cover);
+  const existing = st.cover.coverAssetId ? st.assets.find((a) => a.id === st.cover.coverAssetId) : undefined;
+  // v1.0.32: cover lama dianggap basi bila tandanya tidak cocok dgn gaya sekarang
+  if (!force && st.cover.coverAssetId && existing && st.cover.coverSig === sig) return st.cover.coverAssetId;
+  // mode manual: cover dibangun dari gambar unggahan pengguna (bukan adegan video)
+  if (st.cover.mode === "manual") {
+    if (existing) {
+      useEditor.getState().setCover({ coverSig: sig });
+      return st.cover.coverAssetId;
+    }
+    const m = st.assets.find((a) => a.id === st.cover.manualAssetId);
+    if (!m) return undefined;
+    const { width, height } = st.project;
+    const title = st.texts.title || m.name.replace(/\.[^.]+$/, "") || "Judul Video";
+    const dataUrl = st.cover.manualPlain
+      ? await plainCoverDataURL(m.url, width, height, st.cover.frameStyle)
+      : renderCoverToDataURL({ img: await loadImage(m.url), title, template: COVER_TEMPLATES.find((t) => t.id === st.cover.templateId) ?? COVER_TEMPLATES[0], frame: st.cover.frameStyle }, width, height);
+    if (!dataUrl) return undefined;
+    const manualAsset: MediaAsset = { id: uid("as"), name: `Cover - ${title}`, type: "image", url: dataUrl, duration: 0, width, height };
+    useEditor.getState().addAsset(manualAsset);
+    useEditor.getState().setCover({ coverAssetId: manualAsset.id, previewUrl: dataUrl, coverSig: sig });
+    return manualAsset.id;
+  }
   const asset = await makeCoverAsset(sourceAsset, frameTime);
   if (!asset) return undefined;
   useEditor.getState().addAsset(asset);
-  useEditor.getState().setCover({ coverAssetId: asset.id, previewUrl: asset.url, frameTime: 0 });
+  useEditor.getState().setCover({ coverAssetId: asset.id, previewUrl: asset.url, frameTime: 0, coverSig: sig });
   return asset.id;
 }
 
@@ -810,7 +855,7 @@ export async function regenCoverWithFrame(prevFrame: CoverFrameStyle = "none"): 
   const putAsset = (dataUrl: string, name: string) => {
     const asset: MediaAsset = { id: uid("as"), name, type: "image", url: dataUrl, duration: 0, width, height };
     useEditor.getState().addAsset(asset);
-    useEditor.getState().setCover({ coverAssetId: asset.id, previewUrl: dataUrl });
+    useEditor.getState().setCover({ coverAssetId: asset.id, previewUrl: dataUrl, coverSig: coverSignature(useEditor.getState().cover) });
   };
   try {
     if (cover.mode === "manual") {

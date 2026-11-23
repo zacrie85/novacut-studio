@@ -310,7 +310,11 @@ export function CoverPanel() {
               <>
                 <div className="space-y-1">
                   <div className="text-[11px] text-gray-400">Gaya poster (99 referensi genre Hollywood):</div>
-                  <Select value={cover.posterStyleId || "acak"} onValueChange={(v) => useEditor.getState().setCover({ posterStyleId: v })}>
+                  <Select value={cover.posterStyleId || "acak"} onValueChange={(v) => {
+                    useEditor.getState().setCover({ posterStyleId: v });
+                    // v1.0.32: cover tersimpan langsung dibuat ulang dgn gaya baru
+                    if (useEditor.getState().cover.coverAssetId) void regenCoverWithFrame().then((ok) => ok && toast({ title: "Gaya poster diterapkan ✔", description: "Cover tersimpan dibuat ulang." }));
+                  }}>
                     <SelectTrigger className="h-8 border-white/10 bg-white/[0.04] text-xs" aria-label="Gaya poster">
                       <SelectValue />
                     </SelectTrigger>
@@ -330,13 +334,19 @@ export function CoverPanel() {
                 <div className="text-[11px] text-gray-400">Latar AI Sinematik (beta):</div>
                 <div className="grid grid-cols-2 gap-1.5">
                   <button
-                    onClick={() => useEditor.getState().setCover({ posterAI: true })}
+                    onClick={() => {
+                      useEditor.getState().setCover({ posterAI: true });
+                      if (useEditor.getState().cover.coverAssetId) void regenCoverWithFrame().then((ok) => ok && toast({ title: "AI Sinematik aktif ✔", description: "Cover tersimpan dibuat ulang (AI butuh waktu hingga 3 menit)." }));
+                    }}
                     className={`rounded-md border px-2 py-1.5 text-[11px] font-medium transition ${cover.posterAI ? "border-amber-400 bg-amber-500/15 text-amber-100" : "border-white/10 bg-white/[0.03] text-gray-300 hover:border-amber-500/40"}`}
                   >
                     Aktif
                   </button>
                   <button
-                    onClick={() => useEditor.getState().setCover({ posterAI: false })}
+                    onClick={() => {
+                      useEditor.getState().setCover({ posterAI: false });
+                      if (useEditor.getState().cover.coverAssetId) void regenCoverWithFrame().then((ok) => ok && toast({ title: "Grade lokal dipakai ✔", description: "Cover tersimpan dibuat ulang." }));
+                    }}
                     className={`rounded-md border px-2 py-1.5 text-[11px] font-medium transition ${!cover.posterAI ? "border-blue-400 bg-blue-500/15 text-blue-100" : "border-white/10 bg-white/[0.03] text-gray-300 hover:border-blue-500/40"}`}
                   >
                     Mati

@@ -162,6 +162,9 @@ export interface CoverConfig {
   frameStyle?: CoverFrameStyle;
   coverAssetId?: string; // hasil render cover (image asset)
   previewUrl?: string;
+  /** v1.0.32: tanda tangan gaya saat cover dibuat — bila setelan gaya berubah,
+   * cover lama otomatis dibuat ulang saat export (dulu dipakai ulang selamanya) */
+  coverSig?: string;
 }
 
 /** Setelan efek & klip yang diterapkan ke setiap video hasil export langsung dari Playlist

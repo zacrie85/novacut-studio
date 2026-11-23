@@ -17,7 +17,7 @@ import { fmtEta, fmtSize, fmtTime } from "@/lib/editor/constants";
 import { COVER_FRAMES } from "@/lib/editor/covers";
 import { POSTER_STYLES, posterStyleById } from "@/lib/editor/posterStyles";
 import { regenCoverWithFrame, runBatchExport, triggerDownload } from "@/lib/editor/exporter";
-import type { CoverFrameStyle } from "@/lib/editor/types";
+import type { CoverConfig, CoverFrameStyle } from "@/lib/editor/types";
 import { FramePicker } from "./FramePicker";
 import { importFiles } from "@/lib/editor/mediaImport";
 import { forgetExportDir, isDesktopFS, loadSavedExportDir, openInFolder, pickExportDir, rememberExportDir } from "@/lib/editor/fsBridge";
@@ -87,6 +87,19 @@ export function SimpleMode() {
   };
 
   const videos = assets.filter((a) => a.type === "video");
+
+  /** v1.0.32: ubah setelan cover + buat ulang cover tersimpan agar gaya baru
+   * langsung terpakai (dulu cover lama tetap dipakai di export berikutnya —
+   * cover Poster Hollywood bisa keluar hitam karena cover hitam lama masih dipakai) */
+  const changeCover = (patch: Partial<CoverConfig>) => {
+    useEditor.getState().setCover(patch);
+    const st = useEditor.getState();
+    if (st.cover.coverAssetId && st.assets.some((a) => a.id === st.cover.coverAssetId)) {
+      void regenCoverWithFrame().then((ok) => {
+        if (ok) toast({ title: "Cover diperbarui ✔", description: "Cover tersimpan dibuat ulang dengan gaya baru." });
+      });
+    }
+  };
   const selected = list.map((id) => assets.find((a) => a.id === id)).filter((a): a is NonNullable<typeof a> => !!a && a.type === "video");
 
   // pulihkan folder terakhir (desktop)
@@ -361,13 +374,13 @@ export function SimpleMode() {
                       <div className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Gaya Cover</div>
                       <div className="grid grid-cols-2 gap-1.5">
                         <button
-                          onClick={() => useEditor.getState().setCover({ bgStyle: "adegan" })}
-                          className={`rounded-md border px-2 py-1.5 text-[11px] font-medium transition ${cover.bgStyle !== "poster" ? "border-blue-400 bg-blue-500/15 text-blue-100" : "border-white/10 bg-white/[0.03] text-gray-300 hover:border-blue-500/40"}`}
+                          onClick={() => changeCover({ bgStyle: "adegan" })}
+                          className={`rounded-md border px-2 py-1.5 text-[11px] font-medium transition ${cover.bgStyle === "adegan" ? "border-blue-400 bg-blue-500/15 text-blue-100" : "border-white/10 bg-white/[0.03] text-gray-300 hover:border-blue-500/40"}`}
                         >
                           Template AI (klasik)
                         </button>
                         <button
-                          onClick={() => useEditor.getState().setCover({ bgStyle: "poster" })}
+                          onClick={() => changeCover({ bgStyle: "poster" })}
                           className={`rounded-md border px-2 py-1.5 text-[11px] font-medium transition ${cover.bgStyle === "poster" ? "border-amber-400 bg-amber-500/15 text-amber-100" : "border-white/10 bg-white/[0.03] text-gray-300 hover:border-amber-500/40"}`}
                         >
                           🎬 Poster Hollywood
@@ -375,7 +388,7 @@ export function SimpleMode() {
                       </div>
                       {cover.bgStyle === "poster" && (
                         <div className="space-y-1.5">
-                          <Select value={cover.posterStyleId || "acak"} onValueChange={(v) => useEditor.getState().setCover({ posterStyleId: v })}>
+                          <Select value={cover.posterStyleId || "acak"} onValueChange={(v) => changeCover({ posterStyleId: v })}>
                             <SelectTrigger className="h-8 border-white/10 bg-white/[0.04] text-xs" aria-label="Gaya poster Hollywood">
                               <SelectValue />
                             </SelectTrigger>
@@ -390,7 +403,7 @@ export function SimpleMode() {
                           </Select>
                           <div className="text-[10px] leading-relaxed text-gray-500">
                             Gaya: <span className="text-amber-400/90">{posterStyleById(cover.posterStyleId || "acak", videos[0]?.name ?? "").genre} — {posterStyleById(cover.posterStyleId || "acak", videos[0]?.name ?? "").nama}</span> · AI Sinematik: <b>{cover.posterAI ? "aktif" : "mati"}</b>{" — "}
-                            <button className="underline hover:text-gray-300" onClick={() => useEditor.getState().setCover({ posterAI: !cover.posterAI })}>
+                            <button className="underline hover:text-gray-300" onClick={() => changeCover({ posterAI: !cover.posterAI })}>
                               {cover.posterAI ? "matikan" : "aktifkan"}
                             </button>
                           </div>
