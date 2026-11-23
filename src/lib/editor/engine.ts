@@ -537,6 +537,27 @@ class EditorEngine {
     return el;
   }
 
+  /** v1.0.34: muat & decode SEMUA aset gambar (cover/poster) SEBELUM render dimulai.
+   * Dulu mesin kilat langsung merender sebelum gambar cover selesai dimuat:
+   * ensureImagesReady menyerah setelah ±1,2 dtk → frame cover digambar TANPA
+   * gambar = latar hitam + teks saja. Fungsi ini menunggu tiap gambar siap
+   * (elemen yang sama dipakai render, jadi tidak ada pemuatan ganda). */
+  async preloadImages(assets: MediaAsset[]): Promise<void> {
+    const imgs = assets.filter((a) => a.type === "image");
+    if (!imgs.length) return;
+    await Promise.all(
+      imgs.map((a) => new Promise<void>((res) => {
+        const fake = { id: `preload-${a.id}`, kind: "image", assetId: a.id } as Clip;
+        const el = this.elFor(fake, assets);
+        if (!(el instanceof HTMLImageElement) || (el.complete && el.naturalWidth)) return res();
+        const done = () => res();
+        el.addEventListener("load", done, { once: true });
+        el.addEventListener("error", done, { once: true });
+        setTimeout(done, 8000);
+      })),
+    );
+  }
+
   gainFor(key: string): GainNode | null {
     if (!this.audioCtx) return null;
     let g = this.gains.get(key);

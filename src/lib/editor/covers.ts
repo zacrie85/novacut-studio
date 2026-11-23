@@ -607,9 +607,16 @@ export function renderCover(ctx: CanvasRenderingContext2D, input: CoverRenderInp
     },
   };
 
-  // v1.0.31: mode poster + judul kosong (cover export) — latar poster saja;
-  // judul/deskripsi/part ditulis oleh klip teks dinamis di atasnya
-  if (!(input.bgStyle === "poster" && !title)) (layouts[template.layout] ?? layouts.impact)();
+  // v1.0.34: PERBAIKAN AKAR BUG "COVER POSTER HITAM" — cover export dirender TANPA
+  // judul (judul dinamis ditulis mesin render). Dulu kondisi ini MELEWATKAN SEMUA
+  // penggambaran saat poster+judul kosong → kanvas transparan → JPEG HITAM MURNI,
+  // padahal pratinjau Cover Studio (yang ada judulnya) tampil bagus. Kini latar
+  // poster benar-benar digambar (grade + vignette + grain + furnitur), tanpa layout teks.
+  if (input.bgStyle === "poster" && !title) {
+    drawBackground(ctx, input, 0);
+  } else {
+    (layouts[template.layout] ?? layouts.impact)();
+  }
 
   // v1.0.19: bingkai cover — digambar PALING ATAS mengelilingi tepi gambar
   if (input.frame && input.frame !== "none") drawCoverFrame(ctx, w, h, input.frame, accent);
@@ -739,7 +746,16 @@ export interface FrameScore {
 }
 
 /** Analisis & beri skor beberapa kandidat frame dari video */
-export async function analyzeVideoFrames(url: string, duration: number, count = 8): Promise<{ scores: FrameScore[]; best: FrameScore | null }> {
+/** v1.0.34: rentang pencarian frame cover — detik 5 s/d 60 (permintaan pengguna:
+ * hindari intro/bukaan di awal video dan jangan sampai terlalu jauh ke akhir).
+ * Video pendek menyesuaikan otomatis (tidak pernah keluar dari durasi). */
+export function posterTimeRange(duration: number): { lo: number; hi: number } {
+  const hi = Math.min(60, Math.max(0.2, duration - 0.2));
+  const lo = Math.min(5, hi * 0.5);
+  return { lo: Math.max(0, lo), hi };
+}
+
+export async function analyzeVideoFrames(url: string, duration: number, count = 8, range?: { lo: number; hi: number }): Promise<{ scores: FrameScore[]; best: FrameScore | null }> {
   const video = document.createElement("video");
   video.src = url;
   video.muted = true;
@@ -753,7 +769,14 @@ export async function analyzeVideoFrames(url: string, duration: number, count = 
   if (!ok || !ctx) return { scores, best: null };
 
   const times: number[] = [];
-  for (let i = 0; i < count; i++) times.push(Math.min(duration - 0.1, 0.1 + ((duration - 0.3) * (i + 0.5)) / count));
+  if (range) {
+    // v1.0.34: sampling hanya di dalam rentang yang diminta (mis. detik 5–60)
+    const lo = Math.max(0, Math.min(range.lo, Math.max(0, duration - 0.2)));
+    const hi = Math.max(lo + 0.1, Math.min(range.hi, duration - 0.2));
+    for (let i = 0; i < count; i++) times.push(Math.min(hi, lo + ((hi - lo) * (i + 0.5)) / count));
+  } else {
+    for (let i = 0; i < count; i++) times.push(Math.min(duration - 0.1, 0.1 + ((duration - 0.3) * (i + 0.5)) / count));
+  }
 
   for (const t of times) {
     await seekVideo(video, t);

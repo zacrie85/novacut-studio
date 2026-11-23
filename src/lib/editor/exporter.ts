@@ -7,7 +7,7 @@
 //  2) MODE KOMPATIBEL: rekam real-time via MediaRecorder (jalur lama).
 // Fitur: cover otomatis, teks judul/deskripsi/part, subtitle AI (bahasa Indonesia).
 
-import { grabFrame, aiRecommendTemplates, analyzeVideoFrames, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, renderCoverToDataURL, aiPosterizeDataURL } from "./covers";
+import { grabFrame, aiRecommendTemplates, analyzeVideoFrames, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, posterTimeRange, renderCoverToDataURL, aiPosterizeDataURL } from "./covers";
 import { posterStyleById, type PosterStyle } from "./posterStyles";
 import { COVER_TEMPLATES, partLabel, slugify, uid } from "./constants";
 import { engine } from "./engine";
@@ -617,6 +617,8 @@ export async function runExport() {
   try {
     // v1.0.25: decode gambar watermark sebelum render (satu jalur composeFrame)
     if (st0.playlistExport.wmOn && st0.playlistExport.wmSrc) await ensureWatermark(st0.playlistExport.wmSrc);
+    // v1.0.34: pastikan semua gambar yang sudah ada (cover, dsb.) ter-decode dulu
+    await engine.preloadImages(st0.assets);
     const firstVideo = st0.clips.map((c) => snapshot.assets.find((a) => a.id === c.assetId)).find((a) => a?.type === "video");
     // mode "tiap bagian beda": AI analisis sekali, tiap bagian hasil split pakai adegan berbeda
     let frameTimes: number[] | null = null;
@@ -752,12 +754,15 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
   let frameUrl: string | null = null;
   let brightness = 128;
   const dur = Math.max(1, sourceAsset!.duration);
+  // v1.0.34: frame cover dicari di detik 5–60 (permintaan pengguna — hindari
+  // intro/bukaan awal video; video pendek menyesuaikan otomatis)
+  const range = posterTimeRange(dur);
   try {
     if (typeof frameTime === "number") {
       // adegan spesifik untuk bagian ini (mode "tiap bagian beda")
       frameUrl = await grabFrame(sourceAsset!.url, Math.max(0, Math.min(frameTime, dur - 0.2)), 1280);
     } else {
-      const analysis = await analyzeVideoFrames(sourceAsset!.url, sourceAsset!.duration, 6);
+      const analysis = await analyzeVideoFrames(sourceAsset!.url, sourceAsset!.duration, 6, range);
       if (analysis.best) {
         brightness = analysis.best.brightness;
         frameUrl = await grabFrame(sourceAsset!.url, analysis.best.time, 1280);
@@ -767,10 +772,11 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
     /* fallback di bawah */
   }
   // v1.0.33: grabFrame kini MENOLAK frame hitam (decoder GPU gagal offscreen) —
-  // coba kandidat waktu lain sebelum menyerah pada frame video
+  // coba kandidat waktu lain (di dalam rentang 5–60) sebelum menyerah
   if (!frameUrl) {
     for (const f of [0.3, 0.62, 0.15, 0.85]) {
-      frameUrl = await grabFrame(sourceAsset!.url, Math.min(dur - 0.2, dur * f), 1280);
+      const t = range.lo + (range.hi - range.lo) * f;
+      frameUrl = await grabFrame(sourceAsset!.url, Math.max(0, Math.min(t, dur - 0.2)), 1280);
       if (frameUrl) break;
     }
   }
@@ -941,7 +947,7 @@ async function pickFrameTimes(sourceAsset: MediaAsset | undefined): Promise<numb
   if (!sourceAsset || sourceAsset.type !== "video") return null;
   if (st.cover.mode !== "auto" || st.cover.bgStyle !== "adegan" || st.cover.bgScope !== "beda") return null;
   try {
-    const analysis = await analyzeVideoFrames(sourceAsset.url, sourceAsset.duration, 8);
+    const analysis = await analyzeVideoFrames(sourceAsset.url, sourceAsset.duration, 8, posterTimeRange(sourceAsset.duration));
     const times = analysis.scores.map((sc) => sc.time);
     return times.length ? times : null;
   } catch {

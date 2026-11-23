@@ -431,13 +431,21 @@ export function SimpleMode() {
                       </div>
                     </div>
                     <div className="text-[11px] leading-relaxed text-gray-500">
-                      {cover.coverAssetId ? "✔ Cover siap dipakai (dibuat di Cover Studio)." : "Belum ada cover — AI akan membuatkan otomatis dari video."}
+                      {cover.coverAssetId ? "✔ Cover siap dipakai — akan tampil di depan setiap bagian." : "Belum ada cover — AI akan membuatkan otomatis dari video."}
                     </div>
+                    {/* v1.0.34: PRATINJAU cover langsung di Mode Sederhana — pengguna
+                     * melihat sendiri poster/adegan yang akan dipakai SEBELUM export */}
+                    {cover.coverAssetId && cover.previewUrl ? (
+                      <div className="space-y-1">
+                        <img src={cover.previewUrl} alt="Pratinjau cover" className="h-28 w-full rounded-lg border border-white/10 object-cover" />
+                        <div className="text-[10px] text-gray-500">Pratinjau cover yang akan dipakai (frame adegan video + gaya di atas, diambil dari detik 5–60).</div>
+                      </div>
+                    ) : null}
                     <div className="rounded-lg border border-blue-500/20 bg-blue-500/[0.06] px-2.5 py-1.5 text-[11px] leading-relaxed text-blue-200/90">
                       Latar cover: <b>{cover.bgStyle === "hitam" ? "hitam polos" : cover.bgStyle === "poster" ? "Poster Hollywood" : "adegan dari video"}</b>
                       {cover.bgStyle === "adegan" ? (<> · semua bagian <b>{cover.bgScope === "beda" ? "berbeda adegan" : "sama"}</b></>) : null}
                       {cover.frameStyle && cover.frameStyle !== "none" ? (<> · bingkai <b>{COVER_FRAMES.find((f) => f.id === cover.frameStyle)?.label}</b></>) : null}
-                      {cover.mode === "auto" ? " — ubah di Mode Pro → tab Cover" : " · gambar pilihanmu"}
+                      {cover.mode === "auto" ? " — adegan diambil otomatis dari video (detik 5–60)" : " · gambar pilihanmu"}
                     </div>
                   </>
                 ) : (

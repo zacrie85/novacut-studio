@@ -10,7 +10,7 @@ import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { COVER_TEMPLATES, fmtTime, partLabel } from "@/lib/editor/constants";
 import type { CoverTemplate } from "@/lib/editor/constants";
-import { aiRecommendTemplates, analyzeVideoFrames, COVER_FRAMES, drawCoverFrame, grabFrame, loadImage, plainCoverDataURL, renderCover, renderCoverToDataURL } from "@/lib/editor/covers";
+import { aiRecommendTemplates, analyzeVideoFrames, COVER_FRAMES, drawCoverFrame, grabFrame, loadImage, plainCoverDataURL, posterTimeRange, renderCover, renderCoverToDataURL } from "@/lib/editor/covers";
 import { POSTER_STYLES, posterStyleById } from "@/lib/editor/posterStyles";
 import { useEditor } from "@/lib/editor/store";
 import { uid } from "@/lib/editor/constants";
@@ -121,7 +121,7 @@ export function CoverPanel() {
     setBusy("ai");
     toast({ title: "AI sedang menganalisis...", description: "Mencari frame paling menarik" });
     try {
-      const { best } = await analyzeVideoFrames(source.url, source.duration, 8);
+      const { best } = await analyzeVideoFrames(source.url, source.duration, 8, posterTimeRange(source.duration));
       if (best) {
         useEditor.getState().setCover({ frameTime: best.time });
         toast({ title: "Frame terbaik ditemukan", description: `Pada ${fmtTime(best.time)} — skor ${best.score.toFixed(2)}` });

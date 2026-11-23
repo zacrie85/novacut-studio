@@ -680,13 +680,18 @@ function activeVideoClips(t: number, rs: RenderState): Clip[] {
 
 /** tunggu kanvas siap (elemen gambar lengkap) */
 async function ensureImagesReady(t: number, rs: RenderState): Promise<void> {
-  for (let round = 0; round < 24; round++) {
+  // v1.0.34: 24 ronde (±1,2 dtk) → 120 ronde (±6 dtk) + decode eksplisit —
+  // komputer lambat/gambar besar tidak boleh membuat cover digambar hitam
+  for (let round = 0; round < 120; round++) {
     let pending = false;
     for (const clip of rs.clips) {
       if (clip.kind !== "image") continue;
       if (t < clip.start || t >= clip.start + clip.duration) continue;
       const el = engine.elFor(clip, rs.assets);
-      if (el instanceof HTMLImageElement && !el.complete) pending = true;
+      if (el instanceof HTMLImageElement && (!el.complete || !el.naturalWidth)) {
+        pending = true;
+        void el.decode?.().catch(() => undefined);
+      }
     }
     if (!pending) return;
     await sleep(50);
@@ -701,6 +706,10 @@ export async function exportRangeFast(opts: FastExportOptions): Promise<FastExpo
   const support = await fastSupported();
   if (!support) throw new Error("WebCodecs tidak tersedia");
   await ensureAppFonts();
+  // v1.0.34: tunggu SEMUA gambar (cover/poster) benar-benar ter-decode sebelum
+  // frame pertama — dulu render mulai duluan → ensureImagesReady menyerah dalam
+  // diam → frame cover keluar hitam + teks saja (keluhan Poster Hollywood)
+  await engine.preloadImages(opts.rs.assets);
 
   const rs = opts.rs;
   const w = rs.project.width;
