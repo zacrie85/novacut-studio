@@ -833,6 +833,22 @@ let _kesalahanPosterAI = "";
 export function kesalahanPosterAI(): string {
   return _kesalahanPosterAI;
 }
+/** v1.0.44: ubah pesan kegagalan API menjadi bahasa Indonesia + LANGKAH solusi.
+ * Dulu pesan mentah (mis. "Insufficient balance") hanya tampil di toast ±4 detik
+ * — pengguna tidak sempat membacanya dan bingung kenapa poster Z.ai tidak jadi. */
+export function terjemahkanKesalahanAI(raw: string): string {
+  const s = String(raw || "");
+  const cari = (p: RegExp, msg: string) => (p.test(s) ? msg : null);
+  return (
+    cari(/insufficient|balance|arrears|余额|欠费|credit/i, "Saldo/kredit Z.ai tidak cukup — buka z.ai → Billing → isi saldo (±Rp250/poster), lalu klik Buat Ulang Poster lagi") ||
+    cari(/api ?key|invalid.*(key|token)|unauthorized|authentication/i, "Kunci API Z.ai salah/kedaluwarsa — tempel ulang kunci di kartu Mesin Poster AI lalu Simpan") ||
+    cari(/429|rate ?limit|too many|frequency|throttl/i, "Batas laju Z.ai tercapai — tunggu ±1 menit lalu klik Buat Ulang Poster lagi") ||
+    cari(/timeout|waktu tunggu|abort|timed out/i, "Waktu tunggu habis (koneksi lambat / kualitas HD ±20 dtk) — coba lagi, atau pilih kualitas Hemat") ||
+    cari(/network|fetch|enotfound|econnrefused/i, "Tidak bisa terhubung ke server AI — cek koneksi internet lalu coba lagi") ||
+    cari(/model.*(not exist|not found)|invalid model/i, "Model AI tidak tersedia di akun ini — cek nama model/z.ai lalu coba lagi") ||
+    (s.trim() ? s.slice(0, 160) : "AI tidak mengembalikan gambar")
+  );
+}
 export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size: "1344x768" | "768x1344" = "1344x768", timeoutMs = 180000): Promise<string | null> {
   if (typeof window === "undefined" || !window.novacutAI?.posterAI) {
     _kesalahanPosterAI = "";
@@ -847,17 +863,17 @@ export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size:
       new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
     ]);
     if (res === null) {
-      _kesalahanPosterAI = `waktu tunggu AI habis (>${Math.round(timeoutMs / 1000)} dtk)`;
+      _kesalahanPosterAI = terjemahkanKesalahanAI(`waktu tunggu AI habis (>${Math.round(timeoutMs / 1000)} dtk)`);
       return null;
     }
     if (res?.ok && res.image) {
       _kesalahanPosterAI = "";
       return res.image;
     }
-    _kesalahanPosterAI = String(res?.error || "AI tidak mengembalikan gambar").slice(0, 160);
+    _kesalahanPosterAI = terjemahkanKesalahanAI(String(res?.error || ""));
     return null;
   } catch (err) {
-    _kesalahanPosterAI = String(err).slice(0, 160);
+    _kesalahanPosterAI = terjemahkanKesalahanAI(String(err));
     return null;
   }
 }

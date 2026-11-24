@@ -65,6 +65,9 @@ export function SimpleMode() {
   const pl = useEditor((s) => s.playlistExport);
   const cover = useEditor((s) => s.cover);
   const project = useEditor((s) => s.project);
+  // v1.0.44: status aset cover — poster AI sukses (aiMade) atau frame klasik (AI gagal)
+  const coverAsset = assets.find((a) => a.id === cover.coverAssetId);
+  const posterAIBerhasil = !!coverAsset?.aiMade;
   const { toast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
   const desktop = isDesktopFS();
@@ -106,8 +109,20 @@ export function SimpleMode() {
       // pengguna langsung melihat hasil gaya barunya (dulu baru muncul saat export)
       toast({ title: "Membuat contoh cover…", description: "AI mengambil adegan terbaik dari video untuk cover/poster." });
       void ensureCoverAsset(videos[0]).then((id) => {
-        if (id) toast({ title: "Contoh cover siap ✔", description: "Gaya baru sudah diterapkan dan akan dipakai saat export." });
-        else toast({ title: "Cover dibuat saat export", description: "Contoh cover belum bisa dibuat sekarang — akan dibuat otomatis saat export." });
+        // v1.0.44: fallback AI tetap mengembalikan id — cek aiMade, jangan anggap AI sukses
+        const aiOk = !!id && !!useEditor.getState().assets.find((a) => a.id === id)?.aiMade;
+        if (id && aiOk) {
+          useEditor.getState().setCover({ coverAIError: "" });
+          toast({ title: "Contoh poster AI siap ✔", description: "Gaya baru sudah diterapkan dan akan dipakai saat export." });
+        } else if (id && patch.bgStyle === "poster") {
+          const sebab = kesalahanPosterAI() || "AI tidak mengembalikan gambar";
+          useEditor.getState().setCover({ coverAIError: sebab });
+          toast({ title: "AI gagal — frame cadangan dipakai", description: `Contoh cover memakai frame ter-grade. ${sebab}` });
+        } else if (id) {
+          toast({ title: "Contoh cover siap ✔", description: "Gaya baru sudah diterapkan dan akan dipakai saat export." });
+        } else {
+          toast({ title: "Cover dibuat saat export", description: "Contoh cover belum bisa dibuat sekarang — akan dibuat otomatis saat export." });
+        }
       });
     }
   };
@@ -433,8 +448,17 @@ export function SimpleMode() {
                                 toast({ title: "Membuat poster AI…", description: "Adegan video diubah jadi poster Hollywood (10–120 detik)." });
                                 void ensureCoverAsset(videos[0], true).then((id) => {
                                   setPosterMaking(false);
-                                  if (id) toast({ title: "Poster AI siap ✔", description: "Poster tampil di pratinjau dan dipakai saat export." });
-                                  else toast({ title: "AI gagal — pakai cadangan", description: `Cover memakai frame ter-grade. ${kesalahanPosterAI() || "Pasang/cek Kunci API Poster AI lalu coba lagi."}` });
+                                  // v1.0.44: fallback AI tetap mengembalikan id — toast dulu
+                                  // bilang "Poster AI siap ✔" padahal AI gagal (cover frame klasik)
+                                  const aiOk = !!id && !!useEditor.getState().assets.find((a) => a.id === id)?.aiMade;
+                                  if (aiOk) {
+                                    useEditor.getState().setCover({ coverAIError: "" });
+                                    toast({ title: "Poster AI siap ✔", description: "Poster tampil di pratinjau dan dipakai saat export." });
+                                  } else {
+                                    const sebab = kesalahanPosterAI() || "AI tidak mengembalikan gambar";
+                                    useEditor.getState().setCover({ coverAIError: sebab });
+                                    toast({ title: "AI gagal — pakai cadangan", description: `Cover memakai frame ter-grade. ${sebab}` });
+                                  }
                                 });
                               }}
                               disabled={posterMaking || !videos[0]}
@@ -631,6 +655,12 @@ export function SimpleMode() {
                     <span className="shrink-0 font-mono text-[10px] text-blue-300/80">{project.width}×{project.height} · {project.height > project.width ? "9:16" : "16:9"}</span>
                   </div>
                   <div className="space-y-2 p-3">
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className={posterAIBerhasil ? "font-semibold text-emerald-400" : "font-semibold text-amber-400/90"}>
+                        {cover.bgStyle === "poster" ? (posterAIBerhasil ? "● Poster AI siap" : cover.coverAssetId ? "○ Frame klasik (AI gagal)" : "○ Belum ada poster") : cover.coverAssetId ? "● Template klasik" : "○ Belum ada cover"}
+                      </span>
+                      <span className="font-mono text-gray-500">{cover.bgStyle === "poster" ? "poster Hollywood" : "template"}</span>
+                    </div>
                     {cover.coverAssetId && cover.previewUrl ? (
                       <img
                         src={cover.previewUrl}
@@ -651,6 +681,13 @@ export function SimpleMode() {
                         </span>
                       </div>
                     )}
+                    {cover.coverAIError ? (
+                      <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-[10px] leading-relaxed text-amber-200">
+                        <b>⚠️ Poster AI gagal — cover memakai frame klasik.</b>
+                        <br />Sebab: {cover.coverAIError}
+                        <br />Perbaiki sebabnya lalu klik 🎨 Buat Ulang Poster.
+                      </div>
+                    ) : null}
                     <div className="text-[10px] leading-relaxed text-gray-500">
                       Rasio penuh sesuai proyek — persis seperti yang tampil di depan video hasil export.
                     </div>

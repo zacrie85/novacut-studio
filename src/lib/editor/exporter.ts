@@ -758,7 +758,13 @@ export async function runExport() {
 async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: number): Promise<MediaAsset | undefined> {
   const st = useEditor.getState();
   if (st.cover.bgStyle !== "hitam" && (!sourceAsset || sourceAsset.type !== "video")) return undefined;
-  const title = bersihkanJudul(st.texts.title || sourceAsset?.name.replace(/\.[^.]+$/, "") || "Video");
+  // v1.0.44: judul poster = NAMA VIDEO YANG DIPROSES (bukan texts.title global!) —
+  // dulu texts.title (otomatis terisi nama video PERTAMA) selalu menang, akibatnya
+  // batch 2+ video: semua poster memakai judul video pertama walau adegannya beda
+  // (keluhan: "pengalaman 5 menit" + "ngamen 5" → semua poster tertulis ngamen pertama).
+  // Urutan judul untuk overlay klasik pun kini per-video; pengguna tetap bisa
+  // memaksakan judul sendiri lewat prompt manual: judul "...".
+  const title = bersihkanJudul(sourceAsset?.name.replace(/\.[^.]+$/, "") || st.texts.title || "Video");
   const { width, height } = st.project;
 
   // Latar hitam polos — pilihan pengguna, tanpa adegan video

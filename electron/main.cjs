@@ -234,8 +234,10 @@ function registerFSIpc() {
     // v1.0.43: rantai model vision — glm-4.6v-flash (gratis) dulu; bila model
     // sudah tidak tersedia/berubah di akun, coba glm-5.3-flash (VLM docs.z.ai).
     const visPrompt =
-      "Describe this video frame as a cinematic movie-poster scene brief in English (max 100 words): " +
-      "main subject appearance, pose, emotion, setting, lighting, color mood. " +
+      "Describe this video frame as a cinematic movie-poster scene brief in English (max 120 words): " +
+      "HOW MANY people are in the frame and each person's exact appearance (gender, age, hair, clothing colors), " +
+      "their pose, emotion, props, the setting/background, lighting and color mood. " +
+      "The poster must redraw EXACTLY these people and this setting — same identity, same clothes, same place. " +
       "IGNORE any burned-in subtitles, captions or watermarks — do not mention them.";
     let pesanTerakhir = "";
     for (const model of ["glm-4.6v-flash", "glm-5.3-flash"]) {
@@ -262,6 +264,19 @@ function registerFSIpc() {
     }
     throw new Error(pesanTerakhir || "vision gagal");
   };
+  // unduh gambar dari URL sementara (30 hari) → base64 — dipakai txt2img & img2img
+  const unduhGambar = async (url) => {
+    if (url.startsWith("data:")) return url;
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 60000);
+    try {
+      const r = await fetch(url, { signal: ctrl.signal });
+      if (!r.ok) throw new Error(`unduh poster gagal HTTP ${r.status}`);
+      return `data:image/png;base64,${Buffer.from(await r.arrayBuffer()).toString("base64")}`;
+    } finally {
+      clearTimeout(to);
+    }
+  };
   // glm-image: gambar poster Hollywood utuh (hd/standard). Respons = URL sementara → unduh → base64.
   // v1.0.38: quality mengikuti preferensi pengguna — hd (terbaik, ±20 dtk) atau standard (cepat, 5-10 dtk).
   const pubGeneratePoster = async (prompt, key, size, quality) => {
@@ -274,20 +289,39 @@ function registerFSIpc() {
     // v1.0.43: terima url ATAU b64_json (bentuk respons bisa berganti antar versi API)
     const url = json?.data?.[0]?.url || (json?.data?.[0]?.b64_json ? `data:image/png;base64,${json.data[0].b64_json}` : "");
     if (!url) throw new Error("respons gambar kosong");
-    if (url.startsWith("data:")) return url;
-    const ctrl = new AbortController();
-    const to = setTimeout(() => ctrl.abort(), 60000);
-    try {
-      const r = await fetch(url, { signal: ctrl.signal });
-      if (!r.ok) throw new Error(`unduh poster gagal HTTP ${r.status}`);
-      return `data:image/png;base64,${Buffer.from(await r.arrayBuffer()).toString("base64")}`;
-    } finally {
-      clearTimeout(to);
-    }
+    return unduhGambar(url);
   };
+  // v1.0.44: IMG2IMG DULU — frame utuh dikirim ke glm-image via endpoint edit ala
+  // SDK (POST /images/generations/edit) → wajah/pakaian/adegan VIDEO terjaga
+  // (keluhan: "gambar poster bukan dari adegan video"). Endpoint ini belum ada di
+  // docs publik (SDK internal memakainya); bila gagal/404 → null → caller kembali
+  // ke txt2img pubGeneratePoster dgn deskripsi adegan (jalur lama tetap utuh).
+  const pubEditPoster = async (dataUrl, prompt, key, size, quality) => {
+    const q = quality === "standard" ? "standard" : "hd";
+    for (const body of [
+      { model: "glm-image", prompt: prompt.slice(0, 4000), images: [{ url: dataUrl }], quality: q, size },
+      { model: "glm-image", prompt: prompt.slice(0, 4000), image: dataUrl, quality: q, size },
+      { model: "glm-image", prompt: prompt.slice(0, 4000), image_url: dataUrl, quality: q, size },
+    ]) {
+      try {
+        const json = await zaiPubFetch("/images/generations/edit", key, body);
+        const url = json?.data?.[0]?.url || (json?.data?.[0]?.b64_json ? `data:image/png;base64,${json.data[0].b64_json}` : "");
+        if (url) return unduhGambar(url);
+      } catch {
+        /* bentuk/endpoint tak didukung → coba bentuk berikutnya */
+      }
+    }
+    return null;
+  };
+  // v1.0.44: ADEGAN MENANG — deskripsi frame jadi prioritas tertinggi; instruksi
+  // gaya pengguna (termasuk default "2-3 karakter berhadapan") hanya GAYA, dan
+  // karakternya WAJIB orang-orang dari adegan video — dulu glm-image bebas
+  // mengarang karakter/latar baru sehingga poster terasa "bukan dari video".
   const posterPromptPublik = (prompt, deskripsi) =>
-    `Create ONE professional modern Hollywood movie poster, cinematic style. Follow these user instructions: ${prompt}. ` +
-    `Scene basis (from the user's video frame): ${deskripsi}. ` +
+    `Create ONE professional modern Hollywood movie poster, cinematic style. ` +
+    `SCENE BASIS (HIGHEST PRIORITY — the poster MUST depict exactly the people and setting described): ${deskripsi}. ` +
+    `If the style instructions mention 2-3 characters, use THE PEOPLE FROM THE SCENE above in that composition — never invent new characters, faces, or locations. ` +
+    `Style instructions from the user: ${prompt}. ` +
     `Rules: all text fully inside the image with safe margins from every edge; the movie title must be large, dramatic, positioned at the BOTTOM area of the poster, and spelled EXACTLY as given in the instructions; ` +
     `no subtitles, no captions, no watermarks, no timestamps; single cohesive composition, dramatic lighting.`;
 
@@ -611,7 +645,12 @@ function registerFSIpc() {
         lastAIPosterError = String((errVis && errVis.message) || errVis).slice(0, 200);
       }
       try {
-        const poster = await pubGeneratePoster(posterPromptPublik(prompt, deskripsi || "dramatic cinematic scene"), key, sizePub, payload?.quality);
+        // v1.0.44: img2img dulu (frame utuh → adegan video terjaga di poster);
+        // gagal/tak didukung → txt2img dgn deskripsi adegan scene-first
+        const promptPublik = posterPromptPublik(prompt, deskripsi || "dramatic cinematic scene");
+        const posterEdit = await pubEditPoster(image, promptPublik, key, sizePub, payload?.quality);
+        if (posterEdit) return { ok: true, image: posterEdit, via: "publik-edit" };
+        const poster = await pubGeneratePoster(promptPublik, key, sizePub, payload?.quality);
         if (poster) return { ok: true, image: poster, via: "publik" };
         lastAIPosterError = "respons gambar kosong";
       } catch (err) {

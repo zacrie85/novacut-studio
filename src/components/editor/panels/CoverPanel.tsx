@@ -202,8 +202,16 @@ export function CoverPanel() {
       toast({ title: "Membuat poster AI…", description: "Adegan video diubah jadi poster Hollywood (10–120 detik)." });
       const id = await ensureCoverAsset(source, true);
       setBusy(null);
-      if (id) toast({ title: "Poster AI disimpan ✔", description: "Dipakai otomatis di Export & Split." });
-      else toast({ title: "AI gagal — cover cadangan dipakai", description: `Frame ter-grade dibuat. ${kesalahanPosterAI() || "Cek koneksi/kredensial AI."}` });
+      // v1.0.44: fallback AI tetap mengembalikan id — cek aiMade agar toast jujur
+      const aiOk = !!id && !!useEditor.getState().assets.find((a) => a.id === id)?.aiMade;
+      if (aiOk) {
+        useEditor.getState().setCover({ coverAIError: "" });
+        toast({ title: "Poster AI disimpan ✔", description: "Dipakai otomatis di Export & Split." });
+      } else {
+        const sebab = kesalahanPosterAI() || "AI tidak mengembalikan gambar";
+        useEditor.getState().setCover({ coverAIError: sebab });
+        toast({ title: "AI gagal — cover cadangan dipakai", description: `Frame ter-grade dibuat. ${sebab}` });
+      }
       return;
     }
     if (cover.mode === "auto" && !isBlack && !frameUrl) {

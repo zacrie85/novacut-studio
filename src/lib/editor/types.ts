@@ -170,6 +170,10 @@ export interface CoverConfig {
   /** v1.0.32: tanda tangan gaya saat cover dibuat — bila setelan gaya berubah,
    * cover lama otomatis dibuat ulang saat export (dulu dipakai ulang selamanya) */
   coverSig?: string;
+  /** v1.0.44: pesan kegagalan AI TERAKHIR (sebab poster bawaan muncul) — tampil
+   * persisten di panel pratinjau Mode Sederhana; dulu hanya toast ±4 detik yang
+   * mudah terlewat sehingga pengguna bingung kenapa poster Z.ai tidak muncul. */
+  coverAIError?: string;
 }
 
 /** Setelan efek & klip yang diterapkan ke setiap video hasil export langsung dari Playlist
