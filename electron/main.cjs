@@ -380,7 +380,19 @@ function registerFSIpc() {
         max_tokens: 300,
       }, 90000);
       return String(r?.response || "").trim();
-    } catch {
+    } catch (err) {
+      // v1.0.41: lisensi Meta Llama minta persetujuan SEKALI per akun ("Model
+      // Agreement") — kirim {"prompt":"agree"} otomatis lalu ulang vision sekali.
+      if (/model agreement|agree/i.test(String((err && err.message) || ""))) {
+        try {
+          await cfRun(cf, "@cf/meta/llama-3.2-11b-vision-instruct", { prompt: "agree" }, 30000);
+          const r = await cfRun(cf, "@cf/meta/llama-3.2-11b-vision-instruct", {
+            messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: dataUrl } }, { type: "text", text: visPrompt }] }],
+            max_tokens: 300,
+          }, 90000);
+          return String(r?.response || "").trim();
+        } catch { return ""; }
+      }
       return ""; // vision gagal → lanjut tanpa deskripsi (prompt tetap membawa judul)
     }
   };
@@ -404,18 +416,33 @@ function registerFSIpc() {
   // (prompt + gambar), output {image: base64}. Dicoba 3 bentuk (multipart →
   // JSON image → JSON images) bila API menolak salah satu bentuk.
   const dataUrlToBuf = (dataUrl) => Buffer.from(String(dataUrl || "").replace(/^data:[^,]+,/, ""), "base64");
-  const cfEditPoster = async (prompt, dataUrl, cf) => {
+  const cfEditPoster = async (prompt, dataUrl, cf, wide) => {
     const url = `${CF_BASE}/accounts/${cf.account}/ai/run/@cf/black-forest-labs/flux-2-klein-4b`;
     const auth = { Authorization: `Bearer ${cf.token}` };
     const body64 = String(dataUrl).split(",").pop() || "";
     const ambil = (r) => (r?.image ? `data:image/jpeg;charset=utf-8;base64,${r.image}` : null);
+    const rasio = wide ? { width: 1024, height: 576 } : { width: 576, height: 1024 };
     let lastErr = null;
-    // 1) multipart/form-data — bentuk resmi sesuai schema (multipart required)
+    // 1) multipart/form-data + rasio proyek — bentuk resmi schema (multipart
+    //    required); uji nyata v1.0.41: width/height diterima, output 1024x576 ✓
     try {
       const fd = new FormData();
       fd.append("prompt", prompt.slice(0, 1800));
       fd.append("image", new Blob([dataUrlToBuf(dataUrl)], { type: "image/jpeg" }), "frame.jpg");
-      const res = await fetch(url, { method: "POST", headers: auth, body: fd });
+      fd.append("width", String(rasio.width));
+      fd.append("height", String(rasio.height));
+      const res = await fetch(url, { method: "POST", headers: auth, body: fd, signal: AbortSignal.timeout(180000) });
+      const json = await res.json().catch(() => ({}));
+      const img = ambil(json?.result);
+      if (res.ok && json?.success !== false && img) return img;
+      lastErr = new Error(json?.errors?.[0]?.message || `HTTP ${res.status}`);
+    } catch (err) { lastErr = err; }
+    // 2) multipart tanpa rasio (output persegi) — jaring pengaman moderation
+    try {
+      const fd = new FormData();
+      fd.append("prompt", prompt.slice(0, 1800));
+      fd.append("image", new Blob([dataUrlToBuf(dataUrl)], { type: "image/jpeg" }), "frame.jpg");
+      const res = await fetch(url, { method: "POST", headers: auth, body: fd, signal: AbortSignal.timeout(180000) });
       const json = await res.json().catch(() => ({}));
       const img = ambil(json?.result);
       if (res.ok && json?.success !== false && img) return img;
@@ -441,9 +468,17 @@ function registerFSIpc() {
   const cfPosterPrompt = (prompt, deskripsi, judul) => {
     const m = judul || (String(prompt).match(/judul "([^"]+)"/) || [])[1] || "";
     const judulPart = m
-      ? `The ONLY large text on the poster is the movie title: "${m}" spelled exactly, large bold typography inside safe margins. `
+      ? `The ONLY large text on the poster is the movie title: "${m.slice(0, 60).toUpperCase()}" spelled exactly letter by letter, all caps, large bold typography inside safe margins. `
       : "";
-    const tema = String(prompt).replace(/dengan menggunakan judul "[^"]+" sebagai judul di poster\.?/i, "").trim();
+    // v1.0.41: kata "Hollywood" juga dibersihkan dari instruksi pengguna
+    // (prompt default berbahasa Indonesia menyebut "film Hollywood") — jika
+    // tidak, model bisa menulis HOLLYWOOD sebagai judul poster.
+    const tema = String(prompt)
+      .replace(/dengan menggunakan judul "[^"]+" sebagai judul di poster\.?/i, "")
+      .replace(/film\s+Hollywood/gi, "film")
+      .replace(/\bHollywood\b/gi, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
     return `Create ONE cinematic blockbuster movie poster, professional key art. ${judulPart}` +
       `NO other words anywhere: no actor names, no credits block, no studio logos, no small text, no subtitles, no watermarks, no timestamps. ` +
       `Single cohesive composition, dramatic lighting, rich color grade. ` +
@@ -540,7 +575,7 @@ function registerFSIpc() {
         // v1.0.40: EDIT dulu — frame utuh dikirim ke FLUX.2 Klein 4B (wajah &
         // adegan terjaga); bila gagal → txt2img FLUX.1 schnell (deskripsi adegan).
         try {
-          const poster = await cfEditPoster(cfEditPrompt(prompt, deskripsi, judul), image, cf);
+          const poster = await cfEditPoster(cfEditPrompt(prompt, deskripsi, judul), image, cf, payload?.size !== "768x1344");
           return { ok: true, image: poster, via: "cloudflare-edit" };
         } catch (errEdit) {
           const poster = await cfGeneratePoster(cfPosterPrompt(prompt, deskripsi, judul), cf, payload?.size !== "768x1344");
