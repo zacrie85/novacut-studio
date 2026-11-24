@@ -7,7 +7,7 @@
 //  2) MODE KOMPATIBEL: rekam real-time via MediaRecorder (jalur lama).
 // Fitur: cover otomatis, teks judul/deskripsi/part, subtitle AI (bahasa Indonesia).
 
-import { bersihkanJudul, grabFrame, aiRecommendTemplates, analyzeVideoFrames, buildPosterPrompt, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, posterFallbackDataURL, posterTimeRange, renderCoverToDataURL, aiPosterizeDataURL } from "./covers";
+import { bersihkanJudul, grabFrame, aiRecommendTemplates, analyzeVideoFrames, buildPosterPrompt, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, posterFallbackDataURL, posterTimeRange, renderCoverToDataURL, renderPosterTextDataURL, aiPosterizeDataURL, resolvePosterTemplateId } from "./covers";
 import { COVER_TEMPLATES, partLabel, slugify, uid } from "./constants";
 import { engine } from "./engine";
 import { adjustRangesToSilence, exportRangeFast, fastSupported, AudioDecodeCache } from "./fastExport";
@@ -812,9 +812,21 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
   if (posterOn) {
     if (frameUrl) {
       const size = width > height ? "1344x768" : "768x1344";
-      const prompt = buildPosterPrompt(st.cover.posterPrompt, title);
+      // v1.0.46: mode "app" (default) — AI melukis art TANPA teks, judul ditulis
+      // aplikasi via template (ejaan 100% benar); mode "ai" = perilaku lama
+      const textFree = (st.cover.posterTextMode ?? "app") === "app";
+      const prompt = buildPosterPrompt(st.cover.posterPrompt, title, textFree);
       const aiUrl = await aiPosterizeDataURL(frameUrl, prompt, size);
       if (aiUrl) {
+        if (textFree) {
+          // v1.0.46: art AI polos + frame tulisan gaya referensi (judul = nama video)
+          const posterTplId = resolvePosterTemplateId(st.cover, title);
+          const imgAI = await loadImage(aiUrl).catch(() => null);
+          if (imgAI) {
+            const composed = renderPosterTextDataURL({ img: imgAI, title, posterTplId, frame: st.cover.frameStyle }, width, height);
+            if (composed) return { id: uid("as"), name: `Cover AI - ${title}`, type: "image", url: composed, duration: 0, width, height, aiMade: true };
+          }
+        }
         return { id: uid("as"), name: `Cover AI - ${title}`, type: "image", url: aiUrl, duration: 0, width, height, aiMade: true };
       }
       const fbUrl = await posterFallbackDataURL(frameUrl, width, height);
@@ -849,6 +861,9 @@ export function coverSignature(c: CoverConfig): string {
     c.bgStyle,
     (c.posterPrompt ?? "").trim() ? "prompt" : "default",
     c.posterTitleOverlay ? "ovl" : "ov0",
+    // v1.0.46: mode teks & template poster ikut kunci — ganti setelan → cover lama basi
+    c.posterTextMode ?? "app",
+    c.posterTemplateId ?? "auto",
     c.templateId,
     c.frameStyle ?? "none",
     c.bgScope,

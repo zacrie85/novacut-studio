@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useEditor } from "@/lib/editor/store";
-import { fmtEta, fmtSize, fmtTime } from "@/lib/editor/constants";
+import { fmtEta, fmtSize, fmtTime, POSTER_TEMPLATES } from "@/lib/editor/constants";
 import { bersihkanJudul, COVER_FRAMES, jalurPosterAI, kesalahanPosterAI, POSTER_PROMPT_DEFAULT } from "@/lib/editor/covers";
 import AIKeyCard from "./AIKeyCard";
 import { ensureCoverAsset, regenAllCoverPrompts, regenCoverWithFrame, runBatchExport, triggerDownload } from "@/lib/editor/exporter";
@@ -482,6 +482,32 @@ export function SimpleMode() {
                                 ⚡ Terapkan prompt ini ke semua video
                               </button>
                             )}
+                            {/* v1.0.46: TEKS JUDUL POSTER — App (art AI polos + judul
+                            ditulis aplikasi, ejaan selalu benar) atau AI (perilaku lama) */}
+                            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                              <select
+                                value={cover.posterTextMode ?? "app"}
+                                onChange={(e) => useEditor.getState().setCover({ posterTextMode: e.target.value === "ai" ? "ai" : "app" })}
+                                className="rounded-md border border-white/15 bg-black/40 px-2 py-1.5 text-[11px] text-gray-200"
+                                title="Siapa yang menulis judul di poster"
+                              >
+                                <option value="app">📝 Judul: ditulis app (selalu benar)</option>
+                                <option value="ai">🅰️ Judul: ditulis AI (kadang salah eja)</option>
+                              </select>
+                              {(cover.posterTextMode ?? "app") === "app" && (
+                                <select
+                                  value={cover.posterTemplateId ?? "auto"}
+                                  onChange={(e) => useEditor.getState().setCover({ posterTemplateId: e.target.value })}
+                                  className="rounded-md border border-white/15 bg-black/40 px-2 py-1.5 text-[11px] text-gray-200"
+                                  title="Gaya frame tulisan poster (meniru poster referensi)"
+                                >
+                                  <option value="auto">🎲 Template: Otomatis</option>
+                                  {POSTER_TEMPLATES.map((t) => (
+                                    <option key={t.id} value={t.id}>{t.name}</option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
                           </div>
                           <AIKeyCard />
                         </div>

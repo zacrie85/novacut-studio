@@ -161,6 +161,14 @@ export interface CoverConfig {
   /** v1.0.35: tulis JUDUL+deskripsi overlay mesin render di bawah poster AI (default MATI karena
    * AI sudah menulis judul di poster). Aktifkan bila prompt manual tidak menambahkan judul. */
   posterTitleOverlay?: boolean;
+  /** v1.0.46: siapa yang menulis judul di poster AI — "app" (default): AI melukis art
+   * TANPA teks, lalu aplikasi menempelkan judul via template (ejaan 100% benar —
+   * dulu AI kadang salah eja "OFFITIL MUSC VIEEO"); "ai": perilaku lama, AI menulis
+   * judul langsung di poster. */
+  posterTextMode?: "app" | "ai";
+  /** v1.0.46: template judul poster saat posterTextMode "app" — "auto" = dipilih
+   * otomatis sesuai judul video, atau id template dari COVER_TEMPLATES. */
+  posterTemplateId?: string;
   /** Penyebaran latar saat export & split: "sama" = 1 latar untuk semua bagian; "beda" = tiap bagian adegan berbeda */
   bgScope: "sama" | "beda";
   /** v1.0.19: bingkai cover (klasik/modern/futuristik) — digambar transparan 75% mengelilingi gambar cover */

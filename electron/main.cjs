@@ -317,13 +317,26 @@ function registerFSIpc() {
   // gaya pengguna (termasuk default "2-3 karakter berhadapan") hanya GAYA, dan
   // karakternya WAJIB orang-orang dari adegan video — dulu glm-image bebas
   // mengarang karakter/latar baru sehingga poster terasa "bukan dari video".
-  const posterPromptPublik = (prompt, deskripsi) =>
-    `Create ONE professional modern Hollywood movie poster, cinematic style. ` +
-    `SCENE BASIS (HIGHEST PRIORITY — the poster MUST depict exactly the people and setting described): ${deskripsi}. ` +
-    `If the style instructions mention 2-3 characters, use THE PEOPLE FROM THE SCENE above in that composition — never invent new characters, faces, or locations. ` +
-    `Style instructions from the user: ${prompt}. ` +
-    `Rules: all text fully inside the image with safe margins from every edge; the movie title must be large, dramatic, positioned at the BOTTOM area of the poster, and spelled EXACTLY as given in the instructions; ` +
-    `no subtitles, no captions, no watermarks, no timestamps; single cohesive composition, dramatic lighting.`;
+  // v1.0.46: mode TEXTFREE — renderer mengirim marker [TEXTFREE] berarti poster
+  // harus MURNI tanpa teks (judul ditulis aplikasi via template, ejaan selalu
+  // benar). Marker dibuang dari prompt, aturan judul diganti aturan tanpa-teks.
+  const bersihTextFree = (prompt) => {
+    const textFree = /\[TEXTFREE\]/.test(prompt);
+    return { textFree, prompt: String(prompt).replace(/\[TEXTFREE\]\s*/g, "").trim() };
+  };
+  const aturanTanpaTeks =
+    `ABSOLUTELY NO TEXT anywhere in the image: no words, no letters, no numbers, no titles, no logos, no credits, no subtitles, no watermarks — pure artwork only; the app will add the title itself. `;
+  const posterPromptPublik = (prompt, deskripsi) => {
+    const { textFree, prompt: bersih } = bersihTextFree(prompt);
+    return `Create ONE professional modern Hollywood movie poster, cinematic style. ` +
+      `SCENE BASIS (HIGHEST PRIORITY — the poster MUST depict exactly the people and setting described): ${deskripsi}. ` +
+      `If the style instructions mention 2-3 characters, use THE PEOPLE FROM THE SCENE above in that composition — never invent new characters, faces, or locations. ` +
+      `Style instructions from the user: ${bersih}. ` +
+      (textFree
+        ? aturanTanpaTeks
+        : `Rules: all text fully inside the image with safe margins from every edge; the movie title must be large, dramatic, positioned at the BOTTOM area of the poster, and spelled EXACTLY as given in the instructions; `) +
+      `no subtitles, no captions, no watermarks, no timestamps; single cohesive composition, dramatic lighting.`;
+  };
 
   ipcMain.handle("ai:set-key", (_e, payload) => {
     try {
@@ -467,7 +480,9 @@ function registerFSIpc() {
     const auth = { Authorization: `Bearer ${cf.token}` };
     const body64 = String(dataUrl).split(",").pop() || "";
     const ambil = (r) => (r?.image ? `data:image/jpeg;charset=utf-8;base64,${r.image}` : null);
-    const rasio = wide ? { width: 1024, height: 576 } : { width: 576, height: 1024 };
+    // v1.0.46: resolusi lebih tinggi ±720p (permintaan pengguna) — bila skema
+    // menolak → attempt 2 tanpa rasio (persegi) tetap jadi jaring aman
+    const rasio = wide ? { width: 1280, height: 720 } : { width: 720, height: 1280 };
     let lastErr = null;
     // 1) multipart/form-data + rasio proyek — bentuk resmi schema (multipart
     //    required); uji nyata v1.0.41: width/height diterima, output 1024x576 ✓
@@ -512,14 +527,15 @@ function registerFSIpc() {
   // diwajibkan jadi satu-satunya teks besar; kata "Hollywood" tidak dipakai lagi
   // (bocor jadi judul poster), credits/nama/logoran diblokir (tidak jadi coretan).
   const cfPosterPrompt = (prompt, deskripsi, judul) => {
-    const m = judul || (String(prompt).match(/judul "([^"]+)"/) || [])[1] || "";
+    const { textFree, prompt: bersih } = bersihTextFree(prompt);
+    const m = textFree ? "" : judul || (bersih.match(/judul "([^"]+)"/) || [])[1] || "";
     const judulPart = m
       ? `The ONLY large text on the poster is the movie title: "${m.slice(0, 60).toUpperCase()}" spelled exactly letter by letter, all caps, large bold typography positioned at the BOTTOM area of the poster, inside safe margins. `
       : "";
     // v1.0.41: kata "Hollywood" juga dibersihkan dari instruksi pengguna
     // (prompt default berbahasa Indonesia menyebut "film Hollywood") — jika
     // tidak, model bisa menulis HOLLYWOOD sebagai judul poster.
-    const tema = String(prompt)
+    const tema = bersih
       .replace(/dengan menggunakan judul "[^"]+" sebagai judul di poster\.?/i, "")
       .replace(/film\s+Hollywood/gi, "film")
       .replace(/\bHollywood\b/gi, "")
@@ -543,7 +559,9 @@ function registerFSIpc() {
   // → poster melenceng jauh dari video. Kini instruksi pengguna hanya diambil
   // sebagai GAYA (pencahayaan/warna/bingkai), orang & latar terkunci dari foto.
   const cfEditPrompt = (prompt, deskripsi, judul) => {
-    const m = judul || (String(prompt).match(/judul "([^"]+)"/) || [])[1] || "";
+    // v1.0.46: TEXTFREE — poster art polos tanpa teks; judul ditulis app via frame
+    const { textFree, prompt: bersih } = bersihTextFree(prompt);
+    const m = textFree ? "" : judul || (bersih.match(/judul "([^"]+)"/) || [])[1] || "";
     const judulPart = m
       ? `The ONLY large text on the poster is the title: "${m.slice(0, 60).toUpperCase()}" spelled exactly letter by letter, all caps, large bold typography positioned at the BOTTOM area of the poster, inside safe margins. `
       : "";
@@ -553,7 +571,9 @@ function registerFSIpc() {
       `Do NOT add, remove, or replace any person; do NOT invent a new location. ` +
       `If the style instructions mention a number of characters, arrange THE PEOPLE FROM THE PHOTO in that composition — never invent new people. ` +
       `Apply ONLY cinematic styling: dramatic poster lighting, rich color grade, dynamic professional composition, subtle modern poster framing. ` +
-      judulPart +
+      (textFree
+        ? aturanTanpaTeks + `Leave the top area and the bottom edges relatively uncluttered — the app will overlay a title there. `
+        : judulPart) +
       `NO other words anywhere: no credits, no studio logos, no small text, no subtitles, no watermarks, no timestamps.` +
       (deskripsi ? ` Scene reference: ${deskripsi}.` : "")
     );

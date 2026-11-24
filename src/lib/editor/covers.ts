@@ -1,6 +1,6 @@
 // NOVACUT Studio - Pembuat cover: 100 template populer + AI auto-cover
 
-import { COVER_TEMPLATES, fontStack, type CoverTemplate } from "./constants";
+import { COVER_TEMPLATES, POSTER_TEMPLATES, fontStack, type CoverTemplate } from "./constants";
 import { wrapCanvasText } from "./textwrap";
 import type { CoverFrameStyle } from "./types";
 
@@ -487,6 +487,305 @@ export function renderCoverToDataURL(input: Omit<CoverRenderInput, "w" | "h">, w
   return c.toDataURL("image/jpeg", 0.92);
 }
 
+// ===== v1.0.46: FRAME POSTER — teks murni di atas art AI tanpa teks =====
+// Meniru poster referensi pengguna: gambar diisi art Cloudflare/Z.ai, judul =
+// nama video, posisi & gaya tulisan mengikuti referensi (ZOMBIELAND =
+// Hollywood, HUMOR #BAPER = komik, ENIGMA = papan kapur, Beauty & the Beast
+// = epik). Nama pemeran/tanggal referensi TIDAK dipalsukan — zona itu jadi
+// dekorasi murni karena datanya tidak ada di video.
+
+/** Cari ukuran font terbesar yang membuat judul muat dalam maxLines baris. */
+function posterJudulFit(ctx: CanvasRenderingContext2D, text: string, family: string, weight: string, maxW: number, fsMax: number, fsMin: number, maxLines: number): { lines: string[]; fs: number } {
+  let fs = fsMax;
+  for (; fs > fsMin; fs -= Math.max(2, fsMax * 0.04)) {
+    ctx.font = `${weight} ${Math.round(fs)}px ${family}`;
+    const lines = wrapCanvasText(ctx, text, maxW, { maxLines });
+    if (lines.length <= maxLines) return { lines, fs };
+  }
+  ctx.font = `${weight} ${Math.round(fsMin)}px ${family}`;
+  return { lines: wrapCanvasText(ctx, text, maxW, { maxLines }), fs: fsMin };
+}
+
+/** Latar poster: art AI cover-fit penuh + scrim atas/bawah + vignette. */
+function posterLatar(ctx: CanvasRenderingContext2D, img: CanvasImageSource | null, w: number, h: number) {
+  ctx.fillStyle = "#05070c";
+  ctx.fillRect(0, 0, w, h);
+  if (img) {
+    const sw = (img as HTMLCanvasElement).width || (img as HTMLImageElement).naturalWidth || 2;
+    const sh = (img as HTMLCanvasElement).height || (img as HTMLImageElement).naturalHeight || 2;
+    const s = Math.max(w / sw, h / sh) * 1.02;
+    ctx.drawImage(img, (w - sw * s) / 2, (h - sh * s) / 2, sw * s, sh * s);
+  } else {
+    const g = ctx.createLinearGradient(0, 0, w, h);
+    g.addColorStop(0, "#1c2438");
+    g.addColorStop(1, "#3a1220");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+  }
+  const g1 = ctx.createLinearGradient(0, 0, 0, h * 0.36);
+  g1.addColorStop(0, "rgba(0,0,0,0.44)");
+  g1.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = g1;
+  ctx.fillRect(0, 0, w, h * 0.36);
+  const g2 = ctx.createLinearGradient(0, h * 0.62, 0, h);
+  g2.addColorStop(0, "rgba(0,0,0,0)");
+  g2.addColorStop(1, "rgba(0,0,0,0.52)");
+  ctx.fillStyle = g2;
+  ctx.fillRect(0, h * 0.62, w, h * 0.38);
+  const vg = ctx.createRadialGradient(w / 2, h / 2, h * 0.3, w / 2, h / 2, h * 0.85);
+  vg.addColorStop(0, "rgba(0,0,0,0)");
+  vg.addColorStop(1, "rgba(0,0,0,0.22)");
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, w, h);
+}
+
+/** Bintang burst komik (dekor pop-art ala HUMOR #BAPER). */
+function posterBurst(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, spikes: number, fill: string, rot = 0) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+  ctx.beginPath();
+  for (let i = 0; i < spikes * 2; i++) {
+    const rad = (i % 2 === 0 ? r : r * 0.45) * (1 + (i % 3) * 0.06);
+    const a = (Math.PI * i) / spikes;
+    if (i === 0) ctx.moveTo(Math.cos(a) * rad, Math.sin(a) * rad);
+    else ctx.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
+  }
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.lineWidth = Math.max(2, r * 0.08);
+  ctx.strokeStyle = "#111";
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Gambar teks judul dgn outline lapis (komik/Hollywood) di satu baris. */
+function posterTulisOutline(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, fills: [string, number][], fill: string, rot = 0) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+  ctx.textAlign = "center";
+  for (const [warna, lw] of fills) {
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = warna;
+    ctx.lineJoin = "round";
+    ctx.strokeText(text, 0, 0);
+  }
+  ctx.fillStyle = fill;
+  ctx.fillText(text, 0, 0);
+  ctx.restore();
+}
+
+/** v1.0.46: gabungkan art AI (tanpa teks) + frame tulisan gaya referensi. */
+export function renderPosterTextDataURL(
+  input: { img: CanvasImageSource | null; title: string; posterTplId: string; frame?: CoverFrameStyle },
+  w = 1080,
+  h = 1920,
+): string {
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d");
+  if (!ctx) return "";
+  posterLatar(ctx, input.img, w, h);
+  const wide = w > h;
+  const teks = bersihkanJudul(input.title).toUpperCase();
+  let accent = "#5ec8f8";
+  if (input.posterTplId === "poster-komik") {
+    // HUMOR #BAPER: kata pertama putih miring + sisanya kuning besar (Alfa Slab
+    // One), outline putih-hitam lapis, bintang burst pop-art, strip premiere kuning
+    accent = "#ffd400";
+    const kata = teks.split(/\s+/).filter(Boolean);
+    const fam = '"Alfa Slab One","Archivo Black",sans-serif';
+    const yTop = wide ? h * 0.14 : h * 0.10;
+    if (kata.length === 1) {
+      const fit = posterJudulFit(ctx, kata[0], fam, "400", w * 0.84, h * 0.115, h * 0.05, 2);
+      fit.lines.forEach((ln, i) => posterTulisOutline(ctx, ln, w / 2, yTop + i * fit.fs * 1.08, [["#fff", fit.fs * 0.24], ["#111", fit.fs * 0.11]], "#ffd400", i % 2 ? 0.03 : -0.04));
+    } else {
+      const fit1 = posterJudulFit(ctx, kata[0], fam, "400", w * 0.8, h * 0.078, h * 0.04, 1);
+      posterTulisOutline(ctx, fit1.lines[0], w / 2, yTop, [["#fff", fit1.fs * 0.26], ["#111", fit1.fs * 0.12]], "#ffffff", -0.05);
+      const sisa = kata.slice(1).join(" ");
+      const fit2 = posterJudulFit(ctx, sisa, fam, "400", w * 0.86, h * 0.115, h * 0.05, 2);
+      fit2.lines.forEach((ln, i) => posterTulisOutline(ctx, ln, w / 2, yTop + fit1.fs * 1.25 + i * fit2.fs * 1.06, [["#fff", fit2.fs * 0.22], ["#111", fit2.fs * 0.1]], "#ffd400", 0.035));
+    }
+    posterBurst(ctx, w * 0.12, h * 0.3, w * 0.075, 8, "#ff4757", 0.3);
+    posterBurst(ctx, w * 0.885, h * 0.24, w * 0.06, 10, "#1dd1f5", -0.2);
+    posterBurst(ctx, w * 0.075, h * 0.55, w * 0.055, 8, "#ffd400", 0.15);
+    // strip premiere kuning di dasar (dekor, tanpa teks palsu)
+    ctx.fillStyle = "#ffd400";
+    ctx.fillRect(0, h * 0.918, w, h * 0.052);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "#111";
+    ctx.beginPath();
+    ctx.moveTo(0, h * 0.918);
+    ctx.lineTo(w, h * 0.918);
+    ctx.stroke();
+  } else if (input.posterTplId === "poster-sekolah") {
+    // ENIGMA: papan tulis kayu + judul kapur putih tengah-atas + garis merah,
+    // pita kertas sobek di bawah (dekor tanpa teks — tanggal tidak diketahui)
+    accent = "#f3f1e8";
+    const bw = w * 0.6;
+    const bh = wide ? h * 0.3 : h * 0.175;
+    const bx = (w - bw) / 2;
+    const by = wide ? h * 0.12 : h * 0.06;
+    const m = w * 0.014;
+    ctx.fillStyle = "#8b5a2b";
+    ctx.fillRect(bx - m, by - m, bw + m * 2, bh + m * 2);
+    ctx.fillStyle = "#0d0e10";
+    ctx.fillRect(bx, by, bw, bh);
+    const fit = posterJudulFit(ctx, teks, '"Barlow Condensed","Oswald",sans-serif', "600", bw * 0.84, bh * 0.52, bh * 0.24, 2);
+    (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = `${Math.round(fit.fs * 0.12)}px`;
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#f3f1e8";
+    ctx.globalAlpha = 0.96;
+    fit.lines.forEach((ln, i) => ctx.fillText(ln, w / 2, by + bh * 0.44 + i * fit.fs * 1.05));
+    (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = "0px";
+    ctx.globalAlpha = 1;
+    // garis kapur putus-putus + garis merah (dekor ala papan pengumuman)
+    ctx.setLineDash([bw * 0.06, bw * 0.045]);
+    ctx.strokeStyle = "rgba(243,241,232,0.75)";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(bx + bw * 0.14, by + bh * 0.78);
+    ctx.lineTo(bx + bw * 0.86, by + bh * 0.78);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.strokeStyle = "rgba(229,57,53,0.85)";
+    ctx.beginPath();
+    ctx.moveTo(bx + bw * 0.3, by + bh * 0.9);
+    ctx.lineTo(bx + bw * 0.7, by + bh * 0.9);
+    ctx.stroke();
+    // pita kertas sobek
+    const py = h * 0.855;
+    const ph = h * 0.06;
+    const gigi = 14;
+    const amp = h * 0.008;
+    ctx.save();
+    ctx.translate(w / 2, py + ph / 2);
+    ctx.rotate(-0.008);
+    ctx.shadowColor = "rgba(0,0,0,0.35)";
+    ctx.shadowBlur = 12;
+    ctx.shadowOffsetY = 6;
+    ctx.beginPath();
+    ctx.moveTo(-w * 0.46, -ph / 2);
+    for (let i = 0; i <= gigi; i++) ctx.lineTo(-w * 0.46 + (w * 0.92 * i) / gigi, -ph / 2 + (i % 2 ? amp : -amp));
+    ctx.lineTo(w * 0.46, ph / 2);
+    for (let i = gigi; i >= 0; i--) ctx.lineTo(-w * 0.46 + (w * 0.92 * i) / gigi, ph / 2 + (i % 2 ? -amp : amp));
+    ctx.closePath();
+    ctx.fillStyle = "#f2ede2";
+    ctx.fill();
+    ctx.restore();
+  } else if (input.posterTplId === "poster-epik") {
+    // Beauty & the Beast: judul serif emas (Cinzel) tengah-atas; 3+ kata → kata
+    // tengah kecil di antara dua kata besar; swash lengkung emas di bawah
+    accent = "#e3b75c";
+    const fam = '"Cinzel","Playfair Display",serif';
+    const kata = teks.split(/\s+/).filter(Boolean);
+    const grad = (y1: number, y2: number) => {
+      const g = ctx.createLinearGradient(0, y1, 0, y2);
+      g.addColorStop(0, "#f9ecc0");
+      g.addColorStop(0.55, "#e3b75c");
+      g.addColorStop(1, "#b07620");
+      return g;
+    };
+    const tulisEmas = (ln: string, y: number, fs: number) => {
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.font = `700 ${Math.round(fs)}px ${fam}`;
+      ctx.shadowColor = "rgba(0,0,0,0.5)";
+      ctx.shadowBlur = fs * 0.18;
+      ctx.lineWidth = Math.max(1.5, fs * 0.022);
+      ctx.strokeStyle = "#3c230a";
+      ctx.strokeText(ln, w / 2, y);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = grad(y - fs, y + fs * 0.15);
+      ctx.fillText(ln, w / 2, y);
+      ctx.restore();
+    };
+    let yAkhir: number;
+    if (kata.length >= 3) {
+      const fit1 = posterJudulFit(ctx, kata[0], fam, "700", w * 0.76, h * 0.1, h * 0.045, 1);
+      const mid = kata.slice(1, -1).join(" ");
+      const fsMid = fit1.fs * 0.34;
+      const fit2 = posterJudulFit(ctx, kata[kata.length - 1], fam, "700", w * 0.76, h * 0.1, h * 0.045, 1);
+      const y1 = wide ? h * 0.2 : h * 0.13;
+      tulisEmas(fit1.lines[0], y1, fit1.fs);
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.font = `400 ${Math.round(fsMid)}px ${fam}`;
+      ctx.shadowColor = "rgba(0,0,0,0.45)";
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = "#f3dfae";
+      ctx.fillText(mid, w / 2, y1 + fit1.fs * 0.62 + fsMid);
+      ctx.restore();
+      const y2 = y1 + fit1.fs * 0.62 + fsMid * 1.9;
+      tulisEmas(fit2.lines[0], y2, fit2.fs);
+      yAkhir = y2;
+    } else {
+      const fit = posterJudulFit(ctx, teks, fam, "700", w * 0.82, h * 0.1, h * 0.045, 2);
+      fit.lines.forEach((ln, i) => tulisEmas(ln, (wide ? h * 0.18 : h * 0.12) + i * fit.fs * 1.1, fit.fs));
+      yAkhir = (wide ? h * 0.18 : h * 0.12) + (fit.lines.length - 1) * fit.fs * 1.1;
+    }
+    // swash lengkung emas + berlian kecil di tengah
+    const sy = yAkhir + h * 0.045;
+    ctx.strokeStyle = "rgba(227,183,92,0.85)";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(w * 0.2, sy);
+    ctx.bezierCurveTo(w * 0.36, sy + h * 0.022, w * 0.64, sy + h * 0.022, w * 0.8, sy);
+    ctx.stroke();
+    ctx.save();
+    ctx.translate(w / 2, sy + h * 0.012);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = "#e3b75c";
+    ctx.fillRect(-w * 0.008, -w * 0.008, w * 0.016, w * 0.016);
+    ctx.restore();
+  } else {
+    // ZOMBIELAND: judul raksasa oranye-merah (Anton) di atas + garis putih
+    accent = "#ff9b21";
+    const fam = '"Anton","Archivo Black",sans-serif';
+    const fit = posterJudulFit(ctx, teks, fam, "400", w * 0.88, wide ? h * 0.2 : h * 0.115, h * 0.05, 2);
+    const y0 = wide ? h * 0.17 : h * 0.115;
+    fit.lines.forEach((ln, i) => {
+      const y = y0 + i * fit.fs * 1.04;
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.font = `400 ${Math.round(fit.fs)}px ${fam}`;
+      ctx.shadowColor = "rgba(0,0,0,0.55)";
+      ctx.shadowBlur = fit.fs * 0.18;
+      ctx.shadowOffsetY = fit.fs * 0.05;
+      ctx.lineWidth = fit.fs * 0.075;
+      ctx.strokeStyle = "#2a0a02";
+      ctx.lineJoin = "round";
+      ctx.strokeText(ln, w / 2, y);
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+      const g = ctx.createLinearGradient(0, y - fit.fs, 0, y);
+      g.addColorStop(0, "#ffe08a");
+      g.addColorStop(0.5, "#ff9b21");
+      g.addColorStop(1, "#e33d1c");
+      ctx.fillStyle = g;
+      ctx.fillText(ln, w / 2, y);
+      ctx.restore();
+    });
+    const yRule = y0 + (fit.lines.length - 1) * fit.fs * 1.04 + fit.fs * 0.55;
+    ctx.strokeStyle = "rgba(255,255,255,0.4)";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(w * 0.33, yRule);
+    ctx.lineTo(w * 0.67, yRule);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(255,255,255,0.35)";
+    ctx.beginPath();
+    ctx.moveTo(w * 0.17, h * 0.925);
+    ctx.lineTo(w * 0.83, h * 0.925);
+    ctx.stroke();
+  }
+  if (input.frame && input.frame !== "none") drawCoverFrame(ctx, w, h, input.frame, accent);
+  return c.toDataURL("image/jpeg", 0.92);
+}
+
 /** Cover polos: gambar unggahan pengguna apa adanya (tanpa teks template).
  * v1.0.19: mendukung bingkai cover opsional. */
 export async function plainCoverDataURL(url: string, w: number, h: number, frame?: CoverFrameStyle): Promise<string> {
@@ -827,11 +1126,26 @@ export const POSTER_PROMPT_DEFAULT =
  * prompt manual diisi (dulu judul dibuang bila prompt manual tidak kosong,
  * akibatnya poster memakai judul liar pilihan AI). Pengguna tetap bisa
  * menentukan sendiri dengan menulis judul "..." di prompt manualnya. */
-export function buildPosterPrompt(custom: string | undefined, title: string): string {
+export function buildPosterPrompt(custom: string | undefined, title: string, textFree = false): string {
   const judul = bersihkanJudul((title || "").trim());
   const dasar = (custom || "").trim() || POSTER_PROMPT_DEFAULT;
+  // v1.0.46: mode "app" — AI melukis art TANPA teks sama sekali; judul ditulis
+  // aplikasi via template (ejaan selalu benar). Marker [TEXTFREE] dibaca main
+  // process untuk membuang aturan judul dari prompt CF/Z.ai.
+  if (textFree) {
+    return `[TEXTFREE] ${dasar}. PENTING: JANGAN menulis teks/kata/huruf/angka/logo apa pun di dalam gambar — lukis hanya adegan/gambar murni (pure artwork: no text, no letters, no numbers, no logos, no watermarks). Judul akan ditambahkan aplikasi secara terpisah di atas poster.`;
+  }
   const judulPart = judul && !/judul\s*"/i.test(dasar) ? ` dengan menggunakan judul "${judul}" sebagai judul di poster` : "";
   return `${dasar}${judulPart}. PENTING: semua tulisan pada poster harus berada di dalam area gambar dan diberi jarak aman (margin) dari tepi — tidak boleh terpotong di tepi kiri, kanan, atas, atau bawah. Jangan menulis ulang takarir, caption, atau watermark dari gambar sumber.`;
+}
+
+/** v1.0.46: pilih frame poster — "auto" = ikut judul (pendek / mengandung # →
+ * komik; lainnya Hollywood); id dari POSTER_TEMPLATES dipakai langsung,
+ * id tak dikenal → Hollywood. */
+export function resolvePosterTemplateId(c: { posterTemplateId?: string }, title: string): string {
+  const id = c.posterTemplateId ?? "auto";
+  if (id !== "auto" && POSTER_TEMPLATES.some((t) => t.id === id)) return id;
+  return /#/.test(title) || bersihkanJudul(title).length <= 10 ? "poster-komik" : "poster-hollywood";
 }
 
 /** Poster AI: kirim frame (dataURL) + prompt ke model gambar lewat Electron

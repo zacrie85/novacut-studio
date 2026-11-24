@@ -289,3 +289,19 @@ export function partLabel(style: string, index: number, total: number, withTotal
 export function uid(prefix = "id"): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}${Date.now().toString(36).slice(-4)}`;
 }
+
+// ===== v1.0.46: FRAME POSTER (teks murni di atas art AI tanpa teks) =====
+// Meniru layout poster referensi pengguna — posisi & gaya tulisan identik,
+// gambar diisi art buatan Cloudflare/Z.ai, judul diambil dari nama video.
+export interface PosterTemplate {
+  id: string; // "poster-komik" dll — dipakai cover.posterTemplateId
+  name: string;
+  desc: string;
+}
+
+export const POSTER_TEMPLATES: PosterTemplate[] = [
+  { id: "poster-hollywood", name: "Hollywood · ZOMBIELAND", desc: "Judul raksasa oranye-merah di atas, gaya blockbuster klasik" },
+  { id: "poster-komik", name: "Komik · HUMOR #BAPER", desc: "Judul kuning komik + dekor pop-art, miring ala kartun" },
+  { id: "poster-sekolah", name: "Papan Kapur · ENIGMA", desc: "Papan tulis kayu + judul kapur putih tengah-atas" },
+  { id: "poster-epik", name: "Epik · Beauty & the Beast", desc: "Judul serif emas elegan tengah-atas ala film fantasi" },
+];
