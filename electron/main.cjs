@@ -526,17 +526,38 @@ function registerFSIpc() {
       .replace(/\s{2,}/g, " ")
       .trim();
     return `Create ONE cinematic blockbuster movie poster, professional key art. ${judulPart}` +
+      // v1.0.45: SCENE BASIS jadi PRIORITAS TERTINGGI dan berada di awal — dulu
+      // instruksi pengguna ("2-3 karakter saling berhadapan", "background kolosal")
+      // mendominasi → txt2img mengarang orang/latar baru, poster terasa bukan
+      // dari video. Kini karakter WAJIB orang adegan; instruksi pengguna hanya gaya.
+      `SCENE BASIS (HIGHEST PRIORITY — draw EXACTLY the people and setting described below, do NOT invent new characters, faces, or locations): ${deskripsi || "dramatic cinematic scene"}. ` +
+      `If the style instructions mention a number of characters, compose THE PEOPLE FROM THE SCENE in that arrangement. ` +
       `NO other words anywhere: no actor names, no credits block, no studio logos, no small text, no subtitles, no watermarks, no timestamps. ` +
       `Single cohesive composition, dramatic lighting, rich color grade. ` +
-      `User instructions: ${tema || "cinematic movie poster"}. ` +
-      `Scene basis (from the user's video frame): ${deskripsi || "dramatic cinematic scene"}.`;
+      `Style instructions (styling only — never override the scene): ${tema || "cinematic movie poster"}.`;
   };
-  // Instruksi khusus jalur EDIT: wajah/rambut/pakaian/pose subjek dipertahankan
-  // dari foto input.
-  const cfEditPrompt = (prompt, deskripsi, judul) =>
-    `Transform this exact photograph into ONE cinematic blockbuster movie poster. ` +
-    `Keep the main subject's face, hairstyle, clothing and pose recognisable from the input photo. ` +
-    cfPosterPrompt(prompt, deskripsi, judul);
+  // v1.0.45: prompt jalur EDIT dibangun ulang — IDENTITAS ADEGAN MENANG. Dulu
+  // prompt ini menempelkan cfPosterPrompt utuh (dengan instruksi pengguna
+  // "2-3 karakter berhadapan", "background kolosal", "frame futuristik") → model
+  // edit menerima perintah BERTENTANGAN (pertahankan subjek VS buat karakter baru)
+  // → poster melenceng jauh dari video. Kini instruksi pengguna hanya diambil
+  // sebagai GAYA (pencahayaan/warna/bingkai), orang & latar terkunci dari foto.
+  const cfEditPrompt = (prompt, deskripsi, judul) => {
+    const m = judul || (String(prompt).match(/judul "([^"]+)"/) || [])[1] || "";
+    const judulPart = m
+      ? `The ONLY large text on the poster is the title: "${m.slice(0, 60).toUpperCase()}" spelled exactly letter by letter, all caps, large bold typography positioned at the BOTTOM area of the poster, inside safe margins. `
+      : "";
+    return (
+      `Redraw this exact photograph as ONE cinematic movie poster. ` +
+      `IDENTITY LOCK (HIGHEST PRIORITY): keep EXACTLY the same person(s) from the input photo — same number of people, same faces, hairstyle, clothing, props — and the same setting/background. ` +
+      `Do NOT add, remove, or replace any person; do NOT invent a new location. ` +
+      `If the style instructions mention a number of characters, arrange THE PEOPLE FROM THE PHOTO in that composition — never invent new people. ` +
+      `Apply ONLY cinematic styling: dramatic poster lighting, rich color grade, dynamic professional composition, subtle modern poster framing. ` +
+      judulPart +
+      `NO other words anywhere: no credits, no studio logos, no small text, no subtitles, no watermarks, no timestamps.` +
+      (deskripsi ? ` Scene reference: ${deskripsi}.` : "")
+    );
+  };
 
   ipcMain.handle("cf:set-key", (_e, payload) => {
     try {

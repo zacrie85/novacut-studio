@@ -799,7 +799,19 @@ export function aiRecommendTemplates(title: string, brightness: number, count = 
  * selama tak membawa pola kode bracket. */
 export function bersihkanJudul(s: string): string {
   let t = (s || "").replace(/\[[0-9A-Za-z_-]{4,}\]/g, " ").replace(/\s*[_|\-–—]\s*$/g, "");
-  t = t.replace(/[_|]+/g, " ").replace(/\s{2,}/g, " ").trim();
+  // v1.0.45: strip juga jadi spasi — nama file "pengalaman-5-menit" dulu tetap
+  // memakai tanda hubung (dulu hanya _ dan | yang jadi spasi)
+  t = t.replace(/[_|]+/g, " ").replace(/[-–—]+/g, " ");
+  // v1.0.45: buang kata sampah nama file (YouTube/detik-scrape) — dulu
+  // "eny sagita ngamen 5 official live music video dc part 12 12" dipakai utuh
+  // sebagai judul poster → AI mencetak coretan "OFFITIL MUSC VIEEO" di bawah judul.
+  t = t
+    .replace(/\b(?:part|episode|eps|ep)[- _]?\d+(?:[-_ ]?(?:of|\/|dari)?[-_ ]?\d+)?\b/gi, " ")
+    .replace(/\b(?:official(?:[-_ ]?(?:live|full))?(?:[-_ ]?(?:music|lyric|audio))?(?:[-_ ]?(?:video|vid))?|live[-_ ]?music[-_ ]?video|music[-_ ]?video|video[-_ ]?official|full[-_ ]?video|videoclip|video[-_ ]?clip|lyric[-_ ]?video|hd|4k|720p|1080p|production|produksi)\b/gi, " ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+[a-z]{1,3}\s*$/i, " ")
+    .replace(/\s*[_|\-–—]\s*$/g, "")
+    .trim();
   return t || (s || "").trim();
 }
 
@@ -832,6 +844,14 @@ let _kesalahanPosterAI = "";
  * tahu SEBAB poster bawaan muncul, bukan hanya "AI gagal". */
 export function kesalahanPosterAI(): string {
   return _kesalahanPosterAI;
+}
+let _jalurPosterAI = "";
+/** v1.0.45: jalur pembuatan poster TERAKHIR — "cloudflare-edit"/"publik-edit" =
+ * frame video benar-benar dipakai (img2img); "cloudflare-txt2img"/"publik"/"sdk" =
+ * poster digambar dari teks saja (edit frame gagal diam-diam → kini terlihat di
+ * label status panel pratinjau, bukan lagi tersembunyi di balik poster). */
+export function jalurPosterAI(): string {
+  return _jalurPosterAI;
 }
 /** v1.0.44: ubah pesan kegagalan API menjadi bahasa Indonesia + LANGKAH solusi.
  * Dulu pesan mentah (mis. "Insufficient balance") hanya tampil di toast ±4 detik
@@ -868,12 +888,16 @@ export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size:
     }
     if (res?.ok && res.image) {
       _kesalahanPosterAI = "";
+      // v1.0.45: catat jalur sukses (edit = frame dipakai; txt2img = teks saja)
+      _jalurPosterAI = String(res?.via || "");
       return res.image;
     }
     _kesalahanPosterAI = terjemahkanKesalahanAI(String(res?.error || ""));
+    _jalurPosterAI = "";
     return null;
   } catch (err) {
     _kesalahanPosterAI = terjemahkanKesalahanAI(String(err));
+    _jalurPosterAI = "";
     return null;
   }
 }

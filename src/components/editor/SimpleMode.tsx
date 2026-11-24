@@ -14,7 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useEditor } from "@/lib/editor/store";
 import { fmtEta, fmtSize, fmtTime } from "@/lib/editor/constants";
-import { bersihkanJudul, COVER_FRAMES, kesalahanPosterAI, POSTER_PROMPT_DEFAULT } from "@/lib/editor/covers";
+import { bersihkanJudul, COVER_FRAMES, jalurPosterAI, kesalahanPosterAI, POSTER_PROMPT_DEFAULT } from "@/lib/editor/covers";
 import AIKeyCard from "./AIKeyCard";
 import { ensureCoverAsset, regenAllCoverPrompts, regenCoverWithFrame, runBatchExport, triggerDownload } from "@/lib/editor/exporter";
 import type { CoverConfig, CoverFrameStyle } from "@/lib/editor/types";
@@ -656,8 +656,8 @@ export function SimpleMode() {
                   </div>
                   <div className="space-y-2 p-3">
                     <div className="flex items-center justify-between text-[10px]">
-                      <span className={posterAIBerhasil ? "font-semibold text-emerald-400" : "font-semibold text-amber-400/90"}>
-                        {cover.bgStyle === "poster" ? (posterAIBerhasil ? "● Poster AI siap" : cover.coverAssetId ? "○ Frame klasik (AI gagal)" : "○ Belum ada poster") : cover.coverAssetId ? "● Template klasik" : "○ Belum ada cover"}
+                      <span className={posterAIBerhasil && !jalurPosterAI().includes("edit") ? "font-semibold text-yellow-400" : posterAIBerhasil ? "font-semibold text-emerald-400" : "font-semibold text-amber-400/90"}>
+                        {cover.bgStyle === "poster" ? (posterAIBerhasil ? (jalurPosterAI().includes("edit") ? "● Poster AI dari frame video" : "● Poster AI teks-saja (edit frame gagal)") : cover.coverAssetId ? "○ Frame klasik (AI gagal)" : "○ Belum ada poster") : cover.coverAssetId ? "● Template klasik" : "○ Belum ada cover"}
                       </span>
                       <span className="font-mono text-gray-500">{cover.bgStyle === "poster" ? "poster Hollywood" : "template"}</span>
                     </div>
