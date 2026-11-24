@@ -231,26 +231,36 @@ function registerFSIpc() {
   // menjadi dasar lukisan poster — takarir/watermark pada frame diabaikan.
   // v1.0.37: pakai glm-4.6v-flash yang GRATIS — satu-satunya biaya = gambar poster.
   const pubDescribeScene = async (dataUrl, key) => {
-    const json = await zaiPubFetch("/chat/completions", key, {
-      model: "glm-4.6v-flash",
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "image_url", image_url: { url: dataUrl } },
+    // v1.0.43: rantai model vision — glm-4.6v-flash (gratis) dulu; bila model
+    // sudah tidak tersedia/berubah di akun, coba glm-5.3-flash (VLM docs.z.ai).
+    const visPrompt =
+      "Describe this video frame as a cinematic movie-poster scene brief in English (max 100 words): " +
+      "main subject appearance, pose, emotion, setting, lighting, color mood. " +
+      "IGNORE any burned-in subtitles, captions or watermarks — do not mention them.";
+    let pesanTerakhir = "";
+    for (const model of ["glm-4.6v-flash", "glm-5.3-flash"]) {
+      try {
+        const json = await zaiPubFetch("/chat/completions", key, {
+          model,
+          messages: [
             {
-              type: "text",
-              text:
-                "Describe this video frame as a cinematic movie-poster scene brief in English (max 100 words): " +
-                "main subject appearance, pose, emotion, setting, lighting, color mood. " +
-                "IGNORE any burned-in subtitles, captions or watermarks — do not mention them.",
+              role: "user",
+              content: [
+                { type: "image_url", image_url: { url: dataUrl } },
+                { type: "text", text: visPrompt },
+              ],
             },
           ],
-        },
-      ],
-      max_tokens: 300,
-    });
-    return String(json?.choices?.[0]?.message?.content || "").trim();
+          max_tokens: 300,
+        });
+        const teks = String(json?.choices?.[0]?.message?.content || "").trim();
+        if (teks) return teks;
+        pesanTerakhir = "respons vision kosong";
+      } catch (err) {
+        pesanTerakhir = String((err && err.message) || err).slice(0, 160);
+      }
+    }
+    throw new Error(pesanTerakhir || "vision gagal");
   };
   // glm-image: gambar poster Hollywood utuh (hd/standard). Respons = URL sementara → unduh → base64.
   // v1.0.38: quality mengikuti preferensi pengguna — hd (terbaik, ±20 dtk) atau standard (cepat, 5-10 dtk).
@@ -261,8 +271,10 @@ function registerFSIpc() {
       quality: quality === "standard" ? "standard" : "hd",
       size,
     });
-    const url = json?.data?.[0]?.url;
+    // v1.0.43: terima url ATAU b64_json (bentuk respons bisa berganti antar versi API)
+    const url = json?.data?.[0]?.url || (json?.data?.[0]?.b64_json ? `data:image/png;base64,${json.data[0].b64_json}` : "");
     if (!url) throw new Error("respons gambar kosong");
+    if (url.startsWith("data:")) return url;
     const ctrl = new AbortController();
     const to = setTimeout(() => ctrl.abort(), 60000);
     try {
@@ -276,7 +288,7 @@ function registerFSIpc() {
   const posterPromptPublik = (prompt, deskripsi) =>
     `Create ONE professional modern Hollywood movie poster, cinematic style. Follow these user instructions: ${prompt}. ` +
     `Scene basis (from the user's video frame): ${deskripsi}. ` +
-    `Rules: all text fully inside the image with safe margins from every edge; the movie title must be large, dramatic and spelled EXACTLY as given in the instructions; ` +
+    `Rules: all text fully inside the image with safe margins from every edge; the movie title must be large, dramatic, positioned at the BOTTOM area of the poster, and spelled EXACTLY as given in the instructions; ` +
     `no subtitles, no captions, no watermarks, no timestamps; single cohesive composition, dramatic lighting.`;
 
   ipcMain.handle("ai:set-key", (_e, payload) => {
@@ -468,7 +480,7 @@ function registerFSIpc() {
   const cfPosterPrompt = (prompt, deskripsi, judul) => {
     const m = judul || (String(prompt).match(/judul "([^"]+)"/) || [])[1] || "";
     const judulPart = m
-      ? `The ONLY large text on the poster is the movie title: "${m.slice(0, 60).toUpperCase()}" spelled exactly letter by letter, all caps, large bold typography inside safe margins. `
+      ? `The ONLY large text on the poster is the movie title: "${m.slice(0, 60).toUpperCase()}" spelled exactly letter by letter, all caps, large bold typography positioned at the BOTTOM area of the poster, inside safe margins. `
       : "";
     // v1.0.41: kata "Hollywood" juga dibersihkan dari instruksi pengguna
     // (prompt default berbahasa Indonesia menyebut "film Hollywood") — jika
@@ -587,12 +599,23 @@ function registerFSIpc() {
     }
     const key = readAIKey();
     if (key) {
+      // v1.0.43: vision TIDAK FATAL lagi — dahulu satu kegagalan glm-4.6v-flash
+      // (model tua/pensiun/saldo/kunci) membatalkan SELURUH blok → poster Z.ai
+      // tidak pernah jadi dan selalu jatuh ke cover bawaan. Kini kegagalan
+      // deskripsi hanya dilewati (judul tetap terbawa di prompt), poster tetap
+      // digambar; pesan kegagalan disimpan agar toast di app menunjukkan SEBAB.
+      let deskripsi = "";
       try {
-        const deskripsi = await pubDescribeScene(image, key);
+        deskripsi = await pubDescribeScene(image, key);
+      } catch (errVis) {
+        lastAIPosterError = String((errVis && errVis.message) || errVis).slice(0, 200);
+      }
+      try {
         const poster = await pubGeneratePoster(posterPromptPublik(prompt, deskripsi || "dramatic cinematic scene"), key, sizePub, payload?.quality);
         if (poster) return { ok: true, image: poster, via: "publik" };
+        lastAIPosterError = "respons gambar kosong";
       } catch (err) {
-        // kunci ada tapi gagal (saldo/koneksi) → lanjut coba jalur SDK bila ada
+        // kunci ada tapi gagal (saldo/koneksi/model) → simpan pesan untuk toast
         lastAIPosterError = String((err && err.message) || err).slice(0, 200);
       }
     }

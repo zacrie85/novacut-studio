@@ -600,11 +600,11 @@ export interface FrameScore {
 }
 
 /** Analisis & beri skor beberapa kandidat frame dari video */
-/** v1.0.34: rentang pencarian frame cover — detik 5 s/d 60 (permintaan pengguna:
- * hindari intro/bukaan di awal video dan jangan sampai terlalu jauh ke akhir).
+/** v1.0.43: rentang pencarian frame cover — detik 5 s/d 30 (permintaan pengguna:
+ * adegan menarik di awal-awal, hindari intro, jangan jauh ke akhir).
  * Video pendek menyesuaikan otomatis (tidak pernah keluar dari durasi). */
 export function posterTimeRange(duration: number): { lo: number; hi: number } {
-  const hi = Math.min(60, Math.max(0.2, duration - 0.2));
+  const hi = Math.min(30, Math.max(0.2, duration - 0.2));
   const lo = Math.min(5, hi * 0.5);
   return { lo: Math.max(0, lo), hi };
 }
@@ -803,9 +803,11 @@ export function bersihkanJudul(s: string): string {
   return t || (s || "").trim();
 }
 
-/** Prompt DEFAULT pilihan pengguna. Judul video disisipkan otomatis sebagai judul poster. */
+/** v1.0.43: Prompt DEFAULT pilihan PENGGUNA — poster sesuai adegan video, 2-3
+ * karakter berhadapan, background kolosal, frame futuristik/modern, judul di
+ * bawah. Judul video tetap disisipkan otomatis (buildPosterPrompt). */
 export const POSTER_PROMPT_DEFAULT =
-  "Rubahlah gambar ini menjadi poster untuk sebuah film Hollywood. Buat poster dengan gaya modern sinematik, tanpa takarir video, tanpa watermark";
+  "BUAT POSTER SESUAI DENGAN ADEGAN YANG DIAMBIL DARI VIDEO, judul video dibagian bawah sesuai dengan nama video. didalam poster buat agar ada 2 atau 3 karakter yang tampil di poster saling berhadapan atau menghadap kedepan semua disesuaikan dengan gambar yang di ambil dari video, untuk gambarnya ambil dari adegan yang ada di video, Adegan diambil dari detik 5 sampai detik 30 video, untuk rasio poster 9:16, dengan background cinematik atau kolosal dan dengan frame futuristik atau modern mengelilingi poster, tulisan selalu dijaga di dalam tepi gambar, dan menggunakan font yang cinematik atau futuristik atau modern dinamis";
 
 /** Rakit prompt final: prompt manual pengguna ATAU default + judul video, lalu
  * tambahkan ATURAN MARGIN (semua tulisan di dalam area gambar — tidak terpotong tepi).
@@ -824,8 +826,18 @@ export function buildPosterPrompt(custom: string | undefined, title: string): st
  * (IPC ai:poster). v1.0.38: penyedia & kualitas ikut preferensi tersimpan
  * (Z.ai glm-image hd/standard ATAU Cloudflare Workers AI gratis). Bila bridge
  * tidak ada (web) atau gagal → null → pemanggil lanjut ke fallback frame ter-grade. */
+let _kesalahanPosterAI = "";
+/** v1.0.43: pesan kegagalan AI TERAKHIR (dari main process: saldo habis, model
+ * tidak ada, kunci salah, timeout) — toast di app menampilkannya agar pengguna
+ * tahu SEBAB poster bawaan muncul, bukan hanya "AI gagal". */
+export function kesalahanPosterAI(): string {
+  return _kesalahanPosterAI;
+}
 export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size: "1344x768" | "768x1344" = "1344x768", timeoutMs = 180000): Promise<string | null> {
-  if (typeof window === "undefined" || !window.novacutAI?.posterAI) return null;
+  if (typeof window === "undefined" || !window.novacutAI?.posterAI) {
+    _kesalahanPosterAI = "";
+    return null;
+  }
   try {
     const prefs = await window.novacutAI?.getAIPrefs?.().catch(() => null);
     const provider = prefs?.provider === "cloudflare" ? "cloudflare" : "zai";
@@ -834,8 +846,18 @@ export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size:
       window.novacutAI.posterAI(frameUrl, prompt, size, provider, quality),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
     ]);
-    return res?.ok && res.image ? res.image : null;
-  } catch {
+    if (res === null) {
+      _kesalahanPosterAI = `waktu tunggu AI habis (>${Math.round(timeoutMs / 1000)} dtk)`;
+      return null;
+    }
+    if (res?.ok && res.image) {
+      _kesalahanPosterAI = "";
+      return res.image;
+    }
+    _kesalahanPosterAI = String(res?.error || "AI tidak mengembalikan gambar").slice(0, 160);
+    return null;
+  } catch (err) {
+    _kesalahanPosterAI = String(err).slice(0, 160);
     return null;
   }
 }

@@ -14,7 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useEditor } from "@/lib/editor/store";
 import { fmtEta, fmtSize, fmtTime } from "@/lib/editor/constants";
-import { bersihkanJudul, COVER_FRAMES, POSTER_PROMPT_DEFAULT } from "@/lib/editor/covers";
+import { bersihkanJudul, COVER_FRAMES, kesalahanPosterAI, POSTER_PROMPT_DEFAULT } from "@/lib/editor/covers";
 import AIKeyCard from "./AIKeyCard";
 import { ensureCoverAsset, regenAllCoverPrompts, regenCoverWithFrame, runBatchExport, triggerDownload } from "@/lib/editor/exporter";
 import type { CoverConfig, CoverFrameStyle } from "@/lib/editor/types";
@@ -423,7 +423,7 @@ export function SimpleMode() {
                                 <b className="text-amber-400/90">Prompt default</b> — poster Hollywood modern sinematik, judul video ditulis AI di poster.
                               </>
                             )}{" "}
-                            Adegan diambil dari detik 5–60 video, rasio poster mengikuti rasio video (16:9 / 9:16), tulisan selalu dijaga di dalam tepi gambar.
+                            Adegan diambil dari detik 5–30 video, rasio poster mengikuti rasio video (16:9 / 9:16), tulisan selalu dijaga di dalam tepi gambar.
                           </div>
                           <div className="flex flex-wrap gap-1.5">
                             <button
@@ -434,7 +434,7 @@ export function SimpleMode() {
                                 void ensureCoverAsset(videos[0], true).then((id) => {
                                   setPosterMaking(false);
                                   if (id) toast({ title: "Poster AI siap ✔", description: "Poster tampil di pratinjau dan dipakai saat export." });
-                                  else toast({ title: "AI gagal — pakai cadangan", description: "Cover memakai frame ter-grade. Pasang/cek Kunci API Poster AI lalu coba lagi." });
+                                  else toast({ title: "AI gagal — pakai cadangan", description: `Cover memakai frame ter-grade. ${kesalahanPosterAI() || "Pasang/cek Kunci API Poster AI lalu coba lagi."}` });
                                 });
                               }}
                               disabled={posterMaking || !videos[0]}
@@ -483,7 +483,7 @@ export function SimpleMode() {
                       Latar cover: <b>{cover.bgStyle === "hitam" ? "hitam polos" : cover.bgStyle === "poster" ? "Poster Hollywood" : "adegan dari video"}</b>
                       {cover.bgStyle === "adegan" ? (<> · semua bagian <b>{cover.bgScope === "beda" ? "berbeda adegan" : "sama"}</b></>) : null}
                       {cover.frameStyle && cover.frameStyle !== "none" ? (<> · bingkai <b>{COVER_FRAMES.find((f) => f.id === cover.frameStyle)?.label}</b></>) : null}
-                      {cover.mode === "auto" ? " — adegan diambil otomatis dari video (detik 5–60)" : " · gambar pilihanmu"}
+                      {cover.mode === "auto" ? " — adegan diambil otomatis dari video (detik 5–30)" : " · gambar pilihanmu"}
                     </div>
                   </>
                 ) : (

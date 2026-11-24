@@ -395,9 +395,11 @@ export function buildSplitProject(
     );
     const tt = ensureTextTrack(tracks);
     tracks = tt.tracks;
-    // v1.0.35: poster AI SUDAH menulis judul di gambar (sesuai prompt) → overlay
-    // judul besar dilewati agar tidak dobel; hanya badge Part kecil di bawah.
-    // Bila pengguna mengaktifkan "Overlay Judul" (posterTitleOverlay), teks penuh tetap dibuat.
+    // v1.0.43: poster AI menulis judul di gambar → overlay judul besar dilewati
+    // agar tidak dobel. TAPI tulisan PART WAJIB ada di setiap bagian — kini
+    // digambar di ATAS poster, ukuran mengikuti "Ukuran Part" di menu Teks
+    // (dahulu cuma badge kecil di bawah yang mudah tak terlihat). Bila pengguna
+    // mengaktifkan "Overlay Judul" (posterTitleOverlay), teks penuh tetap dibuat.
     const aiPoster = !!st.assets.find((a) => a.id === st.cover.coverAssetId)?.aiMade && !st.cover.posterTitleOverlay;
     clips.push(
       baseClip({
@@ -408,15 +410,15 @@ export function buildSplitProject(
         text: aiPoster
           ? {
               content: label,
-              size: clampPct(descSize * 1.15, 0.03),
+              size: partSize,
               color: "#ffffff",
               font: fontAuto,
               anim: "slam",
-              pos: "bottom",
+              pos: "top",
               bg: "bar",
               stroke: true,
-              offX: clampOffPct(st.texts.descX),
-              offY: clampOffPct(st.texts.descY),
+              offX: clampOffPct(st.texts.partX),
+              offY: clampOffPct(st.texts.partY),
             }
           : {
               content: st.texts.title || st.project.name,
@@ -770,7 +772,7 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
   let frameUrl: string | null = null;
   let brightness = 128;
   const dur = Math.max(1, sourceAsset!.duration);
-  // v1.0.34: frame cover dicari di detik 5–60 (permintaan pengguna — hindari
+  // v1.0.34: frame cover dicari di detik 5–30 (permintaan pengguna — hindari
   // intro/bukaan awal video; video pendek menyesuaikan otomatis)
   const range = posterTimeRange(dur);
   try {

@@ -10,7 +10,7 @@ import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { COVER_TEMPLATES, fmtTime, partLabel } from "@/lib/editor/constants";
 import type { CoverTemplate } from "@/lib/editor/constants";
-import { aiRecommendTemplates, analyzeVideoFrames, COVER_FRAMES, drawCoverFrame, grabFrame, loadImage, plainCoverDataURL, POSTER_PROMPT_DEFAULT, posterTimeRange, renderCover, renderCoverToDataURL } from "@/lib/editor/covers";
+import { aiRecommendTemplates, analyzeVideoFrames, COVER_FRAMES, drawCoverFrame, grabFrame, kesalahanPosterAI, loadImage, plainCoverDataURL, POSTER_PROMPT_DEFAULT, posterTimeRange, renderCover, renderCoverToDataURL } from "@/lib/editor/covers";
 import AIKeyCard from "../AIKeyCard";
 import { useEditor } from "@/lib/editor/store";
 import { uid } from "@/lib/editor/constants";
@@ -192,7 +192,7 @@ export function CoverPanel() {
       toast({ title: "Unggah gambar dulu", description: "Pilih file PNG/JPG untuk cover manual." });
       return;
     }
-    // v1.0.35: POSTER AI — dibuat lewat mesin AI (frame adegan 5-60s + prompt)
+    // v1.0.35: POSTER AI — dibuat lewat mesin AI (frame adegan 5-30s + prompt)
     if (cover.mode === "auto" && cover.bgStyle === "poster") {
       if (!source) {
         toast({ title: "Pilih video dulu", description: "Impor video di tab Media." });
@@ -203,7 +203,7 @@ export function CoverPanel() {
       const id = await ensureCoverAsset(source, true);
       setBusy(null);
       if (id) toast({ title: "Poster AI disimpan ✔", description: "Dipakai otomatis di Export & Split." });
-      else toast({ title: "AI gagal — cover cadangan dipakai", description: "Frame ter-grade dibuat; cek koneksi/kredensial AI." });
+      else toast({ title: "AI gagal — cover cadangan dipakai", description: `Frame ter-grade dibuat. ${kesalahanPosterAI() || "Cek koneksi/kredensial AI."}` });
       return;
     }
     if (cover.mode === "auto" && !isBlack && !frameUrl) {
@@ -360,7 +360,7 @@ export function CoverPanel() {
                         <b className="text-amber-400/90">Prompt default</b> — poster Hollywood modern sinematik, judul video ditulis AI di poster.
                       </>
                     )}{" "}
-                    Adegan diambil dari detik 5–60 video, rasio poster mengikuti proyek (16:9 / 9:16), tulisan selalu dijaga di dalam tepi gambar.
+                    Adegan diambil dari detik 5–30 video, rasio poster mengikuti proyek (16:9 / 9:16), tulisan selalu dijaga di dalam tepi gambar.
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
