@@ -144,7 +144,11 @@ export default function AIKeyCard() {
         ) : (
           <>
             <div className="text-[10px] leading-relaxed text-gray-500">
-              Buat kunci API Z.ai <b className="text-cyan-300/90">gratis</b> (kartu tidak perlu; bayar hanya ±Rp250 per poster yang digambar), tempel di sini, lalu klik Buat Ulang Poster.
+              <b className="text-cyan-300/90">Bayar per pakai — ±Rp250/poster</b> (tanpa langganan; vision pembaca adegan GRATIS). Ikuti 4 langkah:
+              <br /><b>1.</b> Buka <b>z.ai</b> → daftar/masuk akun (cukup email; kartu tidak wajib).
+              <br /><b>2.</b> Klik ikon akun kanan-atas → <b>API Keys</b> → <b>Create API Key</b> → pilih <b>Standard API Key</b> → salin (hanya tampil sekali!).
+              <br /><b>3.</b> Bila kredit belum ada: halaman <b>Billing</b> di z.ai → isi saldo (±Rp250 ≈ 1 poster; pembaca adegan gratis).
+              <br /><b>4.</b> Tempel kunci di bawah → Simpan → Tes Koneksi → klik 🎨 Buat Ulang Poster.
             </div>
             <div className="flex gap-1.5">
               <input
@@ -160,12 +164,17 @@ export default function AIKeyCard() {
                 Simpan
               </button>
             </div>
-            <button
-              onClick={() => void window.novacutAI?.openAIKeyPage?.()}
-              className="text-[10px] text-cyan-400/90 underline transition hover:text-cyan-300"
-            >
-              Cara dapat kunci: buka z.ai → API Keys (buat &quot;Standard API Key&quot;) ↗
-            </button>
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => void window.novacutAI?.openAIKeyPage?.()}
+                className="rounded-md border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-[10px] font-semibold text-cyan-100 transition hover:border-cyan-400"
+              >
+                🔑 Buka z.ai → API Keys ↗
+              </button>
+              <button onClick={tes} disabled={busy} className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-gray-300 transition hover:border-white/25 disabled:opacity-50">
+                {busy ? "Menguji…" : "Tes Koneksi"}
+              </button>
+            </div>
           </>
         )
       ) : !window.novacutAI?.setCFKey ? (

@@ -64,6 +64,7 @@ export function SimpleMode() {
   const settings = useEditor((s) => s.exportSettings);
   const pl = useEditor((s) => s.playlistExport);
   const cover = useEditor((s) => s.cover);
+  const project = useEditor((s) => s.project);
   const { toast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
   const desktop = isDesktopFS();
@@ -307,7 +308,8 @@ export function SimpleMode() {
 
           {/* ===== LANGKAH 4: EXPORT & SPLIT ===== */}
           {step === 4 && (
-            <div className="space-y-4">
+            <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+              <div className="min-w-0 space-y-4">
               <div>
                 <h1 className="text-lg font-bold">Export &amp; Split {selected.length} video</h1>
                 <p className="mt-1 text-sm text-muted-foreground">Video dirender di latar belakang — aplikasi boleh diperkecil, jangan ditutup.</p>
@@ -475,14 +477,8 @@ export function SimpleMode() {
                     <div className="text-[11px] leading-relaxed text-gray-500">
                       {cover.coverAssetId ? "✔ Cover siap dipakai — akan tampil di depan setiap bagian." : "Belum ada cover — AI akan membuatkan otomatis dari video."}
                     </div>
-                    {/* v1.0.34: PRATINJAU cover langsung di Mode Sederhana — pengguna
-                     * melihat sendiri poster/adegan yang akan dipakai SEBELUM export */}
-                    {cover.coverAssetId && cover.previewUrl ? (
-                      <div className="space-y-1">
-                        <img src={cover.previewUrl} alt="Pratinjau cover" className="h-28 w-full rounded-lg border border-white/10 object-cover" />
-                        <div className="text-[10px] text-gray-500">Pratinjau cover yang akan dipakai (frame adegan video + gaya di atas, diambil dari detik 5–60).</div>
-                      </div>
-                    ) : null}
+                    {/* v1.0.42: pratinjau kecil dihilangkan — pratinjau PENUH rasio proyek
+                     * kini tampil di panel khusus sisi kanan (tidak terpotong lagi) */}
                     <div className="rounded-lg border border-blue-500/20 bg-blue-500/[0.06] px-2.5 py-1.5 text-[11px] leading-relaxed text-blue-200/90">
                       Latar cover: <b>{cover.bgStyle === "hitam" ? "hitam polos" : cover.bgStyle === "poster" ? "Poster Hollywood" : "adegan dari video"}</b>
                       {cover.bgStyle === "adegan" ? (<> · semua bagian <b>{cover.bgScope === "beda" ? "berbeda adegan" : "sama"}</b></>) : null}
@@ -624,6 +620,42 @@ export function SimpleMode() {
                     <Sparkles className="h-4 w-4" /> Mulai Batch Baru
                   </Button>
                 )}
+              </div>
+              </div>
+
+              {/* ===== v1.0.42: PANEL PRATINJAU POSTER — sisi kanan, rasio penuh proyek, sticky ===== */}
+              <div className="xl:sticky xl:top-2">
+                <div className="overflow-hidden rounded-xl border border-white/[0.07] bg-card">
+                  <div className="flex items-center justify-between gap-2 border-b border-white/[0.07] px-3 py-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-gray-300">🖼️ Pratinjau Poster</span>
+                    <span className="shrink-0 font-mono text-[10px] text-blue-300/80">{project.width}×{project.height} · {project.height > project.width ? "9:16" : "16:9"}</span>
+                  </div>
+                  <div className="space-y-2 p-3">
+                    {cover.coverAssetId && cover.previewUrl ? (
+                      <img
+                        src={cover.previewUrl}
+                        alt="Pratinjau poster penuh"
+                        className="w-full rounded-lg border border-white/10 object-contain shadow-2xl"
+                        style={{ aspectRatio: `${project.width} / ${project.height}` }}
+                      />
+                    ) : (
+                      <div
+                        className="flex w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-white/15 bg-white/[0.02] px-3 text-center"
+                        style={{ aspectRatio: `${project.width} / ${project.height}` }}
+                      >
+                        <span className="text-3xl opacity-60">🖼️</span>
+                        <span className="text-[11px] leading-relaxed text-gray-500">
+                          {pl.showTitleScreen
+                            ? "Belum ada poster — pilih gaya Poster Hollywood lalu klik 🎨 Buat Ulang Poster."
+                            : "Cover dimatikan — aktifkan dulu Cover Otomatis di Depan."}
+                        </span>
+                      </div>
+                    )}
+                    <div className="text-[10px] leading-relaxed text-gray-500">
+                      Rasio penuh sesuai proyek — persis seperti yang tampil di depan video hasil export.
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           )}
