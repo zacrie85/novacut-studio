@@ -365,12 +365,14 @@ function registerFSIpc() {
       clearTimeout(to);
     }
   };
-  // Vision gratis: deskripsi adegan frame sebagai dasar lukisan poster (Inggris,
-  // ≤100 kata; takarir/watermark diabaikan) — llama-3.2-11b-vision-instruct.
+  // Vision gratis: deskripsi adegan frame sebagai dasar poster (Inggris, ≤120 kata;
+  // takarir/watermark diabaikan) — llama-3.2-11b-vision-instruct. v1.0.40: deskripsi
+  // lebih kaya (umur/rambut/pakaian/pose/properti/palette) agar lukisan lebih mirip.
   const cfDescribeScene = async (dataUrl, cf) => {
     const visPrompt =
-      "Describe this video frame as a cinematic movie-poster scene brief in English (max 100 words): " +
-      "main subject appearance, pose, emotion, setting, lighting, color mood. " +
+      "Describe this video frame as a cinematic movie-poster scene brief in English (max 120 words): " +
+      "subject's age, gender, hair, clothing, expression and exact pose; key props; " +
+      "setting and background; lighting direction; dominant color palette; overall mood. " +
       "IGNORE any burned-in subtitles, captions or watermarks — do not mention them.";
     try {
       const r = await cfRun(cf, "@cf/meta/llama-3.2-11b-vision-instruct", {
@@ -396,11 +398,64 @@ function registerFSIpc() {
       throw err;
     }
   };
-  const cfPosterPrompt = (prompt, deskripsi) =>
-    `Create ONE professional modern Hollywood movie poster, cinematic style. Follow these user instructions: ${prompt}. ` +
-    `Scene basis (from the user's video frame): ${deskripsi || "dramatic cinematic scene"}. ` +
-    `Rules: all text fully inside the image with safe margins from every edge; ` +
-    `no subtitles, no captions, no watermarks, no timestamps; single cohesive composition, dramatic lighting.`;
+  // v1.0.40 — FLUX.2 Klein 4B (model EDITING): frame video dikirim UTUH sebagai
+  // gambar input, poster dilukis DARI frame itu (wajah/adegan terjaga) — bukan
+  // lagi sekadar deskripsi teks. Skema resmi CF: input multipart/form-data
+  // (prompt + gambar), output {image: base64}. Dicoba 3 bentuk (multipart →
+  // JSON image → JSON images) bila API menolak salah satu bentuk.
+  const dataUrlToBuf = (dataUrl) => Buffer.from(String(dataUrl || "").replace(/^data:[^,]+,/, ""), "base64");
+  const cfEditPoster = async (prompt, dataUrl, cf) => {
+    const url = `${CF_BASE}/accounts/${cf.account}/ai/run/@cf/black-forest-labs/flux-2-klein-4b`;
+    const auth = { Authorization: `Bearer ${cf.token}` };
+    const body64 = String(dataUrl).split(",").pop() || "";
+    const ambil = (r) => (r?.image ? `data:image/jpeg;charset=utf-8;base64,${r.image}` : null);
+    let lastErr = null;
+    // 1) multipart/form-data — bentuk resmi sesuai schema (multipart required)
+    try {
+      const fd = new FormData();
+      fd.append("prompt", prompt.slice(0, 1800));
+      fd.append("image", new Blob([dataUrlToBuf(dataUrl)], { type: "image/jpeg" }), "frame.jpg");
+      const res = await fetch(url, { method: "POST", headers: auth, body: fd });
+      const json = await res.json().catch(() => ({}));
+      const img = ambil(json?.result);
+      if (res.ok && json?.success !== false && img) return img;
+      lastErr = new Error(json?.errors?.[0]?.message || `HTTP ${res.status}`);
+    } catch (err) { lastErr = err; }
+    // 2) JSON {prompt, image: base64}
+    try {
+      const r = await cfRun(cf, "@cf/black-forest-labs/flux-2-klein-4b", { prompt: prompt.slice(0, 1800), image: body64 }, 180000);
+      const img = ambil(r);
+      if (img) return img;
+    } catch (err) { lastErr = err; }
+    // 3) JSON {prompt, images: [base64]} (nama multi-reference editing)
+    try {
+      const r = await cfRun(cf, "@cf/black-forest-labs/flux-2-klein-4b", { prompt: prompt.slice(0, 1800), images: [body64] }, 180000);
+      const img = ambil(r);
+      if (img) return img;
+    } catch (err) { lastErr = err; }
+    throw lastErr || new Error("jalur edit Cloudflare gagal");
+  };
+  // v1.0.40: prompt poster diperbaiki — judul ASLI dari video diekstrak dan
+  // diwajibkan jadi satu-satunya teks besar; kata "Hollywood" tidak dipakai lagi
+  // (bocor jadi judul poster), credits/nama/logoran diblokir (tidak jadi coretan).
+  const cfPosterPrompt = (prompt, deskripsi, judul) => {
+    const m = judul || (String(prompt).match(/judul "([^"]+)"/) || [])[1] || "";
+    const judulPart = m
+      ? `The ONLY large text on the poster is the movie title: "${m}" spelled exactly, large bold typography inside safe margins. `
+      : "";
+    const tema = String(prompt).replace(/dengan menggunakan judul "[^"]+" sebagai judul di poster\.?/i, "").trim();
+    return `Create ONE cinematic blockbuster movie poster, professional key art. ${judulPart}` +
+      `NO other words anywhere: no actor names, no credits block, no studio logos, no small text, no subtitles, no watermarks, no timestamps. ` +
+      `Single cohesive composition, dramatic lighting, rich color grade. ` +
+      `User instructions: ${tema || "cinematic movie poster"}. ` +
+      `Scene basis (from the user's video frame): ${deskripsi || "dramatic cinematic scene"}.`;
+  };
+  // Instruksi khusus jalur EDIT: wajah/rambut/pakaian/pose subjek dipertahankan
+  // dari foto input.
+  const cfEditPrompt = (prompt, deskripsi, judul) =>
+    `Transform this exact photograph into ONE cinematic blockbuster movie poster. ` +
+    `Keep the main subject's face, hairstyle, clothing and pose recognisable from the input photo. ` +
+    cfPosterPrompt(prompt, deskripsi, judul);
 
   ipcMain.handle("cf:set-key", (_e, payload) => {
     try {
@@ -479,10 +534,18 @@ function registerFSIpc() {
     if (payload?.provider === "cloudflare") {
       const cf = readCFKey();
       if (!cf.account || !cf.token) return { ok: false, error: "Kredensial Cloudflare belum diisi" };
+      const judul = (prompt.match(/judul "([^"]+)"/) || [])[1] || "";
       try {
         const deskripsi = await cfDescribeScene(image, cf);
-        const poster = await cfGeneratePoster(cfPosterPrompt(prompt, deskripsi), cf, payload?.size !== "768x1344");
-        return { ok: true, image: poster, via: "cloudflare" };
+        // v1.0.40: EDIT dulu — frame utuh dikirim ke FLUX.2 Klein 4B (wajah &
+        // adegan terjaga); bila gagal → txt2img FLUX.1 schnell (deskripsi adegan).
+        try {
+          const poster = await cfEditPoster(cfEditPrompt(prompt, deskripsi, judul), image, cf);
+          return { ok: true, image: poster, via: "cloudflare-edit" };
+        } catch (errEdit) {
+          const poster = await cfGeneratePoster(cfPosterPrompt(prompt, deskripsi, judul), cf, payload?.size !== "768x1344");
+          return { ok: true, image: poster, via: "cloudflare-txt2img" };
+        }
       } catch (err) {
         return { ok: false, error: String((err && err.message) || err).slice(0, 200) };
       }

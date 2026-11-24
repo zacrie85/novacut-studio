@@ -175,7 +175,7 @@ export default function AIKeyCard() {
       ) : hasCF ? (
         <>
           <div className="text-[10px] leading-relaxed text-gray-500">
-            Poster digambar <b className="text-emerald-300/90">GRATIS via Cloudflare Workers AI</b> (vision Llama + FLUX.1 schnell) — kuota 10.000 Neuron/hari ≈ 170 poster, reset jam 07.00 WIB. Tanpa kartu, tanpa tagihan.
+            Poster dibuat dari <b className="text-emerald-300/90">FRAME videomu yang dikirim utuh ke Cloudflare</b> (FLUX.2 Klein, mode editing — wajah & adegan terjaga); kuota edit habis → otomatis FLUX.1 schnell. Kuota 10.000 Neuron/hari ≈ 80-170 poster, reset jam 07.00 WIB. Tanpa kartu, tanpa tagihan.
           </div>
           <div className="flex gap-1.5">
             <button onClick={tesCF} disabled={busy} className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-100 transition hover:border-emerald-400 disabled:opacity-50">
@@ -189,7 +189,7 @@ export default function AIKeyCard() {
       ) : (
         <>
           <div className="text-[10px] leading-relaxed text-gray-500">
-            <b className="text-emerald-300/90">100% GRATIS & tanpa kartu</b> — kuota 10.000 Neuron/hari (±110-170 poster), reset jam 07.00 WIB. Ikuti 4 langkah:
+            <b className="text-emerald-300/90">100% GRATIS & tanpa kartu</b> — kuota 10.000 Neuron/hari (±80-170 poster), reset jam 07.00 WIB. Ikuti 4 langkah:
             <br /><b>1.</b> Daftar akun gratis di dash.cloudflare.com (cukup email & password).
             <br /><b>2.</b> Di beranda dash, salin <b>Account ID</b> (kotak di sisi kanan halaman) → tempel di bawah.
             <br /><b>3.</b> Klik ikon profil kanan-atas → <b>My Profile → API Tokens → Create Token</b> → Create Custom Token → nama bebas (mis. &quot;NOVACUT&quot;) → Permissions: <b>Account · Workers AI · Run</b> → Continue → Create Token → salin token (hanya tampil sekali!).
