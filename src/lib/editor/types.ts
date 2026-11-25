@@ -174,7 +174,7 @@ export interface CoverConfig {
    * (CF edit / img2img); "asli": adegan video ASLI + grade studio lokal; "aslihitam"
    * (v1.0.50): adegan ASLI + background hitam sinematik + bingkai film. Dua mode
    * terakhir TANPA panggilan AI → 0 Neuron, identitas 100%. */
-  posterArtMode?: "ai" | "asli" | "aslihitam";
+  posterArtMode?: "ai" | "asli" | "aslihitam" | "kisah";
   /** v1.0.50: isi teks di poster — "judul" (default): judul ditulis template + label
    * part dari mesin render; "part": TANPA judul di poster (untuk video yang sudah
    * punya tulisan judul bawaan) — hanya label part yang tampil, judul tak dobel. */

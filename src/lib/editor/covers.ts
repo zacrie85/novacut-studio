@@ -1289,6 +1289,23 @@ export async function posterKompositCineDataURL(frameUrl: string, bgUrl: string 
   }
 }
 
+/** v1.0.54: POSTER KISAH — prompt adegan film BARU dari judul video (ala
+ * gpt-image-2.5-flare): judul dipakai sbg alur cerita → komposisi poster
+ * blockbuster (hero di tengah, momen aksi atas, momen emosional bawah). Frame
+ * video dikirim sbg referensi tokoh utk Mage/Z.ai (img2img — wajah asli
+ * terbawa); CF memakai txt2img langsung (karakter karangan, GRATIS). Marker
+ * [TEXTFREE] → gambar murni tanpa teks; judul ditulis template app. */
+export function buildKisahPrompt(custom: string | undefined, judul?: string): string {
+  const gaya = (custom || "").trim().slice(0, 200);
+  const cerita = (judul || "").replace(/\s*[-–|]\s*(part|episode|eps?|ep)\s*\d+(\s*\/\s*\d+)?\s*$/i, "").trim().slice(0, 320);
+  return (
+    `Epic vertical 9:16 MOVIE POSTER scene, photorealistic cinematic photography: ${cerita || "a dramatic action-romance story"}. ` +
+    `Compose like a blockbuster film poster: ONE HERO in the center (upper body, intense expression, dramatic rim light), smaller story moments above and below (action beat at the top, emotional beat at the bottom), cinematic environment with atmospheric haze, volumetric light, dramatic sky, deep teal-and-orange color grade, subtle film grain, rich realistic detail, REAL-PHOTOGRAPH look — no cartoon, no anime, no illustration, no drawing, no 3D render.` +
+    (gaya ? ` Style hints (atmosphere only): ${gaya}.` : "") +
+    ` [TEXTFREE] Leave the top and bottom edges slightly darker for title space.`
+  );
+}
+
 /** v1.0.46: pilih frame poster — "auto" = ikut judul (pendek / mengandung # →
  * komik; sedang → Gala Malam [judul di bawah]; panjang → Hollywood);
  * id dari POSTER_TEMPLATES dipakai langsung, id tak dikenal (mis. template
@@ -1346,7 +1363,7 @@ export function terjemahkanKesalahanAI(raw: string): string {
     (s.trim() ? s.slice(0, 160) : "AI tidak mengembalikan gambar")
   );
 }
-export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size: "1344x768" | "768x1344" = "1344x768", timeoutMs = 180000, opts?: { expand?: boolean; bgOnly?: boolean }): Promise<string | null> {
+export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size: "1344x768" | "768x1344" = "1344x768", timeoutMs = 180000, opts?: { expand?: boolean; bgOnly?: boolean; direct?: boolean }): Promise<string | null> {
   if (typeof window === "undefined" || !window.novacutAI?.posterAI) {
     _kesalahanPosterAI = "";
     return null;
@@ -1358,8 +1375,9 @@ export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size:
     const quality = prefs?.quality === "standard" ? "standard" : "hd";
     const res = await Promise.race([
       // v1.0.52: opts.bgOnly → main process langsung txt2img (plate latar kosong);
-      // opts.expand (outpaint) sudah tidak dipakai — mode aslihitam kini komposit
-      window.novacutAI.posterAI(frameUrl, prompt, size, provider, quality, opts?.expand, opts?.bgOnly),
+      // v1.0.54: opts.direct → txt2img langsung (poster kisah; CF), frame tetap
+      // dikirim utk Z.ai/Mage (img2img referensi tokoh)
+      window.novacutAI.posterAI(frameUrl, prompt, size, provider, quality, opts?.expand, opts?.bgOnly, opts?.direct),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
     ]);
     if (res === null) {

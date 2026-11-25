@@ -7,7 +7,7 @@
 //  2) MODE KOMPATIBEL: rekam real-time via MediaRecorder (jalur lama).
 // Fitur: cover otomatis, teks judul/deskripsi/part, subtitle AI (bahasa Indonesia).
 
-import { bersihkanJudul, grabFrame, aiRecommendTemplates, analyzeVideoFrames, buildBackdropPrompt, buildPosterPrompt, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, posterKompositCineDataURL, posterFallbackDataURL, posterTimeRange, renderCoverToDataURL, renderPosterTextDataURL, aiPosterizeDataURL, resolvePosterTemplateId } from "./covers";
+import { bersihkanJudul, grabFrame, aiRecommendTemplates, analyzeVideoFrames, buildBackdropPrompt, buildKisahPrompt, buildPosterPrompt, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, posterKompositCineDataURL, posterFallbackDataURL, posterTimeRange, renderCoverToDataURL, renderPosterTextDataURL, aiPosterizeDataURL, resolvePosterTemplateId } from "./covers";
 import { COVER_TEMPLATES, partLabel, slugify, uid } from "./constants";
 import { engine } from "./engine";
 import { adjustRangesToSilence, exportRangeFast, fastSupported, AudioDecodeCache } from "./fastExport";
@@ -379,6 +379,23 @@ export function buildSplitProject(
   // sebelumnya selalu "Part" karena membaca field yang salah
   const label = partLabel(st.texts?.labelStyle || "Part", partIndex, totalParts, true);
 
+  // v1.0.54: posisi part OTOMATIS BERLAWANAN JUDUL (keluhan: label part selalu di
+  // atas → bertumpuk dgn judul template Hollywood Zombieland & Komik HUMOR #BAPER
+  // yang juga di ATAS). Zona judul poster (covers.ts): Hollywood & Komik = ATAS,
+  // Gala Malam & Neon Panggung = BAWAH. Judul MESIN tampil saat video → berlawanan
+  // titleV. Flip mati → slider Part manual (partV).
+  const aiPoster = !!st.assets.find((a) => a.id === st.cover.coverAssetId)?.aiMade && !st.cover.posterTitleOverlay;
+  const posterAdaJudulTpl = aiPoster && (st.cover.posterTextMode ?? "app") === "app" && (st.cover.posterTextIsi ?? "judul") !== "part";
+  const posterTplIdP = resolvePosterTemplateId(st.cover, st.texts.title || st.project.name || "");
+  const judulPosterAtas = !(posterTplIdP === "poster-gala" || posterTplIdP === "poster-neon");
+  const judulMesinTampil = s.showTitleText && !!st.texts.title;
+  const partVCover = posterAdaJudulTpl && st.texts.partFlip !== false ? (judulPosterAtas ? 100 : 0) : typeof st.texts.partV === "number" ? st.texts.partV : 0;
+  const posisiPartVideo = judulMesinTampil
+    ? posisiPartEfektif(st.texts, true)
+    : posterAdaJudulTpl && st.texts.partFlip !== false
+      ? judulPosterAtas ? 100 : 0
+      : typeof st.texts.partV === "number" ? st.texts.partV : 0;
+
   if (shift > 0 && st.cover.coverAssetId) {
     const vt = ensureVideoTrack(tracks);
     tracks = vt.tracks;
@@ -398,10 +415,9 @@ export function buildSplitProject(
     tracks = tt.tracks;
     // v1.0.43: poster AI menulis judul di gambar → overlay judul besar dilewati
     // agar tidak dobel. TAPI tulisan PART WAJIB ada di setiap bagian — kini
-    // digambar di ATAS poster, ukuran mengikuti "Ukuran Part" di menu Teks
-    // (dahulu cuma badge kecil di bawah yang mudah tak terlihat). Bila pengguna
-    // mengaktifkan "Overlay Judul" (posterTitleOverlay), teks penuh tetap dibuat.
-    const aiPoster = !!st.assets.find((a) => a.id === st.cover.coverAssetId)?.aiMade && !st.cover.posterTitleOverlay;
+    // digambar di zona BERLAWANAN judul poster (v1.0.54), ukuran mengikuti
+    // "Ukuran Part" di menu Teks. Bila pengguna mengaktifkan "Overlay Judul"
+    // (posterTitleOverlay), teks penuh tetap dibuat. (aiPoster dihitung di atas)
     clips.push(
       baseClip({
         trackId: tt.textTrack.id,
@@ -420,6 +436,10 @@ export function buildSplitProject(
               stroke: true,
               offX: clampOffPct(st.texts.partX),
               offY: clampOffPct(st.texts.partY),
+              // v1.0.54: BERLAWANAN judul poster — Hollywood/Komik (judul atas) →
+              // part turun ke BAWAH; Gala/Neon (judul bawah) → part tetap ATAS.
+              // Dulu hardcoded selalu di atas → nabrak judul Hollywood/Komik.
+              posV: partVCover / 100,
             }
           : {
               content: st.texts.title || st.project.name,
@@ -474,9 +494,10 @@ export function buildSplitProject(
           // posisi dari kolom geser Part di menu Teks
           offX: clampOffPct(st.texts.partX),
           offY: clampOffPct(st.texts.partY),
-          // v1.0.53: part OTOMATIS berlawanan judul (judul bawah → part atas, dst.)
-          // saat PartFlip aktif & judul ikut dirender; bila tidak → slider Part manual
-          posV: clampV(posisiPartEfektif(st.texts, s.showTitleText && !!st.texts.title), 0),
+          // v1.0.54: part berlawanan judul MESIN (bila tampil saat video) atau
+          // judul POSTER (Hollywood/Komik atas → part bawah; Gala/Neon sebaliknya);
+          // keduanya tak ada → slider Part manual (partV)
+          posV: clampV(posisiPartVideo, 0),
           // v1.0.25: bingkai part (gaya baru t7-t12 + gaya lama) — ukuran
           // otomatis ikut tulisan + skala manual dari menu BINGKAI PART
           frame: partFrameId || undefined,
@@ -816,6 +837,26 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
   const tanpaJudul = (st.cover.posterTextIsi ?? "judul") === "part";
   if (posterOn) {
     if (frameUrl) {
+      // v1.0.54: POSTER KISAH — adegan film BARU digarap dari judul video (ala
+      // gpt-image-2.5-flare): frame dikirim sbg referensi tokoh (img2img Mage/Z.ai
+      // mempertahankan wajah asli; CF txt2img langsung — karakter karangan, 0
+      // Neuron). Judul tetap ditulis template app → tidak mungkin hilang.
+      if (st.cover.posterArtMode === "kisah") {
+        const textFreeK = (st.cover.posterTextMode ?? "app") === "app";
+        const aiUrlK = await aiPosterizeDataURL(frameUrl, buildKisahPrompt(st.cover.posterPrompt, title), width > height ? "1344x768" : "768x1344", 180000, { direct: true });
+        if (aiUrlK) {
+          if (textFreeK && !tanpaJudul) {
+            const posterTplIdK = resolvePosterTemplateId(st.cover, title);
+            const imgK = await loadImage(aiUrlK).catch(() => null);
+            if (imgK) {
+              const composedK = renderPosterTextDataURL({ img: imgK, title, posterTplId: posterTplIdK, frame: st.cover.frameStyle }, width, height);
+              if (composedK) return { id: uid("ks"), name: `Cover - ${title}`, type: "image", url: composedK, duration: 0, width, height, aiMade: true };
+            }
+          }
+          return { id: uid("ks"), name: `Cover - ${title}`, type: "image", url: aiUrlK, duration: 0, width, height, aiMade: true };
+        }
+        // AI gagal → jatuh ke jalur klasik di bawah
+      }
       if (artAsli) {
         const asliHitam = st.cover.posterArtMode === "aslihitam";
         // v1.0.52: KOMPOSIT DIJAMIN IDENTITAS — AI HANYA melukis LATAR KOSONG

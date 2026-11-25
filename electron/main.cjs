@@ -766,23 +766,26 @@ function registerFSIpc() {
     const prompt = String(payload?.prompt || "cinematic movie poster");
     const image = String(payload?.image || "");
     const sizePub = payload?.size === "768x1344" ? "960x1728" : "1728x960";
-    // v1.0.52: bgOnly — plate LATAR KOSONG (tanpa orang) utk komposit "adegan asli
-    // + bg sinematik": AI TIDAK boleh menyentuh adegan asli. Cloudflare butuh
-    // cabang khusus (describe/edit butuh frame — image kosong di sini); Z.ai & Mage
-    // sudah aman (image kosong otomatis jatuh ke txt2img mereka sendiri).
-    if (payload?.bgOnly && payload?.provider === "cloudflare") {
+    // v1.0.52/54: bgOnly (plate latar kosong) & direct (poster kisah) — Cloudflare
+    // langsung txt2img TANPA describe/edit (describe/edit butuh frame & hanya
+    // mengubah adegan sedikit). Z.ai & Mage tetap lewat jalur normal (frame dikirim
+    // sbg referensi img2img → wajah asli terbawa, ala gpt-image-2.5-flare).
+    if ((payload?.bgOnly || payload?.direct) && payload?.provider === "cloudflare") {
       const cf = readCFKey();
       if (!cf.account || !cf.token) return { ok: false, error: "Kredensial Cloudflare belum diisi" };
+      // v1.0.54: hormati marker [TEXTFREE] (poster kisah) — bersihkan + aturan tanpa-teks
+      const { textFree: tfD, prompt: pD } = bersihTextFree(prompt);
+      const promptD = tfD ? `${pD} ${aturanTanpaTeks}` : prompt;
       try {
         try {
-          const poster = await cfGeneratePoster(prompt, cf, payload?.size !== "768x1344");
+          const poster = await cfGeneratePoster(promptD, cf, payload?.size !== "768x1344");
           return { ok: true, image: poster, via: "cloudflare-txt2img" };
         } catch (e1) {
           // agreement BFL utk schnell — setujui sekali lalu ulang
           const a1 = String((e1 && e1.message) || e1);
           if (/agree|terms|agreement|licens/i.test(a1)) {
             await cfAgreeModel(cf, "@cf/black-forest-labs/flux-1-schnell");
-            const poster = await cfGeneratePoster(prompt, cf, payload?.size !== "768x1344");
+            const poster = await cfGeneratePoster(promptD, cf, payload?.size !== "768x1344");
             return { ok: true, image: poster, via: "cloudflare-txt2img" };
           }
           throw e1;

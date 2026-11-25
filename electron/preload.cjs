@@ -31,8 +31,8 @@ contextBridge.exposeInMainWorld("novacutFS", {
 // v1.0.38: penyedia poster bisa dipilih — Z.ai (per poster) ATAU Cloudflare Workers AI
 // (GRATIS: 10.000 Neuron/hari ≈ 170 poster, tanpa kartu) + preferensi kualitas HD/Hemat.
 contextBridge.exposeInMainWorld("novacutAI", {
-  posterAI: (image, prompt, size, provider, quality, expand, bgOnly) =>
-    ipcRenderer.invoke("ai:poster", { image, prompt, size, provider, quality, expand, bgOnly }),
+  posterAI: (image, prompt, size, provider, quality, expand, bgOnly, direct) =>
+    ipcRenderer.invoke("ai:poster", { image, prompt, size, provider, quality, expand, bgOnly, direct }),
   setAIKey: (apiKey) => ipcRenderer.invoke("ai:set-key", { apiKey }),
   getAIKeyStatus: () => ipcRenderer.invoke("ai:key-status"),
   clearAIKey: () => ipcRenderer.invoke("ai:clear-key"),

@@ -489,13 +489,14 @@ export function SimpleMode() {
                             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                               <select
                                 value={cover.posterArtMode ?? "ai"}
-                                onChange={(e) => useEditor.getState().setCover({ posterArtMode: e.target.value === "asli" ? "asli" : e.target.value === "aslihitam" ? "aslihitam" : "ai" })}
+                                onChange={(e) => useEditor.getState().setCover({ posterArtMode: e.target.value === "asli" ? "asli" : e.target.value === "aslihitam" ? "aslihitam" : e.target.value === "kisah" ? "kisah" : "ai" })}
                                 className="rounded-md border border-white/15 bg-black/40 px-2 py-1.5 text-[11px] text-gray-200"
                                 title="Dasar gambar poster: hasil sentuhan AI, atau adegan asli persis dari video"
                               >
                                 <option value="ai">🤖 AI sentuh adegan (edit frame)</option>
                                 <option value="asli">🎬 Adegan asli + grade studio (0 Neuron)</option>
                                 <option value="aslihitam">🎞️ Adegan asli + bg sinematik AI (Cloudflare)</option>
+                                <option value="kisah">📕 Poster kisah AI — adegan baru dari judul (CF gratis / Mage)</option>
                               </select>
                               {/* v1.0.50: TEKS DI POSTER — judul + part (normal) atau
                               part SAJA (video sudah punya tulisan judul bawaan → judul
@@ -710,8 +711,8 @@ export function SimpleMode() {
                   </div>
                   <div className="space-y-2 p-3">
                     <div className="flex items-center justify-between text-[10px]">
-                      <span className={cover.posterArtMode === "asli" ? "font-semibold text-sky-300" : cover.posterArtMode === "aslihitam" ? (jalurPosterAI() ? "font-semibold text-emerald-400" : "font-semibold text-sky-300") : posterAIBerhasil && !jalurPosterAI().includes("edit") ? "font-semibold text-yellow-400" : posterAIBerhasil ? "font-semibold text-emerald-400" : "font-semibold text-amber-400/90"}>
-                        {cover.bgStyle === "poster" ? (cover.posterArtMode === "asli" ? "○ Adegan asli + grade studio (judul via template)" : cover.posterArtMode === "aslihitam" ? (jalurPosterAI() ? "● Bg sinematik AI — adegan asli + latar AI" : `○ Adegan asli + latar lokal (AI gagal)${alasanJalurPosterAI() || kesalahanPosterAI() ? ` — ${(alasanJalurPosterAI() || kesalahanPosterAI()).slice(0, 60)}` : ""}`) : posterAIBerhasil ? (jalurPosterAI().includes("edit") ? "● Poster AI dari frame video" : `● Poster AI teks-saja — ${alasanJalurPosterAI() || "edit frame gagal"}`) : cover.coverAssetId ? "○ Frame klasik (AI gagal)" : "○ Belum ada poster") : cover.coverAssetId ? "● Template klasik" : "○ Belum ada cover"}
+                      <span className={cover.posterArtMode === "kisah" ? (posterAIBerhasil ? "font-semibold text-emerald-400" : "font-semibold text-amber-400/90") : cover.posterArtMode === "asli" ? "font-semibold text-sky-300" : cover.posterArtMode === "aslihitam" ? (jalurPosterAI() ? "font-semibold text-emerald-400" : "font-semibold text-sky-300") : posterAIBerhasil && !jalurPosterAI().includes("edit") ? "font-semibold text-yellow-400" : posterAIBerhasil ? "font-semibold text-emerald-400" : "font-semibold text-amber-400/90"}>
+                        {cover.bgStyle === "poster" ? (cover.posterArtMode === "kisah" ? (posterAIBerhasil ? "● Poster kisah AI — adegan baru dari judul" : `○ Poster kisah gagal — frame klasik${kesalahanPosterAI() ? ` — ${kesalahanPosterAI().slice(0, 60)}` : ""}`) : cover.posterArtMode === "asli" ? "○ Adegan asli + grade studio (judul via template)" : cover.posterArtMode === "aslihitam" ? (jalurPosterAI() ? "● Bg sinematik AI — adegan asli + latar AI" : `○ Adegan asli + latar lokal (AI gagal)${alasanJalurPosterAI() || kesalahanPosterAI() ? ` — ${(alasanJalurPosterAI() || kesalahanPosterAI()).slice(0, 60)}` : ""}`) : posterAIBerhasil ? (jalurPosterAI().includes("edit") ? "● Poster AI dari frame video" : `● Poster AI teks-saja — ${alasanJalurPosterAI() || "edit frame gagal"}`) : cover.coverAssetId ? "○ Frame klasik (AI gagal)" : "○ Belum ada poster") : cover.coverAssetId ? "● Template klasik" : "○ Belum ada cover"}
                       </span>
                       <span className="font-mono text-gray-500">{cover.bgStyle === "poster" ? "poster Hollywood" : "template"}</span>
                     </div>
