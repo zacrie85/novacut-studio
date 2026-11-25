@@ -496,16 +496,21 @@ export function renderCoverToDataURL(input: Omit<CoverRenderInput, "w" | "h">, w
 
 /** Cari ukuran font terbesar yang membuat judul muat dalam maxLines baris. */
 function posterJudulFit(ctx: CanvasRenderingContext2D, text: string, family: string, weight: string, maxW: number, fsMax: number, fsMin: number, maxLines: number): { lines: string[]; fs: number } {
+  // v1.0.48: BUG FATAL diperbaiki — dulu pengujian memakai wrapCanvasText DENGAN
+  // {maxLines}, yang memotong hasil ke TEPAT maxLines baris (+ "…") sebelum
+  // dihitung → lines.length tidak pernah melebihi maxLines → kondisi "muat"
+  // selalu benar pada iterasi pertama → font terkunci di ukuran MAKSIMUM dan
+  // judul terpotong "…" (inilah sebab tulisan poster raksasa & tidak utuh).
+  // Kini pengujian memakai wrap TANPA batas baris → jumlah baris NYATA dihitung.
   let fs = fsMax;
   for (; fs > fsMin; fs -= Math.max(2, fsMax * 0.04)) {
     ctx.font = `${weight} ${Math.round(fs)}px ${family}`;
-    const lines = wrapCanvasText(ctx, text, maxW, { maxLines });
+    const lines = wrapCanvasText(ctx, text, maxW);
     if (lines.length <= maxLines) return { lines, fs };
   }
   ctx.font = `${weight} ${Math.round(fsMin)}px ${family}`;
-  // v1.0.47: fallback TANPA batas baris — wrapCanvasText memotong baris terakhir
-  // dgn "…" bila maxLines tercapai; judul panjang tidak boleh hilang sebagian.
-  return { lines: wrapCanvasText(ctx, text, maxW, { maxLines: 99 }), fs: fsMin };
+  // fallback: SEMUA baris tetap digambar — tidak ada teks yang hilang
+  return { lines: wrapCanvasText(ctx, text, maxW), fs: fsMin };
 }
 
 /** Latar poster: art AI cover-fit penuh + scrim atas/bawah + vignette. */
@@ -602,14 +607,14 @@ export function renderPosterTextDataURL(
     const fam = '"Alfa Slab One","Archivo Black",sans-serif';
     const yTop = wide ? h * 0.14 : h * 0.10;
     if (kata.length === 1) {
-      // v1.0.47: judul adaptif — 3 baris & font boleh mengecil (judul 100 huruf muat)
-      const fit = posterJudulFit(ctx, kata[0], fam, "400", w * 0.84, h * 0.115, h * 0.03, 3);
+      // v1.0.48: ukuran maksimum diturunkan (keluhan: tulisan terlalu besar)
+      const fit = posterJudulFit(ctx, kata[0], fam, "400", w * 0.84, h * 0.085, h * 0.03, 3);
       fit.lines.forEach((ln, i) => posterTulisOutline(ctx, ln, w / 2, yTop + i * fit.fs * 1.08, [["#fff", fit.fs * 0.24], ["#111", fit.fs * 0.11]], "#ffd400", i % 2 ? 0.03 : -0.04));
     } else {
-      const fit1 = posterJudulFit(ctx, kata[0], fam, "400", w * 0.8, h * 0.078, h * 0.03, 2);
+      const fit1 = posterJudulFit(ctx, kata[0], fam, "400", w * 0.8, h * 0.06, h * 0.03, 2);
       fit1.lines.forEach((ln, i) => posterTulisOutline(ctx, ln, w / 2, yTop + i * fit1.fs * 1.08, [["#fff", fit1.fs * 0.26], ["#111", fit1.fs * 0.12]], "#ffffff", i % 2 ? 0.04 : -0.05));
       const sisa = kata.slice(1).join(" ");
-      const fit2 = posterJudulFit(ctx, sisa, fam, "400", w * 0.86, h * 0.115, h * 0.032, 3);
+      const fit2 = posterJudulFit(ctx, sisa, fam, "400", w * 0.86, h * 0.08, h * 0.032, 3);
       fit2.lines.forEach((ln, i) => posterTulisOutline(ctx, ln, w / 2, yTop + (fit1.lines.length - 1) * fit1.fs * 1.08 + fit1.fs * 1.25 + i * fit2.fs * 1.06, [["#fff", fit2.fs * 0.22], ["#111", fit2.fs * 0.1]], "#ffd400", 0.035));
     }
     posterBurst(ctx, w * 0.12, h * 0.3, w * 0.075, 8, "#ff4757", 0.3);
@@ -715,10 +720,10 @@ export function renderPosterTextDataURL(
     let yAkhir: number;
     if (kata.length >= 3) {
       // v1.0.47: judul adaptif — tiap kata besar boleh 2 baris & mengecil
-      const fit1 = posterJudulFit(ctx, kata[0], fam, "700", w * 0.76, h * 0.1, h * 0.03, 2);
+      const fit1 = posterJudulFit(ctx, kata[0], fam, "700", w * 0.76, h * 0.07, h * 0.03, 2);
       const mid = kata.slice(1, -1).join(" ");
       const fsMid = fit1.fs * 0.34;
-      const fit2 = posterJudulFit(ctx, kata[kata.length - 1], fam, "700", w * 0.76, h * 0.1, h * 0.03, 2);
+      const fit2 = posterJudulFit(ctx, kata[kata.length - 1], fam, "700", w * 0.76, h * 0.07, h * 0.03, 2);
       const y1 = wide ? h * 0.2 : h * 0.13;
       fit1.lines.forEach((ln, i) => tulisEmas(ln, y1 + i * fit1.fs * 1.08, fit1.fs));
       ctx.save();
@@ -733,7 +738,7 @@ export function renderPosterTextDataURL(
       fit2.lines.forEach((ln, i) => tulisEmas(ln, y2 + i * fit2.fs * 1.08, fit2.fs));
       yAkhir = y2 + (fit2.lines.length - 1) * fit2.fs * 1.08;
     } else {
-      const fit = posterJudulFit(ctx, teks, fam, "700", w * 0.82, h * 0.1, h * 0.03, 3);
+      const fit = posterJudulFit(ctx, teks, fam, "700", w * 0.82, h * 0.07, h * 0.03, 3);
       fit.lines.forEach((ln, i) => tulisEmas(ln, (wide ? h * 0.18 : h * 0.12) + i * fit.fs * 1.1, fit.fs));
       yAkhir = (wide ? h * 0.18 : h * 0.12) + (fit.lines.length - 1) * fit.fs * 1.1;
     }
@@ -755,8 +760,9 @@ export function renderPosterTextDataURL(
     // ZOMBIELAND: judul raksasa oranye-merah (Anton) di atas + garis putih
     accent = "#ff9b21";
     const fam = '"Anton","Archivo Black",sans-serif';
-    // v1.0.47: judul adaptif — 3 baris & lebar 90% (judul 100 huruf tetap muat)
-    const fit = posterJudulFit(ctx, teks, fam, "400", w * 0.9, wide ? h * 0.2 : h * 0.115, h * 0.032, 3);
+    // v1.0.48: ukuran maksimum diturunkan (keluhan tulisan terlalu besar) —
+    // bug fit "selalu muat" sudah diperbaiki di posterJudulFit
+    const fit = posterJudulFit(ctx, teks, fam, "400", w * 0.9, wide ? h * 0.13 : h * 0.075, h * 0.032, 3);
     const y0 = wide ? h * 0.17 : h * 0.115;
     fit.lines.forEach((ln, i) => {
       const y = y0 + i * fit.fs * 1.04;

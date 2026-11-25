@@ -856,9 +856,9 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
  * selamanya walau pengguna sudah ganti gaya → cover poster keluar hitam. */
 export function coverSignature(c: CoverConfig): string {
   return [
-    // v1.0.47: bump versi gaya — prompt default fotorealistis baru → semua cover
-    // lama otomatis dibuat ulang (dulu masih memakai prompt lama bergaya kartun)
-    "v47",
+    // v1.0.48: bump versi gaya — bug ukuran judul poster diperbaiki (font tak
+    // lagi terkunci di maksimum + tidak ada "…") → cover lama dibuat ulang
+    "v48",
     c.mode,
     c.bgStyle,
     (c.posterPrompt ?? "").trim() ? "prompt" : "default",
