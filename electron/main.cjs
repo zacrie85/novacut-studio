@@ -643,6 +643,29 @@ function registerFSIpc() {
       (deskripsi ? ` Scene reference: ${deskripsi}.` : "")
     );
   };
+  // v1.0.51: prompt OUTPAINT utk mode "aslihitam" — permintaan pengguna: frame
+  // landscape di-contain di kanvas 9:16 tampak KECIL + sisa hitam kosong; kini
+  // background sinematik diolah AI: adegan ASLI tetap di tengah (identitas
+  // terkunci), lingkungan DIPERLUAS AI sampai kanvas penuh tepi-ke-tepi.
+  const cfEditOutpaintPrompt = (prompt, deskripsi, judul) => {
+    const { textFree, prompt: bersih } = bersihTextFree(prompt);
+    const m = textFree ? "" : judul || (bersih.match(/judul "([^"]+)"/) || [])[1] || "";
+    const judulPart = m
+      ? `The ONLY large text on the poster is the title: "${m.slice(0, 60).toUpperCase()}" spelled exactly letter by letter, all caps, large bold typography positioned at the BOTTOM area of the poster, inside safe margins. `
+      : "";
+    return (
+      `OUTPAINT / EXPAND (HIGHEST PRIORITY): the input photo is the CENTER of the poster — keep the people, faces, hairstyle, clothing, props and poses EXACTLY unchanged, photorealistic, same place, and EXTEND the environment naturally beyond the original photo edges in every direction until the ENTIRE vertical poster canvas is filled edge to edge. ` +
+      `The extension must continue the SAME real scene seamlessly: same location, same lighting direction, dark cinematic concert/stage atmosphere, dramatic haze and bokeh, deep teal-and-orange color grade, subtle film grain, slightly darker zones at the very top and the very bottom (title space). ` +
+      `REAL-PHOTO LOOK (HIGHEST PRIORITY): the result must look like ONE actual photograph taken on a professional cinema camera — NOT a collage, NOT an illustration; no cartoon, no anime, no drawing, no painting, no 3D render, no CGI, no plastic skin. ` +
+      `Do NOT add, remove, or replace any person; do NOT invent a new location; do NOT shrink, letterbox, or re-frame the original photo. ` +
+      `Apply ONLY realistic AI touches: dramatic cinematic lighting, professional color grade, atmosphere — everything stays one real photo. ` +
+      (textFree
+        ? aturanTanpaTeks + `Leave the top area and the bottom edges relatively uncluttered — the app will overlay a title there. `
+        : judulPart) +
+      `NO other words anywhere: no credits, no studio logos, no small text, no subtitles, no watermarks, no timestamps.` +
+      (deskripsi ? ` Scene reference: ${deskripsi}.` : "")
+    );
+  };
 
   ipcMain.handle("cf:set-key", (_e, payload) => {
     try {
@@ -773,11 +796,17 @@ function registerFSIpc() {
         // v1.0.40: EDIT dulu — frame utuh dikirim ke FLUX.2 Klein 4B (wajah &
         // adegan terjaga); bila gagal → txt2img FLUX.1 schnell (deskripsi adegan).
       try {
-        const poster = await cfEditPoster(cfEditPrompt(prompt, deskripsi, judul), image, cf, payload?.size !== "768x1344");
-        return { ok: true, image: poster, via: "cloudflare-edit" };
+        // v1.0.51: payload.expand → jalur edit memakai prompt OUTPAINT (bg sinematik
+        // diperluas AI sampai penuh) — dipakai mode poster "aslihitam"
+        const poster = await cfEditPoster((payload?.expand ? cfEditOutpaintPrompt : cfEditPrompt)(prompt, deskripsi, judul), image, cf, payload?.size !== "768x1344");
+        return { ok: true, image: poster, via: payload?.expand ? "cloudflare-outpaint" : "cloudflare-edit" };
       } catch (errEdit) {
         // v1.0.49: alasan gagal edit dikirim ke UI (label status) — dulu diam-diam
         const alasanEdit = String((errEdit && errEdit.message) || errEdit).slice(0, 140);
+        // v1.0.51: mode OUTPAINT TANPA fallback txt2img — txt2img mengarang orang
+        // baru dari deskripsi saja (identitas hilang); renderer jatuh ke latar
+        // hitam sinematik LOKAL (frame asli) sehingga wajah tetap asli
+        if (payload?.expand) throw new Error(`outpaint gagal: ${alasanEdit}`);
         // v1.0.49: agreement BFL juga berlaku utk schnell (txt2img) — setujui + lanjut
         if (/agree|terms|agreement|licens/i.test(alasanEdit)) await cfAgreeModel(cf, "@cf/black-forest-labs/flux-1-schnell");
         const poster = await cfGeneratePoster(cfPosterPrompt(prompt, deskripsi, judul), cf, payload?.size !== "768x1344");

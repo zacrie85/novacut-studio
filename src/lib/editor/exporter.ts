@@ -7,7 +7,7 @@
 //  2) MODE KOMPATIBEL: rekam real-time via MediaRecorder (jalur lama).
 // Fitur: cover otomatis, teks judul/deskripsi/part, subtitle AI (bahasa Indonesia).
 
-import { bersihkanJudul, grabFrame, aiRecommendTemplates, analyzeVideoFrames, buildPosterPrompt, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, posterAsliCineDataURL, posterFallbackDataURL, posterTimeRange, renderCoverToDataURL, renderPosterTextDataURL, aiPosterizeDataURL, resolvePosterTemplateId } from "./covers";
+import { bersihkanJudul, grabFrame, aiRecommendTemplates, analyzeVideoFrames, buildOutpaintPrompt, buildPosterPrompt, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, posterAsliCineDataURL, posterFallbackDataURL, posterTimeRange, renderCoverToDataURL, renderPosterTextDataURL, aiPosterizeDataURL, resolvePosterTemplateId } from "./covers";
 import { COVER_TEMPLATES, partLabel, slugify, uid } from "./constants";
 import { engine } from "./engine";
 import { adjustRangesToSilence, exportRangeFast, fastSupported, AudioDecodeCache } from "./fastExport";
@@ -816,7 +816,27 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
   if (posterOn) {
     if (frameUrl) {
       if (artAsli) {
-        const dasar = st.cover.posterArtMode === "aslihitam" ? await posterAsliCineDataURL(frameUrl, width, height) : await posterFallbackDataURL(frameUrl, width, height);
+        const asliHitam = st.cover.posterArtMode === "aslihitam";
+        // v1.0.51: bg sinematik diolah AI (Cloudflare) — OUTPAINT: adegan asli tetap
+        // di tengah, lingkungan diperluas AI sampai kanvas PENUH 9:16. Dulu contain-fit
+        // lokal → frame landscape tampak kecil + sisa hitam kosong (keluhan pengguna).
+        if (asliHitam) {
+          const textFreeO = (st.cover.posterTextMode ?? "app") === "app";
+          const aiUrlO = await aiPosterizeDataURL(frameUrl, buildOutpaintPrompt(st.cover.posterPrompt, textFreeO), width > height ? "1344x768" : "768x1344", 180000, true);
+          if (aiUrlO) {
+            if (textFreeO && !tanpaJudul) {
+              const posterTplIdO = resolvePosterTemplateId(st.cover, title);
+              const imgO = await loadImage(aiUrlO).catch(() => null);
+              if (imgO) {
+                const composed = renderPosterTextDataURL({ img: imgO, title, posterTplId: posterTplIdO, frame: st.cover.frameStyle }, width, height);
+                if (composed) return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: composed, duration: 0, width, height, aiMade: true };
+              }
+            }
+            return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: aiUrlO, duration: 0, width, height, aiMade: true };
+          }
+          // AI gagal → latar hitam sinematik LOKAL (0 Neuron, wajah tetap asli)
+        }
+        const dasar = asliHitam ? await posterAsliCineDataURL(frameUrl, width, height) : await posterFallbackDataURL(frameUrl, width, height);
         if (dasar) {
           // part saja: gambar polos + aiMade:true → mesin render hanya menulis
           // label PART di atas poster (judul tidak dobel)
@@ -885,9 +905,9 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
  * selamanya walau pengguna sudah ganti gaya → cover poster keluar hitam. */
 export function coverSignature(c: CoverConfig): string {
   return [
-    // v1.0.50: bump versi gaya — template Papan Kapur & Epik diganti Gala Malam +
-    // Neon Panggung (judul di bawah), mode bingkai sinematik, fix dobel judul
-    "v50",
+    // v1.0.51: bump versi gaya — mode aslihitam kini outpaint AI (bg penuh 9:16),
+    // bukan lagi contain-fit lokal → cover aslihitam lama dibuat ulang
+    "v51",
     c.mode,
     c.bgStyle,
     (c.posterPrompt ?? "").trim() ? "prompt" : "default",

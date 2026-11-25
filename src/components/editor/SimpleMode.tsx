@@ -495,7 +495,7 @@ export function SimpleMode() {
                               >
                                 <option value="ai">🤖 AI sentuh adegan (edit frame)</option>
                                 <option value="asli">🎬 Adegan asli + grade studio (0 Neuron)</option>
-                                <option value="aslihitam">🎞️ Adegan asli + bg hitam sinematik (0 Neuron)</option>
+                                <option value="aslihitam">🎞️ Adegan asli + bg sinematik AI (Cloudflare)</option>
                               </select>
                               {/* v1.0.50: TEKS DI POSTER — judul + part (normal) atau
                               part SAJA (video sudah punya tulisan judul bawaan → judul
@@ -710,8 +710,8 @@ export function SimpleMode() {
                   </div>
                   <div className="space-y-2 p-3">
                     <div className="flex items-center justify-between text-[10px]">
-                      <span className={posterAIBerhasil && !jalurPosterAI().includes("edit") ? "font-semibold text-yellow-400" : posterAIBerhasil ? "font-semibold text-emerald-400" : cover.posterArtMode?.startsWith("asli") ? "font-semibold text-sky-300" : "font-semibold text-amber-400/90"}>
-                        {cover.bgStyle === "poster" ? (posterAIBerhasil ? (jalurPosterAI().includes("edit") ? "● Poster AI dari frame video" : `● Poster AI teks-saja — ${alasanJalurPosterAI() || "edit frame gagal"}`) : cover.posterArtMode?.startsWith("asli") ? `○ Adegan asli + ${cover.posterArtMode === "aslihitam" ? "bingkai sinematik" : "grade studio"} (0 Neuron)` : cover.coverAssetId ? "○ Frame klasik (AI gagal)" : "○ Belum ada poster") : cover.coverAssetId ? "● Template klasik" : "○ Belum ada cover"}
+                      <span className={cover.posterArtMode === "asli" ? "font-semibold text-sky-300" : cover.posterArtMode === "aslihitam" ? (jalurPosterAI() ? "font-semibold text-emerald-400" : "font-semibold text-sky-300") : posterAIBerhasil && !jalurPosterAI().includes("edit") ? "font-semibold text-yellow-400" : posterAIBerhasil ? "font-semibold text-emerald-400" : "font-semibold text-amber-400/90"}>
+                        {cover.bgStyle === "poster" ? (cover.posterArtMode === "asli" ? "○ Adegan asli + grade studio (judul via template)" : cover.posterArtMode === "aslihitam" ? (jalurPosterAI() ? "● Bg sinematik AI — outpaint frame video" : `○ Bg sinematik lokal (AI gagal)${alasanJalurPosterAI() || kesalahanPosterAI() ? ` — ${(alasanJalurPosterAI() || kesalahanPosterAI()).slice(0, 60)}` : ""}`) : posterAIBerhasil ? (jalurPosterAI().includes("edit") ? "● Poster AI dari frame video" : `● Poster AI teks-saja — ${alasanJalurPosterAI() || "edit frame gagal"}`) : cover.coverAssetId ? "○ Frame klasik (AI gagal)" : "○ Belum ada poster") : cover.coverAssetId ? "● Template klasik" : "○ Belum ada cover"}
                       </span>
                       <span className="font-mono text-gray-500">{cover.bgStyle === "poster" ? "poster Hollywood" : "template"}</span>
                     </div>

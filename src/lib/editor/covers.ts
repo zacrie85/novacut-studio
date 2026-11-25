@@ -1155,6 +1155,21 @@ export function buildPosterPrompt(custom: string | undefined, title: string, tex
   return `${dasar}${judulPart}. PENTING: semua tulisan pada poster harus berada di dalam area gambar dan diberi jarak aman (margin) dari tepi — tidak boleh terpotong di tepi kiri, kanan, atas, atau bawah. Jangan menulis ulang takarir, caption, atau watermark dari gambar sumber.`;
 }
 
+/** v1.0.51: prompt mode "aslihitam" — adegan ASLI + background sinematik di-OUTPAINT
+ * AI (Cloudflare) sampai penuh 9:16 (dulu contain-fit lokal → frame landscape tampak
+ * kecil di kanvas potret). Jalur edit proses utama memakai cfEditOutpaintPrompt;
+ * prompt ini utk txt2img Mage/Z.ai + fallback. Marker [TEXTFREE] dibaca main process. */
+export function buildOutpaintPrompt(custom: string | undefined, textFree = false): string {
+  const gaya = (custom || "").trim();
+  return (
+    `[TEXTFREE][OUTPAINT] Expand this real photograph to fill the ENTIRE vertical 9:16 poster canvas: keep the original people, faces, clothing, props and poses EXACTLY unchanged, photorealistic, and EXTEND the environment naturally beyond the photo edges until the whole canvas is filled — dark cinematic atmosphere, dramatic stage lighting haze, deep teal-and-orange grade, soft bokeh, film grain, darker zones at the very top and bottom (title space). REAL PHOTOGRAPH look — no cartoon/anime/drawing/3D/CGI/plastic skin; do NOT letterbox or shrink the original photo.` +
+    (gaya ? ` Style instructions (styling only, never change the people): ${gaya}.` : "") +
+    (textFree
+      ? " Do NOT write any text, letters, numbers or logos anywhere — pure scene only; the app overlays the title separately."
+      : "")
+  );
+}
+
 /** v1.0.46: pilih frame poster — "auto" = ikut judul (pendek / mengandung # →
  * komik; sedang → Gala Malam [judul di bawah]; panjang → Hollywood);
  * id dari POSTER_TEMPLATES dipakai langsung, id tak dikenal (mis. template
@@ -1212,7 +1227,7 @@ export function terjemahkanKesalahanAI(raw: string): string {
     (s.trim() ? s.slice(0, 160) : "AI tidak mengembalikan gambar")
   );
 }
-export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size: "1344x768" | "768x1344" = "1344x768", timeoutMs = 180000): Promise<string | null> {
+export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size: "1344x768" | "768x1344" = "1344x768", timeoutMs = 180000, expand = false): Promise<string | null> {
   if (typeof window === "undefined" || !window.novacutAI?.posterAI) {
     _kesalahanPosterAI = "";
     return null;
@@ -1223,7 +1238,8 @@ export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size:
     const provider = prefs?.provider === "cloudflare" ? "cloudflare" : prefs?.provider === "mage" ? "mage" : "zai";
     const quality = prefs?.quality === "standard" ? "standard" : "hd";
     const res = await Promise.race([
-      window.novacutAI.posterAI(frameUrl, prompt, size, provider, quality),
+      // v1.0.51: expand=true → main process memakai prompt OUTPAINT (mode aslihitam)
+      window.novacutAI.posterAI(frameUrl, prompt, size, provider, quality, expand),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
     ]);
     if (res === null) {
