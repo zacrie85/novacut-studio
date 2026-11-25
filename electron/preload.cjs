@@ -45,6 +45,12 @@ contextBridge.exposeInMainWorld("novacutAI", {
   testCFKey: () => ipcRenderer.invoke("cf:test-key"),
   openCFDash: () => ipcRenderer.invoke("app:open-url", { url: "https://dash.cloudflare.com/profile/api-tokens" }),
   openCFHome: () => ipcRenderer.invoke("app:open-url", { url: "https://dash.cloudflare.com" }),
+  // v1.0.47: penyedia ke-3 Mage (mage.space) — per gambar ±9 Gems ≈ Rp145
+  setMageKey: (apiKey) => ipcRenderer.invoke("mage:set-key", { apiKey }),
+  getMageKeyStatus: () => ipcRenderer.invoke("mage:key-status"),
+  clearMageKey: () => ipcRenderer.invoke("mage:clear-key"),
+  testMageKey: () => ipcRenderer.invoke("mage:test-key"),
+  openMageAPI: () => ipcRenderer.invoke("app:open-url", { url: "https://www.mage.space/api?tab=api-keys" }),
   // v1.0.38: preferensi penyedia & kualitas poster (disimpan lokal)
   getAIPrefs: () => ipcRenderer.invoke("ai:get-prefs"),
   setAIPrefs: (prefs) => ipcRenderer.invoke("ai:set-prefs", prefs),

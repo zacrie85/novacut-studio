@@ -328,14 +328,16 @@ function registerFSIpc() {
     `ABSOLUTELY NO TEXT anywhere in the image: no words, no letters, no numbers, no titles, no logos, no credits, no subtitles, no watermarks — pure artwork only; the app will add the title itself. `;
   const posterPromptPublik = (prompt, deskripsi) => {
     const { textFree, prompt: bersih } = bersihTextFree(prompt);
-    return `Create ONE professional modern Hollywood movie poster, cinematic style. ` +
+    // v1.0.47: arah "FOTO ASLI + SENTUHAN AI REALISTIS" — kata "Hollywood movie
+    // poster" membuat model bergeser ke ilustrasi/kartun; kini fotoreal wajib.
+    return `Create ONE modern cinematic movie poster that looks like a REAL PHOTOGRAPH (photorealistic): real people with natural skin texture, real hair and fabric, shot on a professional cinema camera; NOT an illustration — no cartoon, no anime, no drawing, no painting, no 3D render, no CGI. ` +
       `SCENE BASIS (HIGHEST PRIORITY — the poster MUST depict exactly the people and setting described): ${deskripsi}. ` +
       `If the style instructions mention 2-3 characters, use THE PEOPLE FROM THE SCENE above in that composition — never invent new characters, faces, or locations. ` +
       `Style instructions from the user: ${bersih}. ` +
       (textFree
         ? aturanTanpaTeks
         : `Rules: all text fully inside the image with safe margins from every edge; the movie title must be large, dramatic, positioned at the BOTTOM area of the poster, and spelled EXACTLY as given in the instructions; `) +
-      `no subtitles, no captions, no watermarks, no timestamps; single cohesive composition, dramatic lighting.`;
+      `no subtitles, no captions, no watermarks, no timestamps; single cohesive composition, dramatic realistic lighting.`;
   };
 
   ipcMain.handle("ai:set-key", (_e, payload) => {
@@ -376,7 +378,7 @@ function registerFSIpc() {
   });
   ipcMain.handle("app:open-url", (_e, payload) => {
     const url = String(payload?.url || "");
-    if (!/^https:\/\/(www\.)?(z\.ai|docs\.z\.ai|bigmodel\.cn|dash\.cloudflare\.com|developers\.cloudflare\.com)/.test(url)) return { ok: false, error: "url tidak diizinkan" };
+    if (!/^https:\/\/(www\.)?(z\.ai|docs\.z\.ai|bigmodel\.cn|dash\.cloudflare\.com|developers\.cloudflare\.com|(docs\.)?mage\.space)/.test(url)) return { ok: false, error: "url tidak diizinkan" };
     return shell.openExternal(url).then(() => ({ ok: true })).catch((err) => ({ ok: false, error: String(err) }));
   });
 
@@ -388,6 +390,15 @@ function registerFSIpc() {
   const CF_BASE = "https://api.cloudflare.com/client/v4";
   const cfKeyPath = path.join(app.getPath("userData"), "cf_key.json");
   const prefsPath = path.join(app.getPath("userData"), "ai_prefs.json");
+  // v1.0.47: penyedia ke-3 Mage (mage.space) — kunci mage_sk_ + saldo Gems
+  const mageKeyPath = path.join(app.getPath("userData"), "mage_key.json");
+  const readMageKey = () => {
+    try {
+      return String(JSON.parse(fs.readFileSync(mageKeyPath, "utf-8")).apiKey || "").trim();
+    } catch {
+      return "";
+    }
+  };
   const readCFKey = () => {
     try {
       const j = JSON.parse(fs.readFileSync(cfKeyPath, "utf-8"));
@@ -399,7 +410,7 @@ function registerFSIpc() {
   const readAIPrefs = () => {
     try {
       const j = JSON.parse(fs.readFileSync(prefsPath, "utf-8"));
-      return { provider: j.provider === "cloudflare" ? "cloudflare" : "zai", quality: j.quality === "standard" ? "standard" : "hd" };
+      return { provider: j.provider === "cloudflare" ? "cloudflare" : j.provider === "mage" ? "mage" : "zai", quality: j.quality === "standard" ? "standard" : "hd" };
     } catch {
       return { provider: "zai", quality: "hd" };
     }
@@ -541,7 +552,9 @@ function registerFSIpc() {
       .replace(/\bHollywood\b/gi, "")
       .replace(/\s{2,}/g, " ")
       .trim();
-    return `Create ONE cinematic blockbuster movie poster, professional key art. ${judulPart}` +
+    // v1.0.47: txt2img juga fotoreal — "blockbuster key art" mendorong model ke
+    // gaya ilustrasi; kini wajib seperti foto asli (permintaan pengguna).
+    return `Create ONE cinematic movie poster that looks like a REAL PHOTOGRAPH (photorealistic key art): real people with natural skin texture and realistic proportions, shot on a professional cinema camera — shallow depth of field, fine film grain; NOT an illustration: no cartoon, no anime, no drawing, no painting, no 3D render, no CGI. ${judulPart}` +
       // v1.0.45: SCENE BASIS jadi PRIORITAS TERTINGGI dan berada di awal — dulu
       // instruksi pengguna ("2-3 karakter saling berhadapan", "background kolosal")
       // mendominasi → txt2img mengarang orang/latar baru, poster terasa bukan
@@ -566,11 +579,15 @@ function registerFSIpc() {
       ? `The ONLY large text on the poster is the title: "${m.slice(0, 60).toUpperCase()}" spelled exactly letter by letter, all caps, large bold typography positioned at the BOTTOM area of the poster, inside safe margins. `
       : "";
     return (
-      `Redraw this exact photograph as ONE cinematic movie poster. ` +
+      // v1.0.47: arah "FOTO ASLI + SENTUHAN AI REALISTIS" (permintaan pengguna) —
+      // dulu "Redraw as ONE cinematic movie poster" membaca "poster" sebagai key art
+      // BERGAMBAR → hasil kartun. Kini foto asli dipertahankan, AI hanya menyentuh gaya.
+      `Transform this REAL PHOTOGRAPH into a cinematic movie poster while keeping it a REAL PHOTO — the output must look like an actual photograph, NOT an illustration. ` +
+      `REAL-PHOTO LOOK (HIGHEST PRIORITY): real people with natural skin texture, real hair, real fabric, real background; shot on a professional cinema camera; NO cartoon, no anime, no drawing, no painting, no 3D render, no CGI, no plastic skin, no beauty filter. ` +
       `IDENTITY LOCK (HIGHEST PRIORITY): keep EXACTLY the same person(s) from the input photo — same number of people, same faces, hairstyle, clothing, props — and the same setting/background. ` +
       `Do NOT add, remove, or replace any person; do NOT invent a new location. ` +
       `If the style instructions mention a number of characters, arrange THE PEOPLE FROM THE PHOTO in that composition — never invent new people. ` +
-      `Apply ONLY cinematic styling: dramatic poster lighting, rich color grade, dynamic professional composition, subtle modern poster framing. ` +
+      `Apply ONLY realistic AI touches: dramatic cinematic lighting, professional color grade, subtle atmosphere (rim light, haze, soft glow) — everything else stays the real photo. ` +
       (textFree
         ? aturanTanpaTeks + `Leave the top area and the bottom edges relatively uncluttered — the app will overlay a title there. `
         : judulPart) +
@@ -626,13 +643,59 @@ function registerFSIpc() {
       clearTimeout(to);
     }
   });
+  // ===== v1.0.47: MAGE.SPACE — penyedia ke-3 (per gambar ±9 Gems ≈ Rp145) =====
+  // Kunci mage_sk_ disimpan lokal (mode 0600). Tes kunci TANPA biaya: POST ke
+  // model yang tidak ada — bila auth lolos server menjawab 404/400/422 (model
+  // tak dikenal), bila kunci salah 401/403. Tidak ada gambar digambar → 0 Gems.
+  const MAGE_BASE = "https://api.mage.space/v1";
+  ipcMain.handle("mage:set-key", (_e, payload) => {
+    try {
+      const key = String(payload?.apiKey || "").trim();
+      if (!key) return { ok: false, error: "kunci kosong" };
+      fs.mkdirSync(path.dirname(mageKeyPath), { recursive: true });
+      fs.writeFileSync(mageKeyPath, JSON.stringify({ apiKey: key }), { mode: 0o600 });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
+    }
+  });
+  ipcMain.handle("mage:key-status", () => ({ hasKey: !!readMageKey() }));
+  ipcMain.handle("mage:clear-key", () => {
+    try {
+      fs.rmSync(mageKeyPath, { force: true });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
+    }
+  });
+  ipcMain.handle("mage:test-key", async () => {
+    const mk = readMageKey();
+    if (!mk) return { ok: false, error: "kunci belum dipasang" };
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 20000);
+    try {
+      const res = await fetch(`${MAGE_BASE}/nova-tes-koneksi/generate`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${mk}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: "test", model_id: "nova-tes-koneksi" }),
+        signal: ctrl.signal,
+      });
+      if (res.status === 401 || res.status === 403) return { ok: false, error: "Kunci Mage salah/kedaluwarsa" };
+      // 404/400/422 = model tak dikenal TAPI auth lolos → kunci valid (0 Gems)
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
+    } finally {
+      clearTimeout(to);
+    }
+  });
   // Preferensi penyedia & kualitas poster (disimpan lokal, mode 0600).
   ipcMain.handle("ai:get-prefs", () => readAIPrefs());
   ipcMain.handle("ai:set-prefs", (_e, payload) => {
     try {
       const cur = readAIPrefs();
       const next = {
-        provider: payload?.provider === "cloudflare" ? "cloudflare" : payload?.provider === "zai" ? "zai" : cur.provider,
+        provider: payload?.provider === "cloudflare" ? "cloudflare" : payload?.provider === "mage" ? "mage" : payload?.provider === "zai" ? "zai" : cur.provider,
         quality: payload?.quality === "standard" ? "standard" : payload?.quality === "hd" ? "hd" : cur.quality,
       };
       fs.mkdirSync(path.dirname(prefsPath), { recursive: true });
@@ -670,6 +733,66 @@ function registerFSIpc() {
         }
       } catch (err) {
         return { ok: false, error: String((err && err.message) || err).slice(0, 200) };
+      }
+    }
+    // v1.0.47: penyedia Mage (mage.space) — gpt-image-2.5-flare (±9 Gems ≈ Rp145),
+    // edit img2img dulu (field image data URL), gagal → txt2img; async: submit →
+    // poll status_url s.d. 150 dtk → unduh hasil → dataURL.
+    if (payload?.provider === "mage") {
+      const mk = readMageKey();
+      if (!mk) return { ok: false, error: "Kunci mage.space belum diisi" };
+      const mageModel = "gpt-image-2.5-flare";
+      const mageAr = payload?.size === "768x1344" ? "9:16" : "16:9";
+      const { textFree: mf, prompt: mp } = bersihTextFree(prompt);
+      const magePrompt =
+        mp +
+        (mf ? ` ${aturanTanpaTeks}` : "") +
+        ` The result must look like a REAL PHOTOGRAPH (photorealistic) — no cartoon, no anime, no illustration, no 3D render.`;
+      const mageRun = async (denganGambar) => {
+        const body = { prompt: magePrompt.slice(0, 4000), model_id: mageModel, aspect_ratio: mageAr };
+        if (denganGambar) body.image = image;
+        const sub = await fetch(`${MAGE_BASE}/${mageModel}/generate`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${mk}`,
+            "Content-Type": "application/json",
+            "Idempotency-Key": `novacut-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          },
+          body: JSON.stringify(body),
+        });
+        const js = await sub.json().catch(() => ({}));
+        if (!sub.ok) throw new Error(String(js?.error?.message || js?.message || `HTTP ${sub.status}`).slice(0, 160));
+        const stUrl = js.status_url || js?.request?.status_url;
+        if (!stUrl) throw new Error("respons Mage tidak berisi status_url");
+        const t0 = Date.now();
+        while (Date.now() - t0 < 150000) {
+          await new Promise((r) => setTimeout(r, 3000));
+          const st = await fetch(stUrl, { headers: { Authorization: `Bearer ${mk}` } });
+          const sj = await st.json().catch(() => ({}));
+          const stat = sj.status || sj?.request?.status;
+          if (stat === "completed") {
+            const url = sj?.result?.url || sj?.request?.result?.url;
+            if (!url) throw new Error("hasil Mage tidak berisi url gambar");
+            const imgRes = await fetch(url);
+            const buf = Buffer.from(await imgRes.arrayBuffer());
+            const ct = imgRes.headers.get("content-type") || "image/png";
+            return `data:${ct};base64,${buf.toString("base64")}`;
+          }
+          if (stat === "failed" || stat === "cancelled") throw new Error(String(sj?.error?.message || sj?.failure_reason || "generasi Mage gagal").slice(0, 160));
+        }
+        throw new Error("waktu tunggu Mage habis (150 dtk)");
+      };
+      try {
+        const poster = await mageRun(!!image);
+        return { ok: true, image: poster, via: image ? "mage-edit" : "mage-txt2img" };
+      } catch (errEdit) {
+        if (!image) return { ok: false, error: String((errEdit && errEdit.message) || errEdit).slice(0, 160) };
+        try {
+          const poster = await mageRun(false);
+          return { ok: true, image: poster, via: "mage-txt2img" };
+        } catch (errGen) {
+          return { ok: false, error: String((errGen && errGen.message) || errGen).slice(0, 160) };
+        }
       }
     }
     const key = readAIKey();

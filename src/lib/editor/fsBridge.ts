@@ -51,6 +51,12 @@ interface NovacutAI {
   testCFKey?: () => Promise<{ ok: boolean; error?: string }>;
   openCFDash?: () => Promise<{ ok: boolean; error?: string }>;
   openCFHome?: () => Promise<{ ok: boolean; error?: string }>;
+  // v1.0.47: penyedia ke-3 Mage (mage.space) — per gambar ±9 Gems ≈ Rp145
+  setMageKey?: (apiKey: string) => Promise<{ ok: boolean; error?: string }>;
+  getMageKeyStatus?: () => Promise<{ hasKey: boolean }>;
+  clearMageKey?: () => Promise<{ ok: boolean; error?: string }>;
+  testMageKey?: () => Promise<{ ok: boolean; error?: string }>;
+  openMageAPI?: () => Promise<{ ok: boolean; error?: string }>;
   getAIPrefs?: () => Promise<{ provider: string; quality: string }>;
   setAIPrefs?: (prefs: { provider?: string; quality?: string }) => Promise<{ ok: boolean; error?: string }>;
 }

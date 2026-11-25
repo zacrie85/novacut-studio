@@ -503,7 +503,9 @@ function posterJudulFit(ctx: CanvasRenderingContext2D, text: string, family: str
     if (lines.length <= maxLines) return { lines, fs };
   }
   ctx.font = `${weight} ${Math.round(fsMin)}px ${family}`;
-  return { lines: wrapCanvasText(ctx, text, maxW, { maxLines }), fs: fsMin };
+  // v1.0.47: fallback TANPA batas baris — wrapCanvasText memotong baris terakhir
+  // dgn "…" bila maxLines tercapai; judul panjang tidak boleh hilang sebagian.
+  return { lines: wrapCanvasText(ctx, text, maxW, { maxLines: 99 }), fs: fsMin };
 }
 
 /** Latar poster: art AI cover-fit penuh + scrim atas/bawah + vignette. */
@@ -600,14 +602,15 @@ export function renderPosterTextDataURL(
     const fam = '"Alfa Slab One","Archivo Black",sans-serif';
     const yTop = wide ? h * 0.14 : h * 0.10;
     if (kata.length === 1) {
-      const fit = posterJudulFit(ctx, kata[0], fam, "400", w * 0.84, h * 0.115, h * 0.05, 2);
+      // v1.0.47: judul adaptif — 3 baris & font boleh mengecil (judul 100 huruf muat)
+      const fit = posterJudulFit(ctx, kata[0], fam, "400", w * 0.84, h * 0.115, h * 0.03, 3);
       fit.lines.forEach((ln, i) => posterTulisOutline(ctx, ln, w / 2, yTop + i * fit.fs * 1.08, [["#fff", fit.fs * 0.24], ["#111", fit.fs * 0.11]], "#ffd400", i % 2 ? 0.03 : -0.04));
     } else {
-      const fit1 = posterJudulFit(ctx, kata[0], fam, "400", w * 0.8, h * 0.078, h * 0.04, 1);
-      posterTulisOutline(ctx, fit1.lines[0], w / 2, yTop, [["#fff", fit1.fs * 0.26], ["#111", fit1.fs * 0.12]], "#ffffff", -0.05);
+      const fit1 = posterJudulFit(ctx, kata[0], fam, "400", w * 0.8, h * 0.078, h * 0.03, 2);
+      fit1.lines.forEach((ln, i) => posterTulisOutline(ctx, ln, w / 2, yTop + i * fit1.fs * 1.08, [["#fff", fit1.fs * 0.26], ["#111", fit1.fs * 0.12]], "#ffffff", i % 2 ? 0.04 : -0.05));
       const sisa = kata.slice(1).join(" ");
-      const fit2 = posterJudulFit(ctx, sisa, fam, "400", w * 0.86, h * 0.115, h * 0.05, 2);
-      fit2.lines.forEach((ln, i) => posterTulisOutline(ctx, ln, w / 2, yTop + fit1.fs * 1.25 + i * fit2.fs * 1.06, [["#fff", fit2.fs * 0.22], ["#111", fit2.fs * 0.1]], "#ffd400", 0.035));
+      const fit2 = posterJudulFit(ctx, sisa, fam, "400", w * 0.86, h * 0.115, h * 0.032, 3);
+      fit2.lines.forEach((ln, i) => posterTulisOutline(ctx, ln, w / 2, yTop + (fit1.lines.length - 1) * fit1.fs * 1.08 + fit1.fs * 1.25 + i * fit2.fs * 1.06, [["#fff", fit2.fs * 0.22], ["#111", fit2.fs * 0.1]], "#ffd400", 0.035));
     }
     posterBurst(ctx, w * 0.12, h * 0.3, w * 0.075, 8, "#ff4757", 0.3);
     posterBurst(ctx, w * 0.885, h * 0.24, w * 0.06, 10, "#1dd1f5", -0.2);
@@ -626,36 +629,42 @@ export function renderPosterTextDataURL(
     // pita kertas sobek di bawah (dekor tanpa teks — tanggal tidak diketahui)
     accent = "#f3f1e8";
     const bw = w * 0.6;
-    const bh = wide ? h * 0.3 : h * 0.175;
     const bx = (w - bw) / 2;
     const by = wide ? h * 0.12 : h * 0.06;
     const m = w * 0.014;
+    // v1.0.47: judul adaptif — fit DULU (3 baris, font boleh kecil), papan kayu
+    // mengikuti tinggi blok sehingga judul 100 huruf tetap muat & tak terpotong
+    const fit = posterJudulFit(ctx, teks, '"Barlow Condensed","Oswald",sans-serif', "600", bw * 0.84, (wide ? h * 0.3 : h * 0.175) * 0.42, h * 0.026, 3);
+    const blokT = fit.lines.length * fit.fs * 1.05;
+    const bh = Math.max(wide ? h * 0.3 : h * 0.175, blokT + h * 0.08);
     ctx.fillStyle = "#8b5a2b";
     ctx.fillRect(bx - m, by - m, bw + m * 2, bh + m * 2);
     ctx.fillStyle = "#0d0e10";
     ctx.fillRect(bx, by, bw, bh);
-    const fit = posterJudulFit(ctx, teks, '"Barlow Condensed","Oswald",sans-serif', "600", bw * 0.84, bh * 0.52, bh * 0.24, 2);
     (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = `${Math.round(fit.fs * 0.12)}px`;
     ctx.textAlign = "center";
     ctx.fillStyle = "#f3f1e8";
     ctx.globalAlpha = 0.96;
-    fit.lines.forEach((ln, i) => ctx.fillText(ln, w / 2, by + bh * 0.44 + i * fit.fs * 1.05));
+    const yTulis = by + bh / 2 - blokT / 2 + fit.fs * 0.85;
+    fit.lines.forEach((ln, i) => ctx.fillText(ln, w / 2, yTulis + i * fit.fs * 1.05));
     (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = "0px";
     ctx.globalAlpha = 1;
-    // garis kapur putus-putus + garis merah (dekor ala papan pengumuman)
-    ctx.setLineDash([bw * 0.06, bw * 0.045]);
-    ctx.strokeStyle = "rgba(243,241,232,0.75)";
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.moveTo(bx + bw * 0.14, by + bh * 0.78);
-    ctx.lineTo(bx + bw * 0.86, by + bh * 0.78);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.strokeStyle = "rgba(229,57,53,0.85)";
-    ctx.beginPath();
-    ctx.moveTo(bx + bw * 0.3, by + bh * 0.9);
-    ctx.lineTo(bx + bw * 0.7, by + bh * 0.9);
-    ctx.stroke();
+    // garis kapur putus-putus + garis merah (hanya bila papan tidak penuh teks)
+    if (bh <= h * 0.21) {
+      ctx.setLineDash([bw * 0.06, bw * 0.045]);
+      ctx.strokeStyle = "rgba(243,241,232,0.75)";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(bx + bw * 0.14, by + bh * 0.78);
+      ctx.lineTo(bx + bw * 0.86, by + bh * 0.78);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = "rgba(229,57,53,0.85)";
+      ctx.beginPath();
+      ctx.moveTo(bx + bw * 0.3, by + bh * 0.9);
+      ctx.lineTo(bx + bw * 0.7, by + bh * 0.9);
+      ctx.stroke();
+    }
     // pita kertas sobek
     const py = h * 0.855;
     const ph = h * 0.06;
@@ -705,25 +714,26 @@ export function renderPosterTextDataURL(
     };
     let yAkhir: number;
     if (kata.length >= 3) {
-      const fit1 = posterJudulFit(ctx, kata[0], fam, "700", w * 0.76, h * 0.1, h * 0.045, 1);
+      // v1.0.47: judul adaptif — tiap kata besar boleh 2 baris & mengecil
+      const fit1 = posterJudulFit(ctx, kata[0], fam, "700", w * 0.76, h * 0.1, h * 0.03, 2);
       const mid = kata.slice(1, -1).join(" ");
       const fsMid = fit1.fs * 0.34;
-      const fit2 = posterJudulFit(ctx, kata[kata.length - 1], fam, "700", w * 0.76, h * 0.1, h * 0.045, 1);
+      const fit2 = posterJudulFit(ctx, kata[kata.length - 1], fam, "700", w * 0.76, h * 0.1, h * 0.03, 2);
       const y1 = wide ? h * 0.2 : h * 0.13;
-      tulisEmas(fit1.lines[0], y1, fit1.fs);
+      fit1.lines.forEach((ln, i) => tulisEmas(ln, y1 + i * fit1.fs * 1.08, fit1.fs));
       ctx.save();
       ctx.textAlign = "center";
       ctx.font = `400 ${Math.round(fsMid)}px ${fam}`;
       ctx.shadowColor = "rgba(0,0,0,0.45)";
       ctx.shadowBlur = 6;
       ctx.fillStyle = "#f3dfae";
-      ctx.fillText(mid, w / 2, y1 + fit1.fs * 0.62 + fsMid);
+      ctx.fillText(mid, w / 2, y1 + (fit1.lines.length - 1) * fit1.fs * 1.08 + fit1.fs * 0.62 + fsMid);
       ctx.restore();
-      const y2 = y1 + fit1.fs * 0.62 + fsMid * 1.9;
-      tulisEmas(fit2.lines[0], y2, fit2.fs);
-      yAkhir = y2;
+      const y2 = y1 + (fit1.lines.length - 1) * fit1.fs * 1.08 + fit1.fs * 0.62 + fsMid * 1.9;
+      fit2.lines.forEach((ln, i) => tulisEmas(ln, y2 + i * fit2.fs * 1.08, fit2.fs));
+      yAkhir = y2 + (fit2.lines.length - 1) * fit2.fs * 1.08;
     } else {
-      const fit = posterJudulFit(ctx, teks, fam, "700", w * 0.82, h * 0.1, h * 0.045, 2);
+      const fit = posterJudulFit(ctx, teks, fam, "700", w * 0.82, h * 0.1, h * 0.03, 3);
       fit.lines.forEach((ln, i) => tulisEmas(ln, (wide ? h * 0.18 : h * 0.12) + i * fit.fs * 1.1, fit.fs));
       yAkhir = (wide ? h * 0.18 : h * 0.12) + (fit.lines.length - 1) * fit.fs * 1.1;
     }
@@ -745,7 +755,8 @@ export function renderPosterTextDataURL(
     // ZOMBIELAND: judul raksasa oranye-merah (Anton) di atas + garis putih
     accent = "#ff9b21";
     const fam = '"Anton","Archivo Black",sans-serif';
-    const fit = posterJudulFit(ctx, teks, fam, "400", w * 0.88, wide ? h * 0.2 : h * 0.115, h * 0.05, 2);
+    // v1.0.47: judul adaptif — 3 baris & lebar 90% (judul 100 huruf tetap muat)
+    const fit = posterJudulFit(ctx, teks, fam, "400", w * 0.9, wide ? h * 0.2 : h * 0.115, h * 0.032, 3);
     const y0 = wide ? h * 0.17 : h * 0.115;
     fit.lines.forEach((ln, i) => {
       const y = y0 + i * fit.fs * 1.04;
@@ -1114,11 +1125,12 @@ export function bersihkanJudul(s: string): string {
   return t || (s || "").trim();
 }
 
-/** v1.0.43: Prompt DEFAULT pilihan PENGGUNA — poster sesuai adegan video, 2-3
- * karakter berhadapan, background kolosal, frame futuristik/modern, judul di
- * bawah. Judul video tetap disisipkan otomatis (buildPosterPrompt). */
+/** v1.0.47: Prompt DEFAULT — arah "FOTO ASLI + SENTUHAN AI REALISTIS" (permintaan
+ * pengguna). Dulu: "2-3 karakter berhadapan + background kolosal + frame
+ * futuristik" → model mengarang komposisi baru & bergeser ke kartun/ilustrasi.
+ * Kini: fotorealistis, orang asli dari adegan video, AI hanya menyentuh gaya. */
 export const POSTER_PROMPT_DEFAULT =
-  "BUAT POSTER SESUAI DENGAN ADEGAN YANG DIAMBIL DARI VIDEO, judul video dibagian bawah sesuai dengan nama video. didalam poster buat agar ada 2 atau 3 karakter yang tampil di poster saling berhadapan atau menghadap kedepan semua disesuaikan dengan gambar yang di ambil dari video, untuk gambarnya ambil dari adegan yang ada di video, Adegan diambil dari detik 5 sampai detik 30 video, untuk rasio poster 9:16, dengan background cinematik atau kolosal dan dengan frame futuristik atau modern mengelilingi poster, tulisan selalu dijaga di dalam tepi gambar, dan menggunakan font yang cinematik atau futuristik atau modern dinamis";
+  "BUAT POSTER FOTOREALISTIS DARI ADEGAN YANG DIAMBIL DARI VIDEO — hasil harus tampak seperti FOTO ASLI (bukan kartun, bukan ilustrasi, bukan anime): orang nyata dengan kulit, rambut, dan tekstur alami, sesuai adegan yang ada di video (adegan diambil dari detik 5 sampai detik 30). SENTUHAN AI REALISTIS hanya pada gaya: pencahayaan sinematik dramatis, gradasi warna ala film bioskop, sedikit rim light dan atmosfer halus, komposisi poster profesional. Rasio poster 9:16, area atas dan bawah agak lega untuk judul yang akan ditambahkan aplikasi.";
 
 /** Rakit prompt final: prompt manual pengguna ATAU default + judul video, lalu
  * tambahkan ATURAN MARGIN (semua tulisan di dalam area gambar — tidak terpotong tepi).
@@ -1133,7 +1145,8 @@ export function buildPosterPrompt(custom: string | undefined, title: string, tex
   // aplikasi via template (ejaan selalu benar). Marker [TEXTFREE] dibaca main
   // process untuk membuang aturan judul dari prompt CF/Z.ai.
   if (textFree) {
-    return `[TEXTFREE] ${dasar}. PENTING: JANGAN menulis teks/kata/huruf/angka/logo apa pun di dalam gambar — lukis hanya adegan/gambar murni (pure artwork: no text, no letters, no numbers, no logos, no watermarks). Judul akan ditambahkan aplikasi secara terpisah di atas poster.`;
+    // v1.0.47: arah FOTO ASLI + SENTUHAN AI REALISTIS ikut ditulis di prompt
+    return `[TEXTFREE] ${dasar}. PENTING: hasil harus tampak seperti FOTO ASLI + sentuhan AI realistis (photorealistic real photograph — bukan kartun, bukan ilustrasi, bukan anime, bukan 3D render). JANGAN menulis teks/kata/huruf/angka/logo apa pun di dalam gambar — lukis hanya adegan/gambar murni (no text, no letters, no numbers, no logos, no watermarks). Judul akan ditambahkan aplikasi secara terpisah di atas poster.`;
   }
   const judulPart = judul && !/judul\s*"/i.test(dasar) ? ` dengan menggunakan judul "${judul}" sebagai judul di poster` : "";
   return `${dasar}${judulPart}. PENTING: semua tulisan pada poster harus berada di dalam area gambar dan diberi jarak aman (margin) dari tepi — tidak boleh terpotong di tepi kiri, kanan, atas, atau bawah. Jangan menulis ulang takarir, caption, atau watermark dari gambar sumber.`;
@@ -1174,6 +1187,9 @@ export function terjemahkanKesalahanAI(raw: string): string {
   const s = String(raw || "");
   const cari = (p: RegExp, msg: string) => (p.test(s) ? msg : null);
   return (
+    // v1.0.47: pesan mage.space (Gems) — dicek SEBELUM pola umum "insufficient"
+    // agar tidak salah tampil sebagai pesan saldo Z.ai
+    cari(/gems?\b|mage\.space|mage_sk_/i, "Masalah mage.space: kunci salah atau saldo Gems habis — beli Gem pack di mage.space (±Rp145/gambar) lalu klik Buat Ulang Poster lagi") ||
     cari(/insufficient|balance|arrears|余额|欠费|credit/i, "Saldo/kredit Z.ai tidak cukup — buka z.ai → Billing → isi saldo (±Rp250/poster), lalu klik Buat Ulang Poster lagi") ||
     cari(/api ?key|invalid.*(key|token)|unauthorized|authentication/i, "Kunci API Z.ai salah/kedaluwarsa — tempel ulang kunci di kartu Mesin Poster AI lalu Simpan") ||
     cari(/429|rate ?limit|too many|frequency|throttl/i, "Batas laju Z.ai tercapai — tunggu ±1 menit lalu klik Buat Ulang Poster lagi") ||
@@ -1190,7 +1206,8 @@ export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size:
   }
   try {
     const prefs = await window.novacutAI?.getAIPrefs?.().catch(() => null);
-    const provider = prefs?.provider === "cloudflare" ? "cloudflare" : "zai";
+    // v1.0.47: penyedia ke-3 Mage (mage.space — gpt-image, ±9 Gems/poster)
+    const provider = prefs?.provider === "cloudflare" ? "cloudflare" : prefs?.provider === "mage" ? "mage" : "zai";
     const quality = prefs?.quality === "standard" ? "standard" : "hd";
     const res = await Promise.race([
       window.novacutAI.posterAI(frameUrl, prompt, size, provider, quality),

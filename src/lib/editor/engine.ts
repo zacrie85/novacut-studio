@@ -121,9 +121,14 @@ export function drawTextOverlay(
   // tepi blok (termasuk bingkai) menempel di tepi layar, tidak terpotong.
   if (posV !== null) {
     const frH = td.frame ? Math.max(size * 1.7, (blockH + size * 0.84) * saneFrameScale(td.frameH)) : 0;
-    const frHx = frH * (1 + (dualRibbon ? frameTopExtraFrac(frIdSane) : 0));
-    const half = Math.max(blockH / 2, frHx / 2) + size * 0.12;
-    posY = Math.min(Math.max(posY, half), h - half);
+    // v1.0.47: pita komposit HANYA di ATAS kotak bingkai (frameTopExtraFrac ≈0.8)
+    // — dulu bound bawah ikut memakai tinggi total frHx (dianggap simetris) →
+    // Pita Ganda berhenti jauh di atas tepi bawah (tak bisa digeser turun),
+    // dan pita atasnya bisa terpotong di tepi atas. Kini asimetris:
+    // atas = kotak + pita penuh; bawah = kotak saja.
+    const extraTop = dualRibbon ? frH * frameTopExtraFrac(frIdSane) : 0;
+    const halfBox = Math.max(blockH / 2, frH / 2) + size * 0.12;
+    posY = Math.min(Math.max(posY, halfBox + extraTop), h - halfBox);
   }
 
   switch (td.anim) {
