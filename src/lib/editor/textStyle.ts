@@ -33,6 +33,10 @@ export const TEXT_STYLE_DEFAULTS = {
   /** v1.0.22: posisi vertikal part/episode — 0 = paling atas, 100 = paling
    * bawah (DEFAULT: 0 = PALING ATAS) */
   partV: 0,
+  /** v1.0.53: part/episode OTOMATIS berlawanan judul — judul di bawah → part
+   * muncul di atas, judul di atas → part muncul di bawah (permintaan pengguna);
+   * false = pakai slider posisi part manual */
+  partFlip: true,
   /** v1.0.22: bingkai judul ("" = tanpa bingkai; lihat TITLE_FRAMES) */
   titleFrame: "",
   /** v1.0.22: skala lebar bingkai (1 = otomatis ikut lebar tulisan) */
@@ -51,6 +55,21 @@ export const TEXT_STYLE_DEFAULTS = {
 };
 
 export type TextStyle = typeof TEXT_STYLE_DEFAULTS;
+
+/** v1.0.53: posisi vertikal part/episode EFEKTIF — saat partFlip aktif dan judul
+ * ikut ditampilkan, part otomatis diletakkan BERLAWANAN dengan judul (judul di
+ * bawah → part di atas; judul di atas → part di bawah) sehingga keduanya tidak
+ * pernah bertumpuk di layar. Bila flip mati / judul tak tampil → slider manual. */
+export function posisiPartEfektif(
+  texts: { partFlip?: boolean; partV?: number; titleV?: number },
+  judulTampil: boolean
+): number {
+  if (judulTampil && texts.partFlip !== false) {
+    const tv = typeof texts.titleV === "number" && isFinite(texts.titleV) ? texts.titleV : 100;
+    return tv >= 50 ? 0 : 100;
+  }
+  return typeof texts.partV === "number" && isFinite(texts.partV) ? Math.max(0, Math.min(100, texts.partV)) : 0;
+}
 
 interface Stored extends TextStyle {
   cfgVersion?: number;
@@ -77,6 +96,8 @@ export function loadTextStyle(): TextStyle {
       // (judul+deskripsi DI BAWAH, part DI ATAS) sesuai permintaan pengguna
       titleV: clampPercent(parsed.titleV, TEXT_STYLE_DEFAULTS.titleV),
       partV: clampPercent(parsed.partV, TEXT_STYLE_DEFAULTS.partV),
+      // v1.0.53: part otomatis berlawanan judul — default AKTIF utk setelan lama
+      partFlip: parsed.partFlip !== false,
       titleFrame: saneTitleFrame(parsed.titleFrame),
       titleFrameW: saneFrameScale(parsed.titleFrameW),
       titleFrameH: saneFrameScale(parsed.titleFrameH),

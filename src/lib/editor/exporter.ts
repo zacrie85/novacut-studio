@@ -14,6 +14,7 @@ import { adjustRangesToSilence, exportRangeFast, fastSupported, AudioDecodeCache
 import { ensureAppFonts } from "./fonts";
 import { fileSizeInDir, isDesktopFS, notifyDesktop, saveBlobToDir, shutdownPC } from "./fsBridge";
 import { normalizeEnhance } from "./playlistExport";
+import { posisiPartEfektif } from "./textStyle";
 import { dimsFor, useEditor, totalDuration } from "./store";
 import { transcribeAsset, type SubSegment } from "./subtitles";
 import { audioCopyAllowed, exportSegmentTurbo, releaseTurboParse, turboEligible } from "./turboExport";
@@ -473,9 +474,9 @@ export function buildSplitProject(
           // posisi dari kolom geser Part di menu Teks
           offX: clampOffPct(st.texts.partX),
           offY: clampOffPct(st.texts.partY),
-          // v1.0.22: posisi vertikal part — 0 = paling atas (DEFAULT),
-          // 100 = paling bawah, bisa digeser bebas dari menu Teks
-          posV: clampV(st.texts.partV, 0),
+          // v1.0.53: part OTOMATIS berlawanan judul (judul bawah → part atas, dst.)
+          // saat PartFlip aktif & judul ikut dirender; bila tidak → slider Part manual
+          posV: clampV(posisiPartEfektif(st.texts, s.showTitleText && !!st.texts.title), 0),
           // v1.0.25: bingkai part (gaya baru t7-t12 + gaya lama) — ukuran
           // otomatis ikut tulisan + skala manual dari menu BINGKAI PART
           frame: partFrameId || undefined,

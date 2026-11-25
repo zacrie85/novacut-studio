@@ -16,7 +16,7 @@ import { drawTextOverlay } from "@/lib/editor/engine";
 import { ensureAppFonts } from "@/lib/editor/fonts";
 import { useEditor } from "@/lib/editor/store";
 import { isCompositeFrame } from "@/lib/editor/titleFrames";
-import { TEXT_STYLE_DEFAULTS, saveTextStyle, type TextStyle } from "@/lib/editor/textStyle";
+import { TEXT_STYLE_DEFAULTS, posisiPartEfektif, saveTextStyle, type TextStyle } from "@/lib/editor/textStyle";
 import { TitleFramePicker } from "@/components/editor/TitleFramePicker";
 import type { Ratio } from "@/lib/editor/types";
 
@@ -152,8 +152,8 @@ function LivePreview({ ratioOverride }: { ratioOverride?: Ratio }) {
             stroke: true,
             offX: pct(texts.partX),
             offY: pct(texts.partY),
-            // v1.0.22: posisi vertikal part — default PALING ATAS
-            posV: (typeof texts.partV === "number" ? texts.partV : 0) / 100,
+            // v1.0.53: pratinjau ikut mode part otomatis berlawanan judul
+            posV: posisiPartEfektif(texts, !dualTitle) / 100,
             // v1.0.25: bingkai teks part/episode
             frame: texts.partFrame || undefined,
             frameW: texts.partFrameW,
@@ -225,6 +225,8 @@ export function TextStyleSettings({ ratioOverride }: { ratioOverride?: Ratio }) 
   // v1.0.22: posisi vertikal + bingkai judul
   const titleV = typeof texts.titleV === "number" ? texts.titleV : 100;
   const partV = typeof texts.partV === "number" ? texts.partV : 0;
+  // v1.0.53: part otomatis berlawanan judul (default AKTIF)
+  const partFlip = texts.partFlip !== false;
   const titleFrame = texts.titleFrame || "";
   const frameW = typeof texts.titleFrameW === "number" ? texts.titleFrameW : 1;
   const frameH = typeof texts.titleFrameH === "number" ? texts.titleFrameH : 1;
@@ -249,6 +251,8 @@ export function TextStyleSettings({ ratioOverride }: { ratioOverride?: Ratio }) 
       partY: t.partY ?? 0,
       titleV: typeof t.titleV === "number" ? t.titleV : 100,
       partV: typeof t.partV === "number" ? t.partV : 0,
+      // v1.0.53: part otomatis berlawanan judul
+      partFlip: t.partFlip !== false,
       titleFrame: t.titleFrame ?? "",
       titleFrameW: typeof t.titleFrameW === "number" ? t.titleFrameW : 1,
       titleFrameH: typeof t.titleFrameH === "number" ? t.titleFrameH : 1,
@@ -327,7 +331,7 @@ export function TextStyleSettings({ ratioOverride }: { ratioOverride?: Ratio }) 
           <MoveVertical className="h-3.5 w-3.5" /> POSISI VERTIKAL (GESER ATAS ↔ BAWAH)
         </div>
         <p className="text-[11px] leading-relaxed text-gray-500">
-          Judul &amp; deskripsi <b className="text-fuchsia-300">mulai di PALING BAWAH</b>, part/episode <b className="text-fuchsia-300">mulai di PALING ATAS</b> — geser slidernya sampai ke ujung sebaliknya sesuka hatimu.
+          Judul &amp; deskripsi <b className="text-fuchsia-300">mulai di PALING BAWAH</b>, part/episode <b className="text-fuchsia-300">mulai di PALING ATAS</b> — geser slidernya sampai ke ujung sebaliknya sesuka hatimu. v1.0.53: part kini <b className="text-emerald-300">otomatis berlawanan judul</b> (lihat saklar di bawah).
         </p>
         <VRow
           name="Judul+Desc"
@@ -342,19 +346,38 @@ export function TextStyleSettings({ ratioOverride }: { ratioOverride?: Ratio }) 
             persistStyle({ titleV: 100 });
           }}
         />
-        <VRow
-          name="Part/Eps"
-          value={partV}
-          def={0}
-          onChange={(v) => {
-            st.setTexts({ partV: v });
-            persistStyle({ partV: v });
-          }}
-          onReset={() => {
-            st.setTexts({ partV: 0 });
-            persistStyle({ partV: 0 });
-          }}
-        />
+        {/* v1.0.53: part OTOMATIS berlawanan judul — permintaan pengguna: judul di
+        bawah → part muncul di atas, judul di atas → part muncul di bawah, sehingga
+        keduanya tidak pernah bertumpuk. Matikan saklar utk geser part manual. */}
+        <label className="flex cursor-pointer items-center gap-2 rounded-md border border-emerald-500/25 bg-emerald-500/[0.06] px-2 py-1.5 text-[11px] leading-snug text-emerald-300">
+          <input
+            type="checkbox"
+            checked={partFlip}
+            onChange={(e) => {
+              st.setTexts({ partFlip: e.target.checked });
+              persistStyle({ partFlip: e.target.checked });
+            }}
+            className="h-3.5 w-3.5 accent-emerald-400"
+          />
+          <span>
+            Part/episode <b>otomatis berlawanan judul</b> (judul bawah → part atas, judul atas → part bawah)
+          </span>
+        </label>
+        <div className={partFlip ? "pointer-events-none opacity-45" : ""}>
+          <VRow
+            name="Part/Eps"
+            value={partV}
+            def={0}
+            onChange={(v) => {
+              st.setTexts({ partV: v });
+              persistStyle({ partV: v });
+            }}
+            onReset={() => {
+              st.setTexts({ partV: 0 });
+              persistStyle({ partV: 0 });
+            }}
+          />
+        </div>
       </div>
 
       {/* ===== v1.0.22: BINGKAI JUDUL (10 GAYA) ===== */}

@@ -4,6 +4,7 @@ import { fontStack, fmtTime, partLabel } from "./constants";
 import { getMusicBuffer, musicDefById } from "./music";
 import { useEditor, totalDuration, type EditorState } from "./store";
 import { wrapCanvasText } from "./textwrap";
+import { posisiPartEfektif } from "./textStyle";
 import { drawTitleFrame, frameTopExtraFrac, isCompositeFrame, saneFrameScale, saneTitleFrame, titleFrameTextSkew } from "./titleFrames";
 import type { Clip, MediaAsset, TextData, Track } from "./types";
 import { drawWatermark } from "./watermark";
@@ -1001,8 +1002,9 @@ class EditorEngine {
           stroke: true,
           offX: pct(texts.partX),
           offY: pct(texts.partY),
-          // v1.0.22: posisi vertikal part — default PALING ATAS
-          posV: (typeof texts.partV === "number" ? texts.partV : 0) / 100,
+          // v1.0.53: part OTOMATIS berlawanan judul (judul bawah → part atas, dst.)
+          // saat PartFlip aktif & judul tampil; bila tidak → slider Part manual
+          posV: posisiPartEfektif(texts, titleOn && (hasTitle || hasDesc)) / 100,
           // v1.0.25: bingkai teks part/episode (gaya t7-t12 & gaya lama)
           frame: texts.partFrame || undefined,
           frameW: texts.partFrameW,

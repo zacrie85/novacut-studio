@@ -126,6 +126,10 @@ export interface TextsConfig {
   /** v1.0.22: posisi vertikal teks PART/EPISODE saat video berjalan:
    * 0 = paling atas, 100 = paling bawah (default 0 — di atas) */
   partV?: number;
+  /** v1.0.53: part/episode OTOMATIS berlawanan judul — judul di bawah → part
+   * muncul di atas, judul di atas → part muncul di bawah (permintaan pengguna);
+   * false = pakai slider part manual */
+  partFlip?: boolean;
   /** v1.0.22: bingkai judul — id dari TITLE_FRAMES ("" = tanpa bingkai) */
   titleFrame?: string;
   /** v1.0.22: skala LEBAR bingkai judul (0.6–2.5; 1 = otomatis ikut tulisan) */
