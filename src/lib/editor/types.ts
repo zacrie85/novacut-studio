@@ -167,9 +167,14 @@ export interface CoverConfig {
    * judul langsung di poster. */
   posterTextMode?: "app" | "ai";
   /** v1.0.49: dasar gambar poster — "ai" (default): frame dikirim ke AI utk disentuh
-   * (CF edit / img2img); "asli": adegan video ASLI langsung jadi dasar poster (grade
-   * sinematik + vignette lokal, TANPA panggilan AI → 0 Neuron, identitas 100%). */
-  posterArtMode?: "ai" | "asli";
+   * (CF edit / img2img); "asli": adegan video ASLI + grade studio lokal; "aslihitam"
+   * (v1.0.50): adegan ASLI + background hitam sinematik + bingkai film. Dua mode
+   * terakhir TANPA panggilan AI → 0 Neuron, identitas 100%. */
+  posterArtMode?: "ai" | "asli" | "aslihitam";
+  /** v1.0.50: isi teks di poster — "judul" (default): judul ditulis template + label
+   * part dari mesin render; "part": TANPA judul di poster (untuk video yang sudah
+   * punya tulisan judul bawaan) — hanya label part yang tampil, judul tak dobel. */
+  posterTextIsi?: "judul" | "part";
   /** v1.0.46: template judul poster saat posterTextMode "app" — "auto" = dipilih
    * otomatis sesuai judul video, atau id template dari COVER_TEMPLATES. */
   posterTemplateId?: string;

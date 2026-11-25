@@ -630,132 +630,128 @@ export function renderPosterTextDataURL(
     ctx.moveTo(0, h * 0.918);
     ctx.lineTo(w, h * 0.918);
     ctx.stroke();
-  } else if (input.posterTplId === "poster-sekolah") {
-    // ENIGMA: papan tulis kayu + judul kapur putih tengah-atas + garis merah,
-    // pita kertas sobek di bawah (dekor tanpa teks — tanggal tidak diketahui)
-    accent = "#f3f1e8";
-    const bw = w * 0.6;
-    const bx = (w - bw) / 2;
-    const by = wide ? h * 0.12 : h * 0.06;
-    const m = w * 0.014;
-    // v1.0.47: judul adaptif — fit DULU (3 baris, font boleh kecil), papan kayu
-    // mengikuti tinggi blok sehingga judul 100 huruf tetap muat & tak terpotong
-    const fit = posterJudulFit(ctx, teks, '"Barlow Condensed","Oswald",sans-serif', "600", bw * 0.84, (wide ? h * 0.3 : h * 0.175) * 0.42, h * 0.026, 3);
-    const blokT = fit.lines.length * fit.fs * 1.05;
-    const bh = Math.max(wide ? h * 0.3 : h * 0.175, blokT + h * 0.08);
-    ctx.fillStyle = "#8b5a2b";
-    ctx.fillRect(bx - m, by - m, bw + m * 2, bh + m * 2);
-    ctx.fillStyle = "#0d0e10";
-    ctx.fillRect(bx, by, bw, bh);
-    (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = `${Math.round(fit.fs * 0.12)}px`;
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#f3f1e8";
-    ctx.globalAlpha = 0.96;
-    const yTulis = by + bh / 2 - blokT / 2 + fit.fs * 0.85;
-    fit.lines.forEach((ln, i) => ctx.fillText(ln, w / 2, yTulis + i * fit.fs * 1.05));
-    (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = "0px";
-    ctx.globalAlpha = 1;
-    // garis kapur putus-putus + garis merah (hanya bila papan tidak penuh teks)
-    if (bh <= h * 0.21) {
-      ctx.setLineDash([bw * 0.06, bw * 0.045]);
-      ctx.strokeStyle = "rgba(243,241,232,0.75)";
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.moveTo(bx + bw * 0.14, by + bh * 0.78);
-      ctx.lineTo(bx + bw * 0.86, by + bh * 0.78);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.strokeStyle = "rgba(229,57,53,0.85)";
-      ctx.beginPath();
-      ctx.moveTo(bx + bw * 0.3, by + bh * 0.9);
-      ctx.lineTo(bx + bw * 0.7, by + bh * 0.9);
-      ctx.stroke();
-    }
-    // pita kertas sobek
-    const py = h * 0.855;
-    const ph = h * 0.06;
-    const gigi = 14;
-    const amp = h * 0.008;
-    ctx.save();
-    ctx.translate(w / 2, py + ph / 2);
-    ctx.rotate(-0.008);
-    ctx.shadowColor = "rgba(0,0,0,0.35)";
-    ctx.shadowBlur = 12;
-    ctx.shadowOffsetY = 6;
-    ctx.beginPath();
-    ctx.moveTo(-w * 0.46, -ph / 2);
-    for (let i = 0; i <= gigi; i++) ctx.lineTo(-w * 0.46 + (w * 0.92 * i) / gigi, -ph / 2 + (i % 2 ? amp : -amp));
-    ctx.lineTo(w * 0.46, ph / 2);
-    for (let i = gigi; i >= 0; i--) ctx.lineTo(-w * 0.46 + (w * 0.92 * i) / gigi, ph / 2 + (i % 2 ? -amp : amp));
-    ctx.closePath();
-    ctx.fillStyle = "#f2ede2";
-    ctx.fill();
-    ctx.restore();
-  } else if (input.posterTplId === "poster-epik") {
-    // Beauty & the Beast: judul serif emas (Cinzel) tengah-atas; 3+ kata → kata
-    // tengah kecil di antara dua kata besar; swash lengkung emas di bawah
-    accent = "#e3b75c";
+  } else if (input.posterTplId === "poster-gala") {
+    // v1.0.50 GALA MALAM (pengganti Papan Kapur & Epik — permintaan pengguna):
+    // judul serif putih di BAWAH poster, garis emas tipis + berlian di atas blok,
+    // garis emas pendek di bawah; scrim gelap bagian bawah agar terbaca.
+    accent = "#e8c56f";
     const fam = '"Cinzel","Playfair Display",serif';
-    const kata = teks.split(/\s+/).filter(Boolean);
-    const grad = (y1: number, y2: number) => {
-      const g = ctx.createLinearGradient(0, y1, 0, y2);
-      g.addColorStop(0, "#f9ecc0");
-      g.addColorStop(0.55, "#e3b75c");
-      g.addColorStop(1, "#b07620");
-      return g;
-    };
-    const tulisEmas = (ln: string, y: number, fs: number) => {
-      ctx.save();
-      ctx.textAlign = "center";
-      ctx.font = `700 ${Math.round(fs)}px ${fam}`;
-      ctx.shadowColor = "rgba(0,0,0,0.5)";
-      ctx.shadowBlur = fs * 0.18;
-      ctx.lineWidth = Math.max(1.5, fs * 0.022);
-      ctx.strokeStyle = "#3c230a";
-      ctx.strokeText(ln, w / 2, y);
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = grad(y - fs, y + fs * 0.15);
+    const scrim = ctx.createLinearGradient(0, h * 0.56, 0, h);
+    scrim.addColorStop(0, "rgba(0,0,0,0)");
+    scrim.addColorStop(0.55, "rgba(0,0,0,0.5)");
+    scrim.addColorStop(1, "rgba(0,0,0,0.88)");
+    ctx.fillStyle = scrim;
+    ctx.fillRect(0, h * 0.56, w, h * 0.44);
+    // judul adaptif 3 baris — blok DITAMBAT ke dasar (baris terakhir posisinya tetap)
+    const fit = posterJudulFit(ctx, teks, fam, "700", w * 0.84, wide ? h * 0.05 : h * 0.052, h * 0.026, 3);
+    const lh = fit.fs * 1.14;
+    const yDasar = wide ? h * 0.9 : h * 0.885;
+    const yBlok = yDasar - (fit.lines.length - 1) * lh;
+    (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = `${Math.round(fit.fs * 0.08)}px`;
+    ctx.save();
+    ctx.textAlign = "center";
+    fit.lines.forEach((ln, i) => {
+      const y = yBlok + i * lh;
+      ctx.font = `700 ${Math.round(fit.fs)}px ${fam}`;
+      ctx.shadowColor = "rgba(0,0,0,0.6)";
+      ctx.shadowBlur = fit.fs * 0.22;
+      ctx.fillStyle = "#f7f3e8";
       ctx.fillText(ln, w / 2, y);
-      ctx.restore();
-    };
-    let yAkhir: number;
-    if (kata.length >= 3) {
-      // v1.0.47: judul adaptif — tiap kata besar boleh 2 baris & mengecil
-      const fit1 = posterJudulFit(ctx, kata[0], fam, "700", w * 0.76, h * 0.07, h * 0.03, 2);
-      const mid = kata.slice(1, -1).join(" ");
-      const fsMid = fit1.fs * 0.34;
-      const fit2 = posterJudulFit(ctx, kata[kata.length - 1], fam, "700", w * 0.76, h * 0.07, h * 0.03, 2);
-      const y1 = wide ? h * 0.2 : h * 0.13;
-      fit1.lines.forEach((ln, i) => tulisEmas(ln, y1 + i * fit1.fs * 1.08, fit1.fs));
-      ctx.save();
-      ctx.textAlign = "center";
-      ctx.font = `400 ${Math.round(fsMid)}px ${fam}`;
-      ctx.shadowColor = "rgba(0,0,0,0.45)";
-      ctx.shadowBlur = 6;
-      ctx.fillStyle = "#f3dfae";
-      ctx.fillText(mid, w / 2, y1 + (fit1.lines.length - 1) * fit1.fs * 1.08 + fit1.fs * 0.62 + fsMid);
-      ctx.restore();
-      const y2 = y1 + (fit1.lines.length - 1) * fit1.fs * 1.08 + fit1.fs * 0.62 + fsMid * 1.9;
-      fit2.lines.forEach((ln, i) => tulisEmas(ln, y2 + i * fit2.fs * 1.08, fit2.fs));
-      yAkhir = y2 + (fit2.lines.length - 1) * fit2.fs * 1.08;
-    } else {
-      const fit = posterJudulFit(ctx, teks, fam, "700", w * 0.82, h * 0.07, h * 0.03, 3);
-      fit.lines.forEach((ln, i) => tulisEmas(ln, (wide ? h * 0.18 : h * 0.12) + i * fit.fs * 1.1, fit.fs));
-      yAkhir = (wide ? h * 0.18 : h * 0.12) + (fit.lines.length - 1) * fit.fs * 1.1;
-    }
-    // swash lengkung emas + berlian kecil di tengah
-    const sy = yAkhir + h * 0.045;
-    ctx.strokeStyle = "rgba(227,183,92,0.85)";
-    ctx.lineWidth = 2.5;
+    });
+    ctx.restore();
+    (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = "0px";
+    // garis emas terputus + berlian kecil di atas blok judul (dekor tanpa teks palsu)
+    const yGaris = yBlok - fit.fs * 0.85;
+    ctx.strokeStyle = "rgba(232,197,111,0.9)";
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(w * 0.2, sy);
-    ctx.bezierCurveTo(w * 0.36, sy + h * 0.022, w * 0.64, sy + h * 0.022, w * 0.8, sy);
+    ctx.moveTo(w * 0.3, yGaris);
+    ctx.lineTo(w * 0.42, yGaris);
+    ctx.moveTo(w * 0.58, yGaris);
+    ctx.lineTo(w * 0.7, yGaris);
     ctx.stroke();
     ctx.save();
-    ctx.translate(w / 2, sy + h * 0.012);
+    ctx.translate(w / 2, yGaris);
     ctx.rotate(Math.PI / 4);
-    ctx.fillStyle = "#e3b75c";
-    ctx.fillRect(-w * 0.008, -w * 0.008, w * 0.016, w * 0.016);
+    ctx.fillStyle = "#e8c56f";
+    ctx.fillRect(-w * 0.007, -w * 0.007, w * 0.014, w * 0.014);
+    ctx.restore();
+    ctx.strokeStyle = "rgba(232,197,111,0.6)";
+    ctx.beginPath();
+    ctx.moveTo(w * 0.38, yDasar + fit.fs * 0.55);
+    ctx.lineTo(w * 0.62, yDasar + fit.fs * 0.55);
+    ctx.stroke();
+  } else if (input.posterTplId === "poster-neon") {
+    // v1.0.50 NEON PANGGUNG (pengganti Papan Kapur & Epik): bingkai neon
+    // cyan-magenta mengelilingi poster + judul tebal miring di BAWAH dgn glow
+    // neon ganda — suasana konser/live (dekor tanpa teks palsu).
+    accent = "#ff4fd8";
+    const fam = '"Archivo Black","Anton",sans-serif';
+    const scrim = ctx.createLinearGradient(0, h * 0.58, 0, h);
+    scrim.addColorStop(0, "rgba(4,2,14,0)");
+    scrim.addColorStop(0.6, "rgba(4,2,14,0.55)");
+    scrim.addColorStop(1, "rgba(4,2,14,0.92)");
+    ctx.fillStyle = scrim;
+    ctx.fillRect(0, h * 0.58, w, h * 0.42);
+    // bingkai neon: gradasi magenta→cyan + glow, garis putih tipis di dalamnya
+    const nx = w * 0.032;
+    const ny = w > h ? h * 0.075 : h * 0.045;
+    const nw = w - nx * 2;
+    const nh = h - ny * 2;
+    ctx.save();
+    const ngrad = ctx.createLinearGradient(nx, ny, nx + nw, ny + nh);
+    ngrad.addColorStop(0, "#ff4fd8");
+    ngrad.addColorStop(0.5, "#8a5cff");
+    ngrad.addColorStop(1, "#1dd1f5");
+    ctx.shadowColor = "rgba(255,79,216,0.8)";
+    ctx.shadowBlur = w * 0.02;
+    ctx.strokeStyle = ngrad;
+    ctx.lineWidth = Math.max(2.5, w * 0.0042);
+    ctx.beginPath();
+    ctx.roundRect(nx, ny, nw, nh, w * 0.018);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(255,255,255,0.28)";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.roundRect(nx + w * 0.012, ny + w * 0.012, nw - w * 0.024, nh - w * 0.024, w * 0.012);
+    ctx.stroke();
+    ctx.restore();
+    const fit = posterJudulFit(ctx, teks, fam, "400", w * 0.84, wide ? h * 0.052 : h * 0.055, h * 0.026, 3);
+    const lh = fit.fs * 1.06;
+    const yDasar = wide ? h * 0.885 : h * 0.86;
+    const yBlok = yDasar - (fit.lines.length - 1) * lh;
+    fit.lines.forEach((ln, i) => {
+      const y = yBlok + i * lh;
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.font = `400 ${Math.round(fit.fs)}px ${fam}`;
+      ctx.transform(1, 0, -0.055, 1, 0, 0);
+      const ng = ctx.createLinearGradient(0, y - fit.fs, 0, y);
+      ng.addColorStop(0, "#7df3ff");
+      ng.addColorStop(0.55, "#c9a6ff");
+      ng.addColorStop(1, "#ff9bea");
+      ctx.shadowColor = "rgba(255,79,216,0.9)";
+      ctx.shadowBlur = fit.fs * 0.3;
+      ctx.lineWidth = fit.fs * 0.07;
+      ctx.strokeStyle = "#1c0530";
+      ctx.lineJoin = "round";
+      ctx.strokeText(ln, w / 2, y);
+      ctx.shadowColor = "rgba(29,209,245,0.75)";
+      ctx.shadowBlur = fit.fs * 0.16;
+      ctx.fillStyle = ng;
+      ctx.fillText(ln, w / 2, y);
+      ctx.restore();
+    });
+    // bar glow pendek di bawah judul
+    ctx.save();
+    ctx.shadowColor = "rgba(29,209,245,0.9)";
+    ctx.shadowBlur = w * 0.016;
+    const bgrad = ctx.createLinearGradient(w * 0.34, 0, w * 0.66, 0);
+    bgrad.addColorStop(0, "#1dd1f5");
+    bgrad.addColorStop(1, "#ff4fd8");
+    ctx.fillStyle = bgrad;
+    ctx.fillRect(w * 0.34, yDasar + fit.fs * 0.5, w * 0.32, Math.max(3, h * 0.006));
     ctx.restore();
   } else {
     // ZOMBIELAND: judul raksasa oranye-merah (Anton) di atas + garis putih
@@ -1160,12 +1156,15 @@ export function buildPosterPrompt(custom: string | undefined, title: string, tex
 }
 
 /** v1.0.46: pilih frame poster — "auto" = ikut judul (pendek / mengandung # →
- * komik; lainnya Hollywood); id dari POSTER_TEMPLATES dipakai langsung,
- * id tak dikenal → Hollywood. */
+ * komik; sedang → Gala Malam [judul di bawah]; panjang → Hollywood);
+ * id dari POSTER_TEMPLATES dipakai langsung, id tak dikenal (mis. template
+ * lama poster-sekolah/poster-epik yang sudah dihapus v1.0.50) → Hollywood. */
 export function resolvePosterTemplateId(c: { posterTemplateId?: string }, title: string): string {
   const id = c.posterTemplateId ?? "auto";
   if (id !== "auto" && POSTER_TEMPLATES.some((t) => t.id === id)) return id;
-  return /#/.test(title) || bersihkanJudul(title).length <= 10 ? "poster-komik" : "poster-hollywood";
+  const n = bersihkanJudul(title).length;
+  if (/#/.test(title) || n <= 10) return "poster-komik";
+  return n <= 34 ? "poster-gala" : "poster-hollywood";
 }
 
 /** Poster AI: kirim frame (dataURL) + prompt ke model gambar lewat Electron
@@ -1278,6 +1277,101 @@ export async function posterFallbackDataURL(frameUrl: string, w: number, h: numb
     gBot.addColorStop(1, "rgba(0,0,0,0.72)");
     ctx.fillStyle = gBot;
     ctx.fillRect(0, h * 0.45, w, h * 0.55);
+    return c.toDataURL("image/jpeg", 0.92);
+  } catch {
+    return null;
+  }
+}
+
+/** v1.0.50: ADEGAN ASLI + BACKGROUND HITAM SINEMATIK + BINGKAI FILM (0 Neuron,
+ * permintaan pengguna — grade studio dianggap terlalu biasa). Frame video dipasang
+ * UTUH tanpa crop di atas kanvas hitam, glow lembut di belakang foto, grade
+ * teal-orange ringan (warna saja — wajah/adegan tetap asli), bingkai garis emas
+ * + bracket sudut, vignette, grain film halus; zona bawah gelap untuk judul
+ * template (pas dgn Gala/Neon yang menaruh judul di bagian bawah). */
+export async function posterAsliCineDataURL(frameUrl: string, w: number, h: number): Promise<string | null> {
+  try {
+    const img = await loadImage(frameUrl);
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d");
+    if (!ctx) return null;
+    ctx.fillStyle = "#04060a";
+    ctx.fillRect(0, 0, w, h);
+    // foto UTUH (contain, komposisi asli dijaga) di zona atas ±72% kanvas
+    const margin = Math.min(w, h) * 0.05;
+    const zonaTinggi = h * 0.7;
+    const sw = img.naturalWidth || 2;
+    const sh = img.naturalHeight || 2;
+    const s = Math.min((w - margin * 2) / sw, (zonaTinggi - margin) / sh);
+    const dw = sw * s;
+    const dh = sh * s;
+    const dx = (w - dw) / 2;
+    const dy = margin + Math.max(0, (zonaTinggi - margin - dh) / 2);
+    // glow lembut di belakang foto (rim sinematik)
+    const glow = ctx.createRadialGradient(w / 2, dy + dh / 2, Math.min(dw, dh) * 0.25, w / 2, dy + dh / 2, Math.max(dw, dh) * 0.8);
+    glow.addColorStop(0, "rgba(58,110,180,0.3)");
+    glow.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, w, h);
+    // foto + kontras/saturasi ringan (tetap foto asli, bukan lukisan AI)
+    ctx.save();
+    ctx.filter = "contrast(1.1) saturate(1.16) brightness(1.01)";
+    ctx.drawImage(img, dx, dy, dw, dh);
+    ctx.restore();
+    // grade teal-orange halus + vignette, hanya di area foto
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(dx, dy, dw, dh);
+    ctx.clip();
+    const grade = ctx.createLinearGradient(0, dy, 0, dy + dh);
+    grade.addColorStop(0, "rgba(20,60,95,0.22)");
+    grade.addColorStop(0.5, "rgba(0,0,0,0)");
+    grade.addColorStop(1, "rgba(150,80,15,0.2)");
+    ctx.globalCompositeOperation = "overlay";
+    ctx.fillStyle = grade;
+    ctx.fillRect(dx, dy, dw, dh);
+    ctx.globalCompositeOperation = "source-over";
+    const vg = ctx.createRadialGradient(dx + dw / 2, dy + dh / 2, Math.min(dw, dh) * 0.35, dx + dw / 2, dy + dh / 2, Math.max(dw, dh) * 0.72);
+    vg.addColorStop(0, "rgba(0,0,0,0)");
+    vg.addColorStop(1, "rgba(0,0,0,0.42)");
+    ctx.fillStyle = vg;
+    ctx.fillRect(dx, dy, dw, dh);
+    ctx.restore();
+    // BINGKAI SINEMATIK: garis emas tipis + bracket sudut + garis luar sekunder
+    ctx.strokeStyle = "rgba(232,197,111,0.85)";
+    ctx.lineWidth = Math.max(1.5, w * 0.0022);
+    ctx.strokeRect(dx, dy, dw, dh);
+    const bl = Math.min(dw, dh) * 0.06;
+    ctx.lineWidth = Math.max(2.5, w * 0.0038);
+    const sudut: Array<[number, number, number, number]> = [
+      [dx, dy, 1, 1],
+      [dx + dw, dy, -1, 1],
+      [dx, dy + dh, 1, -1],
+      [dx + dw, dy + dh, -1, -1],
+    ];
+    sudut.forEach(([x, y, sx, sy]) => {
+      ctx.beginPath();
+      ctx.moveTo(x + sx * bl, y);
+      ctx.lineTo(x, y);
+      ctx.lineTo(x, y + sy * bl);
+      ctx.stroke();
+    });
+    ctx.strokeStyle = "rgba(232,197,111,0.35)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(dx - w * 0.012, dy - w * 0.012, dw + w * 0.024, dh + w * 0.024);
+    // fade gelap ke bawah — zona judul template (judul di bagian bawah)
+    const fade = ctx.createLinearGradient(0, dy + dh, 0, h);
+    fade.addColorStop(0, "rgba(4,6,10,0)");
+    fade.addColorStop(1, "rgba(4,6,10,0.92)");
+    ctx.fillStyle = fade;
+    ctx.fillRect(0, dy + dh, w, h - (dy + dh));
+    // grain film halus di seluruh kanvas
+    ctx.globalAlpha = 0.05;
+    ctx.fillStyle = "#ffffff";
+    for (let i = 0; i < 900; i++) ctx.fillRect(Math.random() * w, Math.random() * h, 1.4, 1.4);
+    ctx.globalAlpha = 1;
     return c.toDataURL("image/jpeg", 0.92);
   } catch {
     return null;

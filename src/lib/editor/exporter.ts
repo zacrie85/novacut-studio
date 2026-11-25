@@ -7,7 +7,7 @@
 //  2) MODE KOMPATIBEL: rekam real-time via MediaRecorder (jalur lama).
 // Fitur: cover otomatis, teks judul/deskripsi/part, subtitle AI (bahasa Indonesia).
 
-import { bersihkanJudul, grabFrame, aiRecommendTemplates, analyzeVideoFrames, buildPosterPrompt, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, posterFallbackDataURL, posterTimeRange, renderCoverToDataURL, renderPosterTextDataURL, aiPosterizeDataURL, resolvePosterTemplateId } from "./covers";
+import { bersihkanJudul, grabFrame, aiRecommendTemplates, analyzeVideoFrames, buildPosterPrompt, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, posterAsliCineDataURL, posterFallbackDataURL, posterTimeRange, renderCoverToDataURL, renderPosterTextDataURL, aiPosterizeDataURL, resolvePosterTemplateId } from "./covers";
 import { COVER_TEMPLATES, partLabel, slugify, uid } from "./constants";
 import { engine } from "./engine";
 import { adjustRangesToSilence, exportRangeFast, fastSupported, AudioDecodeCache } from "./fastExport";
@@ -808,22 +808,34 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
   const posterOn = st.cover.bgStyle === "poster";
   // v1.0.49: mode "asli" — adegan video ASLI langsung jadi dasar poster (grade
   // sinematik + vignette lokal, TANPA panggilan AI → 0 Neuron, identitas 100%).
-  // Judul tetap ditulis via template (posterTextMode "app") seperti jalur AI.
-  const artAsli = st.cover.posterArtMode === "asli";
+  // v1.0.50: mode "aslihitam" — adegan ASLI + background hitam sinematik + bingkai
+  // film (posterAsliCineDataURL). "part" = TANPA judul di poster (video sdh ada
+  // tulisan judul bawaan) — hanya label part dari mesin render yang tampil.
+  const artAsli = st.cover.posterArtMode === "asli" || st.cover.posterArtMode === "aslihitam";
+  const tanpaJudul = (st.cover.posterTextIsi ?? "judul") === "part";
   if (posterOn) {
     if (frameUrl) {
       if (artAsli) {
-        const fbUrl = await posterFallbackDataURL(frameUrl, width, height);
-        if (fbUrl) {
+        const dasar = st.cover.posterArtMode === "aslihitam" ? await posterAsliCineDataURL(frameUrl, width, height) : await posterFallbackDataURL(frameUrl, width, height);
+        if (dasar) {
+          // part saja: gambar polos + aiMade:true → mesin render hanya menulis
+          // label PART di atas poster (judul tidak dobel)
+          if (tanpaJudul) {
+            return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: dasar, duration: 0, width, height, aiMade: true };
+          }
           if ((st.cover.posterTextMode ?? "app") === "app") {
             const posterTplId = resolvePosterTemplateId(st.cover, title);
-            const imgFb = await loadImage(fbUrl).catch(() => null);
+            const imgFb = await loadImage(dasar).catch(() => null);
             if (imgFb) {
               const composed = renderPosterTextDataURL({ img: imgFb, title, posterTplId, frame: st.cover.frameStyle }, width, height);
-              if (composed) return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: composed, duration: 0, width, height, aiMade: false };
+              // v1.0.50 FIX DOBEL JUDUL: aiMade WAJIB true — judul sudah ditulis
+              // template di dalam gambar; dulu false → mesin render menulis judul
+              // PENUH lagi di tengah poster (nama file mentah + part, persis kasus
+              // gambar referensi pengguna)
+              if (composed) return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: composed, duration: 0, width, height, aiMade: true };
             }
           }
-          return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: fbUrl, duration: 0, width, height, aiMade: false };
+          return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: dasar, duration: 0, width, height, aiMade: true };
         }
       }
       const size = width > height ? "1344x768" : "768x1344";
@@ -833,7 +845,9 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
       const prompt = buildPosterPrompt(st.cover.posterPrompt, title, textFree);
       const aiUrl = await aiPosterizeDataURL(frameUrl, prompt, size);
       if (aiUrl) {
-        if (textFree) {
+        // v1.0.50: "part saja" — art polos tanpa judul template; label part tetap
+        // ditulis mesin render di atas poster (aiMade:true)
+        if (textFree && !tanpaJudul) {
           // v1.0.46: art AI polos + frame tulisan gaya referensi (judul = nama video)
           const posterTplId = resolvePosterTemplateId(st.cover, title);
           const imgAI = await loadImage(aiUrl).catch(() => null);
@@ -871,9 +885,9 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
  * selamanya walau pengguna sudah ganti gaya → cover poster keluar hitam. */
 export function coverSignature(c: CoverConfig): string {
   return [
-    // v1.0.48: bump versi gaya — bug ukuran judul poster diperbaiki (font tak
-    // lagi terkunci di maksimum + tidak ada "…") → cover lama dibuat ulang
-    "v49",
+    // v1.0.50: bump versi gaya — template Papan Kapur & Epik diganti Gala Malam +
+    // Neon Panggung (judul di bawah), mode bingkai sinematik, fix dobel judul
+    "v50",
     c.mode,
     c.bgStyle,
     (c.posterPrompt ?? "").trim() ? "prompt" : "default",
@@ -881,6 +895,7 @@ export function coverSignature(c: CoverConfig): string {
     // v1.0.46: mode teks & template poster ikut kunci — ganti setelan → cover lama basi
     c.posterTextMode ?? "app",
     c.posterArtMode ?? "ai",
+    c.posterTextIsi ?? "judul",
     c.posterTemplateId ?? "auto",
     c.templateId,
     c.frameStyle ?? "none",

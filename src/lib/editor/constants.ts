@@ -302,6 +302,6 @@ export interface PosterTemplate {
 export const POSTER_TEMPLATES: PosterTemplate[] = [
   { id: "poster-hollywood", name: "Hollywood · ZOMBIELAND", desc: "Judul raksasa oranye-merah di atas, gaya blockbuster klasik" },
   { id: "poster-komik", name: "Komik · HUMOR #BAPER", desc: "Judul kuning komik + dekor pop-art, miring ala kartun" },
-  { id: "poster-sekolah", name: "Papan Kapur · ENIGMA", desc: "Papan tulis kayu + judul kapur putih tengah-atas" },
-  { id: "poster-epik", name: "Epik · Beauty & the Beast", desc: "Judul serif emas elegan tengah-atas ala film fantasi" },
+  { id: "poster-gala", name: "Gala Malam · PREMIERE", desc: "Judul serif putih garis emas di BAWAH, elegan ala premiere" },
+  { id: "poster-neon", name: "Neon Panggung · LIVE", desc: "Judul neon cyan-magenta di BAWAH + bingkai neon ala konser" },
 ];
