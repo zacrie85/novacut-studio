@@ -14,7 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useEditor } from "@/lib/editor/store";
 import { fmtEta, fmtSize, fmtTime, POSTER_TEMPLATES } from "@/lib/editor/constants";
-import { bersihkanJudul, COVER_FRAMES, jalurPosterAI, kesalahanPosterAI, POSTER_PROMPT_DEFAULT } from "@/lib/editor/covers";
+import { bersihkanJudul, COVER_FRAMES, jalurPosterAI, alasanJalurPosterAI, kesalahanPosterAI, POSTER_PROMPT_DEFAULT } from "@/lib/editor/covers";
 import AIKeyCard from "./AIKeyCard";
 import { ensureCoverAsset, regenAllCoverPrompts, regenCoverWithFrame, runBatchExport, triggerDownload } from "@/lib/editor/exporter";
 import type { CoverConfig, CoverFrameStyle } from "@/lib/editor/types";
@@ -482,6 +482,20 @@ export function SimpleMode() {
                                 ⚡ Terapkan prompt ini ke semua video
                               </button>
                             )}
+                            {/* v1.0.49: BASIS POSTER — AI menyentuh adegan asli (edit
+                            frame via CF flux-2) ATAU adegan ASLI + grade studio lokal
+                            (0 Neuron, identitas 100%, judul tetap ditulis app) */}
+                            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                              <select
+                                value={cover.posterArtMode ?? "ai"}
+                                onChange={(e) => useEditor.getState().setCover({ posterArtMode: e.target.value === "asli" ? "asli" : "ai" })}
+                                className="rounded-md border border-white/15 bg-black/40 px-2 py-1.5 text-[11px] text-gray-200"
+                                title="Dasar gambar poster: hasil sentuhan AI, atau adegan asli persis dari video"
+                              >
+                                <option value="ai">🤖 AI sentuh adegan (edit frame)</option>
+                                <option value="asli">🎬 Adegan asli + grade studio (0 Neuron)</option>
+                              </select>
+                            </div>
                             {/* v1.0.46: TEKS JUDUL POSTER — App (art AI polos + judul
                             ditulis aplikasi, ejaan selalu benar) atau AI (perilaku lama) */}
                             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -682,8 +696,8 @@ export function SimpleMode() {
                   </div>
                   <div className="space-y-2 p-3">
                     <div className="flex items-center justify-between text-[10px]">
-                      <span className={posterAIBerhasil && !jalurPosterAI().includes("edit") ? "font-semibold text-yellow-400" : posterAIBerhasil ? "font-semibold text-emerald-400" : "font-semibold text-amber-400/90"}>
-                        {cover.bgStyle === "poster" ? (posterAIBerhasil ? (jalurPosterAI().includes("edit") ? "● Poster AI dari frame video" : "● Poster AI teks-saja (edit frame gagal)") : cover.coverAssetId ? "○ Frame klasik (AI gagal)" : "○ Belum ada poster") : cover.coverAssetId ? "● Template klasik" : "○ Belum ada cover"}
+                      <span className={posterAIBerhasil && !jalurPosterAI().includes("edit") ? "font-semibold text-yellow-400" : posterAIBerhasil ? "font-semibold text-emerald-400" : cover.posterArtMode === "asli" ? "font-semibold text-sky-300" : "font-semibold text-amber-400/90"}>
+                        {cover.bgStyle === "poster" ? (posterAIBerhasil ? (jalurPosterAI().includes("edit") ? "● Poster AI dari frame video" : `● Poster AI teks-saja — ${alasanJalurPosterAI() || "edit frame gagal"}`) : cover.posterArtMode === "asli" ? "○ Adegan asli + grade studio (0 Neuron)" : cover.coverAssetId ? "○ Frame klasik (AI gagal)" : "○ Belum ada poster") : cover.coverAssetId ? "● Template klasik" : "○ Belum ada cover"}
                       </span>
                       <span className="font-mono text-gray-500">{cover.bgStyle === "poster" ? "poster Hollywood" : "template"}</span>
                     </div>

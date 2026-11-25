@@ -481,58 +481,102 @@ function registerFSIpc() {
     }
   };
   // v1.0.40 — FLUX.2 Klein 4B (model EDITING): frame video dikirim UTUH sebagai
-  // gambar input, poster dilukis DARI frame itu (wajah/adegan terjaga) — bukan
-  // lagi sekadar deskripsi teks. Skema resmi CF: input multipart/form-data
-  // (prompt + gambar), output {image: base64}. Dicoba 3 bentuk (multipart →
-  // JSON image → JSON images) bila API menolak salah satu bentuk.
+  // gambar input, poster dilukis DARI frame itu (wajah/adegan terjaga).
+  // v1.0.49 — RANTAI ROBUST (keluhan: "poster masih bukan adegan asli"): jalur
+  // edit dulu GAGAL diam-diam (Model Agreement BFL / bentuk payload) → jatuh ke
+  // txt2img yang MENGARANG orang baru. Kini:
+  //  (1) urutan disusun ulang — multipart TANPA width/height dulu (edit murni:
+  //      komposisi, framing & aspek frame asli dijaga persis);
+  //  (2) attempt OpenAI-compatible POST /ai/v1/images/edits;
+  //  (3) FLUX.2 dev (multi-reference, identitas terkuat) sebagai kuat terakhir;
+  //  (4) Model Agreement BFL disetujui OTOMATIS (pola fix Llama v1.0.41) lalu
+  //      seluruh rantai diulang SEKALI;
+  //  (5) setiap attempt diberi label sehingga alasan gagal terlihat di UI.
   const dataUrlToBuf = (dataUrl) => Buffer.from(String(dataUrl || "").replace(/^data:[^,]+,/, ""), "base64");
-  const cfEditPoster = async (prompt, dataUrl, cf, wide) => {
-    const url = `${CF_BASE}/accounts/${cf.account}/ai/run/@cf/black-forest-labs/flux-2-klein-4b`;
+  const cfAgreeModel = async (cf, model) => {
+    try {
+      await cfRun(cf, model, { prompt: "agree" }, 30000);
+    } catch { /* agreement percobaan — biarkan gagal diam-diam */ }
+  };
+  const ambilGambar = (r) => (r?.image ? `data:image/jpeg;charset=utf-8;base64,${r.image}` : null);
+  const cfEditKlein = async (model, prompt, dataUrl, cf, wide) => {
+    const url = `${CF_BASE}/accounts/${cf.account}/ai/run/${model}`;
     const auth = { Authorization: `Bearer ${cf.token}` };
     const body64 = String(dataUrl).split(",").pop() || "";
-    const ambil = (r) => (r?.image ? `data:image/jpeg;charset=utf-8;base64,${r.image}` : null);
-    // v1.0.46: resolusi lebih tinggi ±720p (permintaan pengguna) — bila skema
-    // menolak → attempt 2 tanpa rasio (persegi) tetap jadi jaring aman
     const rasio = wide ? { width: 1280, height: 720 } : { width: 720, height: 1280 };
     let lastErr = null;
-    // 1) multipart/form-data + rasio proyek — bentuk resmi schema (multipart
-    //    required); uji nyata v1.0.41: width/height diterima, output 1024x576 ✓
-    try {
+    const coba = async (label, eksekusi) => {
+      try {
+        const img = await eksekusi();
+        if (img) return img;
+        throw new Error("respons gambar kosong");
+      } catch (err) {
+        lastErr = new Error(`${label}: ${String((err && err.message) || err).slice(0, 140)}`);
+        return null;
+      }
+    };
+    const multipart = async (dgnRasio) => {
       const fd = new FormData();
       fd.append("prompt", prompt.slice(0, 1800));
       fd.append("image", new Blob([dataUrlToBuf(dataUrl)], { type: "image/jpeg" }), "frame.jpg");
-      fd.append("width", String(rasio.width));
-      fd.append("height", String(rasio.height));
+      if (dgnRasio) {
+        fd.append("width", String(rasio.width));
+        fd.append("height", String(rasio.height));
+      }
       const res = await fetch(url, { method: "POST", headers: auth, body: fd, signal: AbortSignal.timeout(180000) });
       const json = await res.json().catch(() => ({}));
-      const img = ambil(json?.result);
+      const img = ambilGambar(json?.result);
       if (res.ok && json?.success !== false && img) return img;
-      lastErr = new Error(json?.errors?.[0]?.message || `HTTP ${res.status}`);
-    } catch (err) { lastErr = err; }
-    // 2) multipart tanpa rasio (output persegi) — jaring pengaman moderation
-    try {
+      throw new Error(json?.errors?.[0]?.message || `HTTP ${res.status}`);
+    };
+    // 1) multipart TANPA rasio — edit murni: keluaran mengikuti aspek frame asli
+    const a1 = await coba("multipart", () => multipart(false));
+    if (a1) return a1;
+    // 2) multipart + rasio proyek (skema resmi; jaring aman moderation)
+    const a2 = await coba("multipart-rasio", () => multipart(true));
+    if (a2) return a2;
+    // 3) JSON {prompt, image: base64}
+    const a3 = await coba("json-image", async () => ambilGambar(await cfRun(cf, model, { prompt: prompt.slice(0, 1800), image: body64 }, 180000)));
+    if (a3) return a3;
+    // 4) JSON {prompt, images: [base64]} (nama multi-reference)
+    const a4 = await coba("json-images", async () => ambilGambar(await cfRun(cf, model, { prompt: prompt.slice(0, 1800), images: [body64] }, 180000)));
+    if (a4) return a4;
+    // 5) OpenAI-compatible: POST /ai/v1/images/edits (multipart model+prompt+image)
+    const a5 = await coba("images-edits", async () => {
       const fd = new FormData();
+      fd.append("model", model);
       fd.append("prompt", prompt.slice(0, 1800));
       fd.append("image", new Blob([dataUrlToBuf(dataUrl)], { type: "image/jpeg" }), "frame.jpg");
-      const res = await fetch(url, { method: "POST", headers: auth, body: fd, signal: AbortSignal.timeout(180000) });
+      const res = await fetch(`${CF_BASE}/accounts/${cf.account}/ai/v1/images/edits`, { method: "POST", headers: auth, body: fd, signal: AbortSignal.timeout(180000) });
       const json = await res.json().catch(() => ({}));
-      const img = ambil(json?.result);
-      if (res.ok && json?.success !== false && img) return img;
-      lastErr = new Error(json?.errors?.[0]?.message || `HTTP ${res.status}`);
-    } catch (err) { lastErr = err; }
-    // 2) JSON {prompt, image: base64}
+      const b64 = json?.data?.[0]?.b64_json || json?.result?.image || json?.image || "";
+      if (res.ok && b64) return `data:image/jpeg;charset=utf-8;base64,${b64}`;
+      throw new Error(json?.error?.message || json?.errors?.[0]?.message || `HTTP ${res.status}`);
+    });
+    if (a5) return a5;
+    throw lastErr || new Error("semua bentuk payload edit gagal");
+  };
+  const cfEditPoster = async (prompt, dataUrl, cf, wide) => {
+    const rantai = async () => {
+      try {
+        return await cfEditKlein("@cf/black-forest-labs/flux-2-klein-4b", prompt, dataUrl, cf, wide);
+      } catch (errKlein) {
+        // 6) kuat terakhir: FLUX.2 dev — multi-reference, identitas paling kuat
+        return await cfEditKlein("@cf/black-forest-labs/flux-2-dev", prompt, dataUrl, cf, wide);
+      }
+    };
     try {
-      const r = await cfRun(cf, "@cf/black-forest-labs/flux-2-klein-4b", { prompt: prompt.slice(0, 1800), image: body64 }, 180000);
-      const img = ambil(r);
-      if (img) return img;
-    } catch (err) { lastErr = err; }
-    // 3) JSON {prompt, images: [base64]} (nama multi-reference editing)
-    try {
-      const r = await cfRun(cf, "@cf/black-forest-labs/flux-2-klein-4b", { prompt: prompt.slice(0, 1800), images: [body64] }, 180000);
-      const img = ambil(r);
-      if (img) return img;
-    } catch (err) { lastErr = err; }
-    throw lastErr || new Error("jalur edit Cloudflare gagal");
+      return await rantai();
+    } catch (err) {
+      // v1.0.49: Model Agreement BFL wajib disetujui SEKALI per akun (pola sama
+      // dgn fix Llama v1.0.41) — setujui otomatis lalu ulang rantai SEKALI.
+      if (/agree|terms|agreement|licens/i.test(String((err && err.message) || err))) {
+        await cfAgreeModel(cf, "@cf/black-forest-labs/flux-2-klein-4b");
+        await cfAgreeModel(cf, "@cf/black-forest-labs/flux-2-dev");
+        return await rantai();
+      }
+      throw err;
+    }
   };
   // v1.0.40: prompt poster diperbaiki — judul ASLI dari video diekstrak dan
   // diwajibkan jadi satu-satunya teks besar; kata "Hollywood" tidak dipakai lagi
@@ -585,6 +629,10 @@ function registerFSIpc() {
       `Transform this REAL PHOTOGRAPH into a cinematic movie poster while keeping it a REAL PHOTO — the output must look like an actual photograph, NOT an illustration. ` +
       `REAL-PHOTO LOOK (HIGHEST PRIORITY): real people with natural skin texture, real hair, real fabric, real background; shot on a professional cinema camera; NO cartoon, no anime, no drawing, no painting, no 3D render, no CGI, no plastic skin, no beauty filter. ` +
       `IDENTITY LOCK (HIGHEST PRIORITY): keep EXACTLY the same person(s) from the input photo — same number of people, same faces, hairstyle, clothing, props — and the same setting/background. ` +
+      // v1.0.49: instruksi SUBTLE EDIT — dulu model boleh mere-imagine adegan walau
+      // orangnya "dipertahankan" (komposisi berubah total). Kini edit-tingkat-kecil
+      // diwajibkan: komposisi/framing/crop/aspek foto asli TIDAK berubah.
+      `SUBTLE EDIT (img2img, HIGHEST PRIORITY): the input photo IS the poster background — keep its EXACT composition, framing, crop, camera angle, aspect ratio and subject placement; output the SAME photograph with ONLY lighting, color grade and atmosphere changed; do NOT re-imagine, re-frame, or re-draw the scene. ` +
       `Do NOT add, remove, or replace any person; do NOT invent a new location. ` +
       `If the style instructions mention a number of characters, arrange THE PEOPLE FROM THE PHOTO in that composition — never invent new people. ` +
       `Apply ONLY realistic AI touches: dramatic cinematic lighting, professional color grade, subtle atmosphere (rim light, haze, soft glow) — everything else stays the real photo. ` +
@@ -724,13 +772,17 @@ function registerFSIpc() {
         const deskripsi = await cfDescribeScene(image, cf);
         // v1.0.40: EDIT dulu — frame utuh dikirim ke FLUX.2 Klein 4B (wajah &
         // adegan terjaga); bila gagal → txt2img FLUX.1 schnell (deskripsi adegan).
-        try {
-          const poster = await cfEditPoster(cfEditPrompt(prompt, deskripsi, judul), image, cf, payload?.size !== "768x1344");
-          return { ok: true, image: poster, via: "cloudflare-edit" };
-        } catch (errEdit) {
-          const poster = await cfGeneratePoster(cfPosterPrompt(prompt, deskripsi, judul), cf, payload?.size !== "768x1344");
-          return { ok: true, image: poster, via: "cloudflare-txt2img" };
-        }
+      try {
+        const poster = await cfEditPoster(cfEditPrompt(prompt, deskripsi, judul), image, cf, payload?.size !== "768x1344");
+        return { ok: true, image: poster, via: "cloudflare-edit" };
+      } catch (errEdit) {
+        // v1.0.49: alasan gagal edit dikirim ke UI (label status) — dulu diam-diam
+        const alasanEdit = String((errEdit && errEdit.message) || errEdit).slice(0, 140);
+        // v1.0.49: agreement BFL juga berlaku utk schnell (txt2img) — setujui + lanjut
+        if (/agree|terms|agreement|licens/i.test(alasanEdit)) await cfAgreeModel(cf, "@cf/black-forest-labs/flux-1-schnell");
+        const poster = await cfGeneratePoster(cfPosterPrompt(prompt, deskripsi, judul), cf, payload?.size !== "768x1344");
+        return { ok: true, image: poster, via: "cloudflare-txt2img", detail: alasanEdit };
+      }
       } catch (err) {
         return { ok: false, error: String((err && err.message) || err).slice(0, 200) };
       }

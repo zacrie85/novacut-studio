@@ -166,6 +166,10 @@ export interface CoverConfig {
    * dulu AI kadang salah eja "OFFITIL MUSC VIEEO"); "ai": perilaku lama, AI menulis
    * judul langsung di poster. */
   posterTextMode?: "app" | "ai";
+  /** v1.0.49: dasar gambar poster — "ai" (default): frame dikirim ke AI utk disentuh
+   * (CF edit / img2img); "asli": adegan video ASLI langsung jadi dasar poster (grade
+   * sinematik + vignette lokal, TANPA panggilan AI → 0 Neuron, identitas 100%). */
+  posterArtMode?: "ai" | "asli";
   /** v1.0.46: template judul poster saat posterTextMode "app" — "auto" = dipilih
    * otomatis sesuai judul video, atau id template dari COVER_TEMPLATES. */
   posterTemplateId?: string;

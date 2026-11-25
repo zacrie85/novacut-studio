@@ -806,11 +806,26 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
   }
   const tpl = aiRecommendTemplates(title, brightness, 1)[0] ?? COVER_TEMPLATES[0];
   const posterOn = st.cover.bgStyle === "poster";
-  // v1.0.35: POSTER HOLLYWOOD AI — frame adegan (detik 5–60) + prompt → poster
-  // sinematik utuh dibuat AI (judul ditulis AI di poster sesuai prompt). Gagal AI
-  // → fallback frame ter-grade tanpa teks (judul ditulis overlay mesin render).
+  // v1.0.49: mode "asli" — adegan video ASLI langsung jadi dasar poster (grade
+  // sinematik + vignette lokal, TANPA panggilan AI → 0 Neuron, identitas 100%).
+  // Judul tetap ditulis via template (posterTextMode "app") seperti jalur AI.
+  const artAsli = st.cover.posterArtMode === "asli";
   if (posterOn) {
     if (frameUrl) {
+      if (artAsli) {
+        const fbUrl = await posterFallbackDataURL(frameUrl, width, height);
+        if (fbUrl) {
+          if ((st.cover.posterTextMode ?? "app") === "app") {
+            const posterTplId = resolvePosterTemplateId(st.cover, title);
+            const imgFb = await loadImage(fbUrl).catch(() => null);
+            if (imgFb) {
+              const composed = renderPosterTextDataURL({ img: imgFb, title, posterTplId, frame: st.cover.frameStyle }, width, height);
+              if (composed) return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: composed, duration: 0, width, height, aiMade: false };
+            }
+          }
+          return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: fbUrl, duration: 0, width, height, aiMade: false };
+        }
+      }
       const size = width > height ? "1344x768" : "768x1344";
       // v1.0.46: mode "app" (default) — AI melukis art TANPA teks, judul ditulis
       // aplikasi via template (ejaan 100% benar); mode "ai" = perilaku lama
@@ -858,13 +873,14 @@ export function coverSignature(c: CoverConfig): string {
   return [
     // v1.0.48: bump versi gaya — bug ukuran judul poster diperbaiki (font tak
     // lagi terkunci di maksimum + tidak ada "…") → cover lama dibuat ulang
-    "v48",
+    "v49",
     c.mode,
     c.bgStyle,
     (c.posterPrompt ?? "").trim() ? "prompt" : "default",
     c.posterTitleOverlay ? "ovl" : "ov0",
     // v1.0.46: mode teks & template poster ikut kunci — ganti setelan → cover lama basi
     c.posterTextMode ?? "app",
+    c.posterArtMode ?? "ai",
     c.posterTemplateId ?? "auto",
     c.templateId,
     c.frameStyle ?? "none",

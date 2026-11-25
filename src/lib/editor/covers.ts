@@ -614,12 +614,13 @@ export function renderPosterTextDataURL(
       const fit1 = posterJudulFit(ctx, kata[0], fam, "400", w * 0.8, h * 0.06, h * 0.03, 2);
       fit1.lines.forEach((ln, i) => posterTulisOutline(ctx, ln, w / 2, yTop + i * fit1.fs * 1.08, [["#fff", fit1.fs * 0.26], ["#111", fit1.fs * 0.12]], "#ffffff", i % 2 ? 0.04 : -0.05));
       const sisa = kata.slice(1).join(" ");
-      const fit2 = posterJudulFit(ctx, sisa, fam, "400", w * 0.86, h * 0.08, h * 0.032, 3);
+      const fit2 = posterJudulFit(ctx, sisa, fam, "400", w * 0.82, h * 0.08, h * 0.032, 3);
       fit2.lines.forEach((ln, i) => posterTulisOutline(ctx, ln, w / 2, yTop + (fit1.lines.length - 1) * fit1.fs * 1.08 + fit1.fs * 1.25 + i * fit2.fs * 1.06, [["#fff", fit2.fs * 0.22], ["#111", fit2.fs * 0.1]], "#ffd400", 0.035));
     }
-    posterBurst(ctx, w * 0.12, h * 0.3, w * 0.075, 8, "#ff4757", 0.3);
-    posterBurst(ctx, w * 0.885, h * 0.24, w * 0.06, 10, "#1dd1f5", -0.2);
-    posterBurst(ctx, w * 0.075, h * 0.55, w * 0.055, 8, "#ffd400", 0.15);
+    // v1.0.49: burst digeser keluar zona judul (dulu menimpa baris terakhir)
+    posterBurst(ctx, w * 0.06, h * 0.38, w * 0.05, 8, "#ff4757", 0.3);
+    posterBurst(ctx, w * 0.945, h * 0.2, w * 0.042, 10, "#1dd1f5", -0.2);
+    posterBurst(ctx, w * 0.07, h * 0.58, w * 0.05, 8, "#ffd400", 0.15);
     // strip premiere kuning di dasar (dekor, tanpa teks palsu)
     ctx.fillStyle = "#ffd400";
     ctx.fillRect(0, h * 0.918, w, h * 0.052);
@@ -1179,6 +1180,13 @@ export function kesalahanPosterAI(): string {
   return _kesalahanPosterAI;
 }
 let _jalurPosterAI = "";
+let _alasanJalur = "";
+/** v1.0.49: alasan jalur edit gagal (dari penyedia) — tampil di label status agar
+ * pengguna tahu mengapa poster jatuh ke teks-saja (mis. "multipart: HTTP 403
+ * model terms"). Kosong bila jalur edit sukses. */
+export function alasanJalurPosterAI(): string {
+  return _alasanJalur;
+}
 /** v1.0.45: jalur pembuatan poster TERAKHIR — "cloudflare-edit"/"publik-edit" =
  * frame video benar-benar dipakai (img2img); "cloudflare-txt2img"/"publik"/"sdk" =
  * poster digambar dari teks saja (edit frame gagal diam-diam → kini terlihat di
@@ -1226,7 +1234,9 @@ export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size:
     if (res?.ok && res.image) {
       _kesalahanPosterAI = "";
       // v1.0.45: catat jalur sukses (edit = frame dipakai; txt2img = teks saja)
+      // v1.0.49: + alasan gagal edit (mis. agreement/moderation) utk label status
       _jalurPosterAI = String(res?.via || "");
+      _alasanJalur = String(res?.detail || "");
       return res.image;
     }
     _kesalahanPosterAI = terjemahkanKesalahanAI(String(res?.error || ""));
