@@ -7,7 +7,7 @@
 //  2) MODE KOMPATIBEL: rekam real-time via MediaRecorder (jalur lama).
 // Fitur: cover otomatis, teks judul/deskripsi/part, subtitle AI (bahasa Indonesia).
 
-import { bersihkanJudul, grabFrame, aiRecommendTemplates, analyzeVideoFrames, buildOutpaintPrompt, buildPosterPrompt, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, posterAsliCineDataURL, posterFallbackDataURL, posterTimeRange, renderCoverToDataURL, renderPosterTextDataURL, aiPosterizeDataURL, resolvePosterTemplateId } from "./covers";
+import { bersihkanJudul, grabFrame, aiRecommendTemplates, analyzeVideoFrames, buildBackdropPrompt, buildPosterPrompt, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, posterKompositCineDataURL, posterFallbackDataURL, posterTimeRange, renderCoverToDataURL, renderPosterTextDataURL, aiPosterizeDataURL, resolvePosterTemplateId } from "./covers";
 import { COVER_TEMPLATES, partLabel, slugify, uid } from "./constants";
 import { engine } from "./engine";
 import { adjustRangesToSilence, exportRangeFast, fastSupported, AudioDecodeCache } from "./fastExport";
@@ -817,26 +817,29 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
     if (frameUrl) {
       if (artAsli) {
         const asliHitam = st.cover.posterArtMode === "aslihitam";
-        // v1.0.51: bg sinematik diolah AI (Cloudflare) — OUTPAINT: adegan asli tetap
-        // di tengah, lingkungan diperluas AI sampai kanvas PENUH 9:16. Dulu contain-fit
-        // lokal → frame landscape tampak kecil + sisa hitam kosong (keluhan pengguna).
+        // v1.0.52: KOMPOSIT DIJAMIN IDENTITAS — AI HANYA melukis LATAR KOSONG
+        // (plate sinematik tanpa orang, bgOnly); adegan ASLI digambar DI ATAS latar
+        // dgn tepi menyatu + judul selalu dari template. v1.0.51 gagal total:
+        // seluruh frame dikirim ke model edit CF (outpaint) → hasil dipenuhi gambar
+        // AI & identitas hilang + judul tak tampak (keluhan pengguna).
         if (asliHitam) {
           const textFreeO = (st.cover.posterTextMode ?? "app") === "app";
-          const aiUrlO = await aiPosterizeDataURL(frameUrl, buildOutpaintPrompt(st.cover.posterPrompt, textFreeO), width > height ? "1344x768" : "768x1344", 180000, true);
-          if (aiUrlO) {
+          const bgUrl = await aiPosterizeDataURL("", buildBackdropPrompt(st.cover.posterPrompt), width > height ? "1344x768" : "768x1344", 180000, { bgOnly: true });
+          const cineUrl = await posterKompositCineDataURL(frameUrl, bgUrl, width, height);
+          if (cineUrl) {
             if (textFreeO && !tanpaJudul) {
               const posterTplIdO = resolvePosterTemplateId(st.cover, title);
-              const imgO = await loadImage(aiUrlO).catch(() => null);
+              const imgO = await loadImage(cineUrl).catch(() => null);
               if (imgO) {
                 const composed = renderPosterTextDataURL({ img: imgO, title, posterTplId: posterTplIdO, frame: st.cover.frameStyle }, width, height);
                 if (composed) return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: composed, duration: 0, width, height, aiMade: true };
               }
             }
-            return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: aiUrlO, duration: 0, width, height, aiMade: true };
+            return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: cineUrl, duration: 0, width, height, aiMade: true };
           }
-          // AI gagal → latar hitam sinematik LOKAL (0 Neuron, wajah tetap asli)
+          // frame gagal di-decode → jatuh ke fallback klasik di bawah
         }
-        const dasar = asliHitam ? await posterAsliCineDataURL(frameUrl, width, height) : await posterFallbackDataURL(frameUrl, width, height);
+        const dasar = await posterFallbackDataURL(frameUrl, width, height);
         if (dasar) {
           // part saja: gambar polos + aiMade:true → mesin render hanya menulis
           // label PART di atas poster (judul tidak dobel)
@@ -905,9 +908,9 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
  * selamanya walau pengguna sudah ganti gaya → cover poster keluar hitam. */
 export function coverSignature(c: CoverConfig): string {
   return [
-    // v1.0.51: bump versi gaya — mode aslihitam kini outpaint AI (bg penuh 9:16),
-    // bukan lagi contain-fit lokal → cover aslihitam lama dibuat ulang
-    "v51",
+    // v1.0.52: bump versi gaya — mode aslihitam kini KOMPOSIT (AI hanya latar
+    // kosong + adegan asli di atasnya) → cover aslihitam lama dibuat ulang
+    "v52",
     c.mode,
     c.bgStyle,
     (c.posterPrompt ?? "").trim() ? "prompt" : "default",

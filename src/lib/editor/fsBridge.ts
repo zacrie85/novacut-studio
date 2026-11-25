@@ -39,7 +39,7 @@ interface NovacutFS {
  * v1.0.36: kunci API publik Z.ai milik pengguna + tes koneksi + buka halaman kunci.
  * v1.0.38: penyedia poster Z.ai/Cloudflare + preferensi kualitas HD/Hemat. */
 interface NovacutAI {
-  posterAI?: (image: string, prompt: string, size: string, provider?: string, quality?: string, expand?: boolean) => Promise<{ ok: boolean; image?: string; error?: string; via?: string }>;
+  posterAI?: (image: string, prompt: string, size: string, provider?: string, quality?: string, expand?: boolean, bgOnly?: boolean) => Promise<{ ok: boolean; image?: string; error?: string; via?: string }>;
   setAIKey?: (apiKey: string) => Promise<{ ok: boolean; error?: string }>;
   getAIKeyStatus?: () => Promise<{ hasKey: boolean }>;
   clearAIKey?: () => Promise<{ ok: boolean; error?: string }>;

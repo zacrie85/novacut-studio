@@ -1155,19 +1155,138 @@ export function buildPosterPrompt(custom: string | undefined, title: string, tex
   return `${dasar}${judulPart}. PENTING: semua tulisan pada poster harus berada di dalam area gambar dan diberi jarak aman (margin) dari tepi — tidak boleh terpotong di tepi kiri, kanan, atas, atau bawah. Jangan menulis ulang takarir, caption, atau watermark dari gambar sumber.`;
 }
 
-/** v1.0.51: prompt mode "aslihitam" — adegan ASLI + background sinematik di-OUTPAINT
- * AI (Cloudflare) sampai penuh 9:16 (dulu contain-fit lokal → frame landscape tampak
- * kecil di kanvas potret). Jalur edit proses utama memakai cfEditOutpaintPrompt;
- * prompt ini utk txt2img Mage/Z.ai + fallback. Marker [TEXTFREE] dibaca main process. */
-export function buildOutpaintPrompt(custom: string | undefined, textFree = false): string {
-  const gaya = (custom || "").trim();
+/** v1.0.52: prompt LATAR KOSONG (bgOnly) utk komposit "adegan asli + bg sinematik" —
+ * AI HANYA melukis plate lingkungan TANPA orang (identitas mustahil rusak: adegan
+ * asli tidak pernah dikirim ke AI); adegan asli digambar renderer di atasnya.
+ * Prompt Poster pengguna dipakai sebagai hint atmosfer/pencahayaan saja. */
+export function buildBackdropPrompt(custom: string | undefined): string {
+  const gaya = (custom || "").trim().slice(0, 220);
   return (
-    `[TEXTFREE][OUTPAINT] Expand this real photograph to fill the ENTIRE vertical 9:16 poster canvas: keep the original people, faces, clothing, props and poses EXACTLY unchanged, photorealistic, and EXTEND the environment naturally beyond the photo edges until the whole canvas is filled — dark cinematic atmosphere, dramatic stage lighting haze, deep teal-and-orange grade, soft bokeh, film grain, darker zones at the very top and bottom (title space). REAL PHOTOGRAPH look — no cartoon/anime/drawing/3D/CGI/plastic skin; do NOT letterbox or shrink the original photo.` +
-    (gaya ? ` Style instructions (styling only, never change the people): ${gaya}.` : "") +
-    (textFree
-      ? " Do NOT write any text, letters, numbers or logos anywhere — pure scene only; the app overlays the title separately."
-      : "")
+    `Vertical 9:16 cinematic BACKGROUND PLATE for a movie poster: an EMPTY moody concert stage environment — absolutely NO people, no faces, no silhouettes, no crowd; dramatic atmospheric haze, teal and orange stage lighting, glowing bokeh lights, deep shadows, subtle film grain, photorealistic photograph, dark cinematic mood, slightly darker at the very top and bottom edges (title space).` +
+    (gaya ? ` Atmosphere and lighting hints only (never add people or characters): ${gaya}.` : "") +
+    ` NO text, no letters, no numbers, no logos, no watermarks anywhere.`
   );
+}
+
+/** v1.0.52: KOMPOSIT "adegan asli + bg sinematik" — latar AI (plate kosong) atau
+ * gradasi lokal bila AI gagal; ADEGAN ASLI dipasang besar di tengah (lebar ±96%,
+ * tinggi maks ±66% kanvas) dgn keempat tepinya di-feather agar menyatu dgn latar
+ * seperti satu foto, lalu grade teal-orange penyatu di seluruh kanvas + vignette +
+ * grain film + fade bawah utk zona judul template. Identitas 100%: piksel adegan
+ * tidak pernah dikirim ke AI (v1.0.51: model edit mengarang ulang seluruh adegan). */
+export async function posterKompositCineDataURL(frameUrl: string, bgUrl: string | null, w: number, h: number): Promise<string | null> {
+  try {
+    const img = await loadImage(frameUrl);
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d");
+    if (!ctx) return null;
+    // latar lokal: gradasi gelap + glow panggung teal/oranye (bila AI latar gagal)
+    const latarLokal = () => {
+      ctx.fillStyle = "#05070c";
+      ctx.fillRect(0, 0, w, h);
+      const g1 = ctx.createRadialGradient(w / 2, h * 0.42, Math.min(w, h) * 0.1, w / 2, h * 0.42, Math.max(w, h) * 0.75);
+      g1.addColorStop(0, "rgba(46,96,150,0.4)");
+      g1.addColorStop(0.55, "rgba(20,40,70,0.18)");
+      g1.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g1;
+      ctx.fillRect(0, 0, w, h);
+      const g2 = ctx.createRadialGradient(w * 0.72, h * 0.6, Math.min(w, h) * 0.05, w * 0.72, h * 0.6, Math.max(w, h) * 0.5);
+      g2.addColorStop(0, "rgba(190,90,20,0.22)");
+      g2.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g2;
+      ctx.fillRect(0, 0, w, h);
+    };
+    if (bgUrl) {
+      try {
+        const bg = await loadImage(bgUrl);
+        const s = Math.max(w / (bg.naturalWidth || 2), h / (bg.naturalHeight || 2));
+        ctx.drawImage(bg, (w - (bg.naturalWidth || 2) * s) / 2, (h - (bg.naturalHeight || 2) * s) / 2, (bg.naturalWidth || 2) * s, (bg.naturalHeight || 2) * s);
+      } catch {
+        latarLokal();
+      }
+    } else {
+      latarLokal();
+    }
+    // gelapkan latar ±35% supaya adegan asli menonjol
+    ctx.fillStyle = "rgba(3,6,12,0.35)";
+    ctx.fillRect(0, 0, w, h);
+    // ADEGAN ASLI: contain lebar ±96%, tinggi maks ±66%, pusat di 46% tinggi kanvas
+    const sw = img.naturalWidth || 2;
+    const sh = img.naturalHeight || 2;
+    const s2 = Math.min((w * 0.96) / sw, (h * 0.66) / sh);
+    const dw = sw * s2;
+    const dh = sh * s2;
+    const dx = (w - dw) / 2;
+    const dy = h * 0.46 - dh / 2;
+    // feather 4 tepi: gambar ke offscreen → mask gradasi (destination-out di mask,
+    // lalu destination-in ke adegan) → tepi melebur ke latar seperti satu foto
+    const off = document.createElement("canvas");
+    off.width = Math.max(1, Math.round(dw));
+    off.height = Math.max(1, Math.round(dh));
+    const octx = off.getContext("2d");
+    if (!octx) return null;
+    octx.drawImage(img, 0, 0, off.width, off.height);
+    const mask = document.createElement("canvas");
+    mask.width = off.width;
+    mask.height = off.height;
+    const mctx = mask.getContext("2d");
+    if (!mctx) return null;
+    mctx.fillStyle = "#ffffff";
+    mctx.fillRect(0, 0, mask.width, mask.height);
+    mctx.globalCompositeOperation = "destination-out";
+    const f = Math.min(mask.width, mask.height) * 0.09;
+    const tepi = (x0: number, y0: number, x1: number, y1: number, rx: number, ry: number, rw: number, rh: number) => {
+      const g = mctx.createLinearGradient(x0, y0, x1, y1);
+      g.addColorStop(0, "rgba(0,0,0,1)");
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      mctx.fillStyle = g;
+      mctx.fillRect(rx, ry, rw, rh);
+    };
+    tepi(0, 0, 0, f, 0, 0, mask.width, f);
+    tepi(0, mask.height, 0, mask.height - f, 0, mask.height - f, mask.width, f);
+    tepi(0, 0, f, 0, 0, 0, f, mask.height);
+    tepi(mask.width, 0, mask.width - f, 0, mask.width - f, 0, f, mask.height);
+    octx.globalCompositeOperation = "destination-in";
+    octx.drawImage(mask, 0, 0);
+    octx.globalCompositeOperation = "source-over";
+    // glow/bayangan lembut di belakang adegan
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,0.8)";
+    ctx.shadowBlur = w * 0.035;
+    ctx.drawImage(off, dx, dy);
+    ctx.restore();
+    // grade teal-orange penyatu di SELURUH kanvas → komposit terasa satu foto
+    ctx.save();
+    const gradeU = ctx.createLinearGradient(0, 0, 0, h);
+    gradeU.addColorStop(0, "rgba(18,55,90,0.2)");
+    gradeU.addColorStop(0.5, "rgba(0,0,0,0)");
+    gradeU.addColorStop(1, "rgba(150,80,15,0.18)");
+    ctx.globalCompositeOperation = "overlay";
+    ctx.fillStyle = gradeU;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+    // vignette + fade bawah utk zona judul template
+    const vg = ctx.createRadialGradient(w / 2, h * 0.46, Math.min(w, h) * 0.3, w / 2, h * 0.46, Math.max(w, h) * 0.75);
+    vg.addColorStop(0, "rgba(0,0,0,0)");
+    vg.addColorStop(1, "rgba(0,0,0,0.45)");
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, w, h);
+    const fade = ctx.createLinearGradient(0, h * 0.66, 0, h);
+    fade.addColorStop(0, "rgba(4,6,10,0)");
+    fade.addColorStop(1, "rgba(4,6,10,0.85)");
+    ctx.fillStyle = fade;
+    ctx.fillRect(0, h * 0.66, w, h * 0.34);
+    // grain film di seluruh kanvas (menyatukan latar AI & adegan asli)
+    ctx.globalAlpha = 0.045;
+    ctx.fillStyle = "#ffffff";
+    for (let i = 0; i < 1000; i++) ctx.fillRect(Math.random() * w, Math.random() * h, 1.4, 1.4);
+    ctx.globalAlpha = 1;
+    return c.toDataURL("image/jpeg", 0.92);
+  } catch {
+    return null;
+  }
 }
 
 /** v1.0.46: pilih frame poster — "auto" = ikut judul (pendek / mengandung # →
@@ -1227,7 +1346,7 @@ export function terjemahkanKesalahanAI(raw: string): string {
     (s.trim() ? s.slice(0, 160) : "AI tidak mengembalikan gambar")
   );
 }
-export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size: "1344x768" | "768x1344" = "1344x768", timeoutMs = 180000, expand = false): Promise<string | null> {
+export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size: "1344x768" | "768x1344" = "1344x768", timeoutMs = 180000, opts?: { expand?: boolean; bgOnly?: boolean }): Promise<string | null> {
   if (typeof window === "undefined" || !window.novacutAI?.posterAI) {
     _kesalahanPosterAI = "";
     return null;
@@ -1238,8 +1357,9 @@ export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size:
     const provider = prefs?.provider === "cloudflare" ? "cloudflare" : prefs?.provider === "mage" ? "mage" : "zai";
     const quality = prefs?.quality === "standard" ? "standard" : "hd";
     const res = await Promise.race([
-      // v1.0.51: expand=true → main process memakai prompt OUTPAINT (mode aslihitam)
-      window.novacutAI.posterAI(frameUrl, prompt, size, provider, quality, expand),
+      // v1.0.52: opts.bgOnly → main process langsung txt2img (plate latar kosong);
+      // opts.expand (outpaint) sudah tidak dipakai — mode aslihitam kini komposit
+      window.novacutAI.posterAI(frameUrl, prompt, size, provider, quality, opts?.expand, opts?.bgOnly),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
     ]);
     if (res === null) {
