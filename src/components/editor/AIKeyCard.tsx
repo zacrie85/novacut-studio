@@ -5,9 +5,11 @@
 // Cloudflare Workers AI (GRATIS: 10.000 Neuron/hari ≈ 170 poster, tanpa kartu) +
 // toggle kualitas HD/Hemat untuk jalur Z.ai. Semua kredensial hanya di PC lokal.
 // v1.0.47: penyedia ke-3 Mage (mage.space) — gpt-image, ±9 Gems ≈ Rp145/gambar.
+// v1.0.55: penyedia ke-4 MiniMax H3 (platform.minimax.io) — mesin "Minimax H3"
+// yang sama dengan di mivo.com/generate/studio, via API resminya sendiri.
 import { useEffect, useState } from "react";
 
-type Provider = "zai" | "cloudflare" | "mage";
+type Provider = "zai" | "cloudflare" | "mage" | "minimax";
 type Quality = "hd" | "standard";
 
 export default function AIKeyCard() {
@@ -17,10 +19,12 @@ export default function AIKeyCard() {
   const [hasKey, setHasKey] = useState(false);
   const [hasCF, setHasCF] = useState(false);
   const [hasMage, setHasMage] = useState(false);
+  const [hasMiniMax, setHasMiniMax] = useState(false);
   const [val, setVal] = useState("");
   const [cfAcc, setCfAcc] = useState("");
   const [cfTok, setCfTok] = useState("");
   const [mageKey, setMageKey] = useState("");
+  const [miniKey, setMiniKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -29,9 +33,11 @@ export default function AIKeyCard() {
     void window.novacutAI?.getAIKeyStatus?.().then((s) => setHasKey(!!s?.hasKey));
     void window.novacutAI?.getCFKeyStatus?.().then((s) => setHasCF(!!s?.hasKey));
     void window.novacutAI?.getMageKeyStatus?.().then((s) => setHasMage(!!s?.hasKey));
+    void window.novacutAI?.getMiniMaxKeyStatus?.().then((s) => setHasMiniMax(!!s?.hasKey));
     void window.novacutAI?.getAIPrefs?.().then((p) => {
       if (p?.provider === "cloudflare") setProvider("cloudflare");
       if (p?.provider === "mage") setProvider("mage");
+      if (p?.provider === "minimax") setProvider("minimax");
       if (p?.quality === "standard") setQuality("standard");
     });
   }, []);
@@ -140,6 +146,37 @@ export default function AIKeyCard() {
     setHasMage(false);
     setMsg({ ok: true, text: "Kunci Mage dihapus." });
   };
+  // v1.0.55: MiniMax H3 (platform.minimax.io) — mesin "Minimax H3" di mivo.com
+  const simpanMiniMax = async () => {
+    if (busy || !miniKey.trim()) return;
+    setBusy(true);
+    setMsg(null);
+    const r = await window.novacutAI?.setMiniMaxKey?.(miniKey.trim());
+    setBusy(false);
+    if (r?.ok) {
+      setHasMiniMax(true);
+      setMiniKey("");
+      setMsg({ ok: true, text: "Kunci MiniMax tersimpan di PC ini. Poster kini via MiniMax H3 — mesin yang sama dengan \"Minimax H3\" di mivo.com." });
+    } else {
+      setMsg({ ok: false, text: r?.error || "Gagal menyimpan kunci." });
+    }
+  };
+  const tesMiniMax = async () => {
+    if (busy) return;
+    setBusy(true);
+    setMsg(null);
+    const r = await window.novacutAI?.testMiniMaxKey?.();
+    setBusy(false);
+    setMsg(r?.ok ? { ok: true, text: "Koneksi MiniMax OK — kunci valid (tes via daftar model, tanpa memakai kredit)." } : { ok: false, text: r?.error || "Koneksi gagal." });
+  };
+  const hapusMiniMax = async () => {
+    if (busy) return;
+    setBusy(true);
+    await window.novacutAI?.clearMiniMaxKey?.();
+    setBusy(false);
+    setHasMiniMax(false);
+    setMsg({ ok: true, text: "Kunci MiniMax dihapus." });
+  };
 
   const pill = (aktif: boolean) =>
     `rounded-md px-2 py-1 text-[11px] font-semibold transition ${aktif ? "border border-cyan-400/60 bg-cyan-500/15 text-cyan-100" : "border border-white/10 bg-white/[0.03] text-gray-400 hover:text-gray-200"}`;
@@ -148,8 +185,8 @@ export default function AIKeyCard() {
     <div className="space-y-1.5 rounded-md border border-cyan-500/25 bg-cyan-500/[0.06] p-2">
       <div className="flex items-center justify-between gap-2">
         <div className="text-[11px] font-bold uppercase tracking-wider text-cyan-300/90">Mesin Poster AI</div>
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${provider === "cloudflare" ? (hasCF ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300") : provider === "mage" ? (hasMage ? "bg-emerald-500/15 text-emerald-300" : "bg-white/10 text-gray-400") : hasKey ? "bg-emerald-500/15 text-emerald-300" : "bg-white/10 text-gray-400"}`}>
-          {provider === "cloudflare" ? (hasCF ? "● CF siap (gratis)" : "○ CF belum diisi") : provider === "mage" ? (hasMage ? "● Mage siap (±Rp145)" : "○ Mage belum ada kunci") : hasKey ? "● Kunci Z.ai aktif" : "○ Z.ai belum ada kunci"}
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${provider === "cloudflare" ? (hasCF ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300") : provider === "mage" ? (hasMage ? "bg-emerald-500/15 text-emerald-300" : "bg-white/10 text-gray-400") : provider === "minimax" ? (hasMiniMax ? "bg-emerald-500/15 text-emerald-300" : "bg-white/10 text-gray-400") : hasKey ? "bg-emerald-500/15 text-emerald-300" : "bg-white/10 text-gray-400"}`}>
+          {provider === "cloudflare" ? (hasCF ? "● CF siap (gratis)" : "○ CF belum diisi") : provider === "mage" ? (hasMage ? "● Mage siap (±Rp145)" : "○ Mage belum ada kunci") : provider === "minimax" ? (hasMiniMax ? "● MiniMax siap (mesin Mivo)" : "○ MiniMax belum ada kunci") : hasKey ? "● Kunci Z.ai aktif" : "○ Z.ai belum ada kunci"}
         </span>
       </div>
 
@@ -157,6 +194,7 @@ export default function AIKeyCard() {
         <button onClick={() => gantiProvider("zai")} className={pill(provider === "zai")}>Z.ai (±Rp250/poster)</button>
         <button onClick={() => gantiProvider("cloudflare")} className={pill(provider === "cloudflare")}>Cloudflare (GRATIS)</button>
         <button onClick={() => gantiProvider("mage")} className={pill(provider === "mage")}>Mage (±Rp145/poster)</button>
+        <button onClick={() => gantiProvider("minimax")} className={pill(provider === "minimax")}>MiniMax H3 (mesin Mivo)</button>
       </div>
 
       {provider === "zai" ? (
@@ -261,6 +299,56 @@ export default function AIKeyCard() {
               className="rounded-md border border-fuchsia-500/40 bg-fuchsia-500/10 px-2 py-1 text-[10px] font-semibold text-fuchsia-100 transition hover:border-fuchsia-400"
             >
               🔑 Buka mage.space → API Keys ↗
+            </button>
+          </>
+        )
+      ) : provider === "minimax" ? (
+        !window.novacutAI?.setMiniMaxKey ? (
+          <div className="text-[10px] leading-relaxed text-amber-300/80">
+            Jalur MiniMax tersedia di NOVACUT Studio v1.0.55+ — update aplikasimu.
+          </div>
+        ) : hasMiniMax ? (
+          <>
+            <div className="text-[10px] leading-relaxed text-gray-500">
+              Poster via <b className="text-orange-300/90">MiniMax H3 — mesin yang SAMA dengan &quot;Minimax H3&quot; di mivo.com</b>, lewat API resmi platform.minimax.io. Frame videomu dikirim sebagai referensi (img2img, seperti &quot;Add reference images&quot; di Mivo), prompt rewrite otomatis, teks tetap ditulis aplikasi. Bayar per token — perkiraan ±Rp100-500/poster 1K (cek tagihan di dashboard).
+            </div>
+            <div className="flex gap-1.5">
+              <button onClick={tesMiniMax} disabled={busy} className="rounded-md border border-orange-500/40 bg-orange-500/10 px-2 py-1 text-[11px] font-medium text-orange-100 transition hover:border-orange-400 disabled:opacity-50">
+                {busy ? "Menguji…" : "Tes Koneksi"}
+              </button>
+              <button onClick={hapusMiniMax} disabled={busy} className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-gray-300 transition hover:border-red-500/40 disabled:opacity-50">
+                Hapus Kunci
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="text-[10px] leading-relaxed text-gray-500">
+              <b className="text-orange-300/90">Mesin &quot;Minimax H3&quot; dari mivo.com, via API resminya</b> — prompt rewrite otomatis (sama dgn di Mivo), referensi hingga 16 gambar, hasil 1K-4K. Ikuti 4 langkah:
+              <br /><b>1.</b> Buka <b>platform.minimax.io</b> → daftar/masuk (Google atau email).
+              <br /><b>2.</b> Menu <b>Billing/Top-up</b> → isi kredit (kartu internasional; QRIS hanya untuk top-up di web Mivo).
+              <br /><b>3.</b> Halaman <b>API Keys</b> → <b>Create new key</b> → salin (hanya tampil sekali!).
+              <br /><b>4.</b> Tempel di bawah → Simpan → Tes Koneksi → klik 🎨 Buat Ulang Poster.
+            </div>
+            <div className="flex gap-1.5">
+              <input
+                type="password"
+                value={miniKey}
+                onChange={(e) => setMiniKey(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && void simpanMiniMax()}
+                placeholder="Tempel kunci API MiniMax (…)"
+                className="min-w-0 flex-1 rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] text-gray-200 placeholder:text-gray-600 focus:border-orange-500/50 focus:outline-none"
+                aria-label="Kunci API MiniMax"
+              />
+              <button onClick={() => void simpanMiniMax()} disabled={busy || !miniKey.trim()} className="rounded-md border border-orange-500/40 bg-orange-500/15 px-2 py-1 text-[11px] font-semibold text-orange-100 transition hover:border-orange-400 disabled:opacity-50">
+                Simpan
+              </button>
+            </div>
+            <button
+              onClick={() => void window.novacutAI?.openMiniMaxAPI?.()}
+              className="rounded-md border border-orange-500/40 bg-orange-500/10 px-2 py-1 text-[10px] font-semibold text-orange-100 transition hover:border-orange-400"
+            >
+              🔑 Buka platform.minimax.io → API Keys ↗
             </button>
           </>
         )

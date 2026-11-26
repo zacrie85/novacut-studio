@@ -1371,7 +1371,8 @@ export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size:
   try {
     const prefs = await window.novacutAI?.getAIPrefs?.().catch(() => null);
     // v1.0.47: penyedia ke-3 Mage (mage.space — gpt-image, ±9 Gems/poster)
-    const provider = prefs?.provider === "cloudflare" ? "cloudflare" : prefs?.provider === "mage" ? "mage" : "zai";
+    // v1.0.55: penyedia ke-4 MiniMax H3 (platform.minimax.io — mesin "Minimax H3" di mivo.com)
+    const provider = prefs?.provider === "cloudflare" ? "cloudflare" : prefs?.provider === "mage" ? "mage" : prefs?.provider === "minimax" ? "minimax" : "zai";
     const quality = prefs?.quality === "standard" ? "standard" : "hd";
     const res = await Promise.race([
       // v1.0.52: opts.bgOnly → main process langsung txt2img (plate latar kosong);

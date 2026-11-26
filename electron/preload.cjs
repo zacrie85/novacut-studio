@@ -51,6 +51,12 @@ contextBridge.exposeInMainWorld("novacutAI", {
   clearMageKey: () => ipcRenderer.invoke("mage:clear-key"),
   testMageKey: () => ipcRenderer.invoke("mage:test-key"),
   openMageAPI: () => ipcRenderer.invoke("app:open-url", { url: "https://www.mage.space/api?tab=api-keys" }),
+  // v1.0.55: penyedia ke-4 MiniMax H3 (platform.minimax.io — mesin "Minimax H3" di mivo.com)
+  setMiniMaxKey: (apiKey) => ipcRenderer.invoke("minimax:set-key", { apiKey }),
+  getMiniMaxKeyStatus: () => ipcRenderer.invoke("minimax:key-status"),
+  clearMiniMaxKey: () => ipcRenderer.invoke("minimax:clear-key"),
+  testMiniMaxKey: () => ipcRenderer.invoke("minimax:test-key"),
+  openMiniMaxAPI: () => ipcRenderer.invoke("app:open-url", { url: "https://platform.minimax.io/user-center/basic-information/interface-key" }),
   // v1.0.38: preferensi penyedia & kualitas poster (disimpan lokal)
   getAIPrefs: () => ipcRenderer.invoke("ai:get-prefs"),
   setAIPrefs: (prefs) => ipcRenderer.invoke("ai:set-prefs", prefs),

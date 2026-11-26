@@ -496,7 +496,7 @@ export function SimpleMode() {
                                 <option value="ai">🤖 AI sentuh adegan (edit frame)</option>
                                 <option value="asli">🎬 Adegan asli + grade studio (0 Neuron)</option>
                                 <option value="aslihitam">🎞️ Adegan asli + bg sinematik AI (Cloudflare)</option>
-                                <option value="kisah">📕 Poster kisah AI — adegan baru dari judul (CF gratis / Mage)</option>
+                                <option value="kisah">📕 Poster kisah AI — adegan baru dari judul (CF gratis / Mage / MiniMax)</option>
                               </select>
                               {/* v1.0.50: TEKS DI POSTER — judul + part (normal) atau
                               part SAJA (video sudah punya tulisan judul bawaan → judul

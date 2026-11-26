@@ -57,6 +57,12 @@ interface NovacutAI {
   clearMageKey?: () => Promise<{ ok: boolean; error?: string }>;
   testMageKey?: () => Promise<{ ok: boolean; error?: string }>;
   openMageAPI?: () => Promise<{ ok: boolean; error?: string }>;
+  // v1.0.55: penyedia ke-4 MiniMax H3 (platform.minimax.io — mesin "Minimax H3" di mivo.com)
+  setMiniMaxKey?: (apiKey: string) => Promise<{ ok: boolean; error?: string }>;
+  getMiniMaxKeyStatus?: () => Promise<{ hasKey: boolean }>;
+  clearMiniMaxKey?: () => Promise<{ ok: boolean; error?: string }>;
+  testMiniMaxKey?: () => Promise<{ ok: boolean; error?: string }>;
+  openMiniMaxAPI?: () => Promise<{ ok: boolean; error?: string }>;
   getAIPrefs?: () => Promise<{ provider: string; quality: string }>;
   setAIPrefs?: (prefs: { provider?: string; quality?: string }) => Promise<{ ok: boolean; error?: string }>;
 }

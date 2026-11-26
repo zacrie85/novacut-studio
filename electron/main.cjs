@@ -399,6 +399,17 @@ function registerFSIpc() {
       return "";
     }
   };
+  // v1.0.55: penyedia ke-4 MiniMax H3 (platform.minimax.io) — mesin "Minimax H3"
+  // yang sama dengan yang dipakai pengguna di mivo.com/generate/studio, kini via
+  // API resminya sendiri (OpenAI-style images API).
+  const minimaxKeyPath = path.join(app.getPath("userData"), "minimax_key.json");
+  const readMiniMaxKey = () => {
+    try {
+      return String(JSON.parse(fs.readFileSync(minimaxKeyPath, "utf-8")).apiKey || "").trim();
+    } catch {
+      return "";
+    }
+  };
   const readCFKey = () => {
     try {
       const j = JSON.parse(fs.readFileSync(cfKeyPath, "utf-8"));
@@ -410,7 +421,7 @@ function registerFSIpc() {
   const readAIPrefs = () => {
     try {
       const j = JSON.parse(fs.readFileSync(prefsPath, "utf-8"));
-      return { provider: j.provider === "cloudflare" ? "cloudflare" : j.provider === "mage" ? "mage" : "zai", quality: j.quality === "standard" ? "standard" : "hd" };
+      return { provider: j.provider === "cloudflare" ? "cloudflare" : j.provider === "mage" ? "mage" : j.provider === "minimax" ? "minimax" : "zai", quality: j.quality === "standard" ? "standard" : "hd" };
     } catch {
       return { provider: "zai", quality: "hd" };
     }
@@ -742,13 +753,54 @@ function registerFSIpc() {
       clearTimeout(to);
     }
   });
+  // v1.0.55: penyedia ke-4 MiniMax H3 — tes koneksi via GET /v1/models (gratis,
+  // 0 kredit) — 401/403 = kunci salah, selain itu auth lolos.
+  ipcMain.handle("minimax:set-key", (_e, payload) => {
+    try {
+      const key = String(payload?.apiKey || "").trim();
+      if (!key) return { ok: false, error: "kunci kosong" };
+      fs.mkdirSync(path.dirname(minimaxKeyPath), { recursive: true });
+      fs.writeFileSync(minimaxKeyPath, JSON.stringify({ apiKey: key }), { mode: 0o600 });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
+    }
+  });
+  ipcMain.handle("minimax:key-status", () => ({ hasKey: !!readMiniMaxKey() }));
+  ipcMain.handle("minimax:clear-key", () => {
+    try {
+      fs.rmSync(minimaxKeyPath, { force: true });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
+    }
+  });
+  ipcMain.handle("minimax:test-key", async () => {
+    const mk = readMiniMaxKey();
+    if (!mk) return { ok: false, error: "kunci belum dipasang" };
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 20000);
+    try {
+      const res = await fetch("https://api.minimax.io/v1/models", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${mk}` },
+        signal: ctrl.signal,
+      });
+      if (res.status === 401 || res.status === 403) return { ok: false, error: "Kunci MiniMax salah/kedaluwarsa" };
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
+    } finally {
+      clearTimeout(to);
+    }
+  });
   // Preferensi penyedia & kualitas poster (disimpan lokal, mode 0600).
   ipcMain.handle("ai:get-prefs", () => readAIPrefs());
   ipcMain.handle("ai:set-prefs", (_e, payload) => {
     try {
       const cur = readAIPrefs();
       const next = {
-        provider: payload?.provider === "cloudflare" ? "cloudflare" : payload?.provider === "mage" ? "mage" : payload?.provider === "zai" ? "zai" : cur.provider,
+        provider: payload?.provider === "cloudflare" ? "cloudflare" : payload?.provider === "mage" ? "mage" : payload?.provider === "minimax" ? "minimax" : payload?.provider === "zai" ? "zai" : cur.provider,
         quality: payload?.quality === "standard" ? "standard" : payload?.quality === "hd" ? "hd" : cur.quality,
       };
       fs.mkdirSync(path.dirname(prefsPath), { recursive: true });
@@ -875,6 +927,60 @@ function registerFSIpc() {
         try {
           const poster = await mageRun(false);
           return { ok: true, image: poster, via: "mage-txt2img" };
+        } catch (errGen) {
+          return { ok: false, error: String((errGen && errGen.message) || errGen).slice(0, 160) };
+        }
+      }
+    }
+    // v1.0.55: penyedia ke-4 MiniMax H3 — mesin "Minimax H3" yang dipakai pengguna
+    // di mivo.com/generate/studio, via API RESMI platform.minimax.io (kunci sendiri).
+    // OpenAI-style: /v1/images/edits (frame sbg referensi img2img, seperti "Add
+    // reference images" di Mivo) → /v1/images/generations (txt2img); respons
+    // LANGSUNG data[0].b64_json tanpa polling. Prompt rewrite otomatis ada di
+    // sisi API — sama dgn "Prompt rewrite" di studio Mivo.
+    if (payload?.provider === "minimax") {
+      const mk = readMiniMaxKey();
+      if (!mk) return { ok: false, error: "Kunci MiniMax belum diisi" };
+      const mxSize = payload?.size === "768x1344" ? "768x1344" : "1344x768"; // keduanya kelipatan 32
+      const { textFree: xf, prompt: xp } = bersihTextFree(prompt);
+      const mxPrompt =
+        xp +
+        (xf ? ` ${aturanTanpaTeks}` : "") +
+        ` The result must look like a REAL PHOTOGRAPH (photorealistic) — no cartoon, no anime, no illustration, no 3D render.`;
+      const mxRun = async (denganGambar) => {
+        const ctrl = new AbortController();
+        const to = setTimeout(() => ctrl.abort(), 240000);
+        try {
+          const body = { model: "MiniMax-H3-Image", prompt: mxPrompt.slice(0, 6000), size: mxSize, n: 1, response_format: "b64_json", output_format: "png" };
+          if (denganGambar) body.images = [{ image_url: image }];
+          const res = await fetch(`https://api.minimax.io/v1/images/${denganGambar ? "edits" : "generations"}`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${mk}`, "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            signal: ctrl.signal,
+          });
+          const js = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(String(js?.error?.message || js?.message || js?.base_resp?.status_msg || `HTTP ${res.status}`).slice(0, 160));
+          const item = js?.data?.[0];
+          if (item?.b64_json) return `data:image/png;base64,${item.b64_json}`;
+          if (item?.url) {
+            const r2 = await fetch(item.url, { signal: ctrl.signal });
+            const buf = Buffer.from(await r2.arrayBuffer());
+            return `data:${r2.headers.get("content-type") || "image/png"};base64,${buf.toString("base64")}`;
+          }
+          throw new Error(String(item?.error || js?.message || "respons MiniMax tidak berisi gambar").slice(0, 160));
+        } finally {
+          clearTimeout(to);
+        }
+      };
+      try {
+        const poster = await mxRun(!!image);
+        return { ok: true, image: poster, via: image ? "minimax-edit" : "minimax-txt2img" };
+      } catch (errEdit) {
+        if (!image) return { ok: false, error: String((errEdit && errEdit.message) || errEdit).slice(0, 160) };
+        try {
+          const poster = await mxRun(false);
+          return { ok: true, image: poster, via: "minimax-txt2img" };
         } catch (errGen) {
           return { ok: false, error: String((errGen && errGen.message) || errGen).slice(0, 160) };
         }
