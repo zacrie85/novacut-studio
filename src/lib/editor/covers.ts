@@ -601,7 +601,8 @@ export function renderPosterTextDataURL(
   let accent = "#5ec8f8";
   if (input.posterTplId === "poster-komik") {
     // HUMOR #BAPER: kata pertama putih miring + sisanya kuning besar (Alfa Slab
-    // One), outline putih-hitam lapis, bintang burst pop-art, strip premiere kuning
+    // One), outline putih-hitam lapis, bintang burst pop-art (v1.0.58: strip
+    // premiere kuning di dasar DIHAPUS — permintaan pengguna)
     accent = "#ffd400";
     const kata = teks.split(/\s+/).filter(Boolean);
     const fam = '"Alfa Slab One","Archivo Black",sans-serif';
@@ -621,15 +622,8 @@ export function renderPosterTextDataURL(
     posterBurst(ctx, w * 0.06, h * 0.38, w * 0.05, 8, "#ff4757", 0.3);
     posterBurst(ctx, w * 0.945, h * 0.2, w * 0.042, 10, "#1dd1f5", -0.2);
     posterBurst(ctx, w * 0.07, h * 0.58, w * 0.05, 8, "#ffd400", 0.15);
-    // strip premiere kuning di dasar (dekor, tanpa teks palsu)
-    ctx.fillStyle = "#ffd400";
-    ctx.fillRect(0, h * 0.918, w, h * 0.052);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "#111";
-    ctx.beginPath();
-    ctx.moveTo(0, h * 0.918);
-    ctx.lineTo(w, h * 0.918);
-    ctx.stroke();
+    // v1.0.58: strip premiere kuning di dasar DIHAPUS (permintaan pengguna —
+    // garis kuning tebal di bawah cover dirasa mengganggu)
   } else if (input.posterTplId === "poster-gala") {
     // v1.0.50 GALA MALAM (pengganti Papan Kapur & Epik — permintaan pengguna):
     // judul serif putih di BAWAH poster, garis emas tipis + berlian di atas blok,
@@ -1171,6 +1165,21 @@ export function buildBackdropPrompt(custom: string | undefined): string {
   );
 }
 
+/** v1.0.58: prompt RETOUCH utk mode "adegan asli + retouch AI" — frame video
+ * dikirim ke AI img2img dgn instruksi WAJIB mempertahankan 100% komposisi, orang,
+ * wajah, pose & latar; AI hanya mempercantik: lebih terang, warna sinematik,
+ * kilau lembut, + MENGDESAIN frame/bingkai dekoratif di tepi poster sesuai tema
+ * (permintaan pengguna: "sentuhan AI tanpa merubah gambar aslinya, retouch warna
+ * + buatkan frame untuk mempercantik poster sesuai tema"). */
+export function buildRetouchPrompt(custom: string | undefined): string {
+  const gaya = (custom || "").trim().slice(0, 200);
+  return (
+    `[TEXTFREE] Retouch this exact photo into a glamorous movie poster: KEEP the SAME composition, SAME people, SAME faces, SAME poses, SAME clothes and SAME background — do not change, replace or re-imagine anything. Only beautify it: brighten the image, enhance and clean the colors with a soft cinematic teal-and-orange grade, add gentle glowing light and a subtle sparkling shimmer. ADD an elegant ornamental decorative FRAME around all four edges of the poster — design a beautiful border matching the glamorous cinematic theme (thin golden ornamental frame with subtle elegant details), drawn only around the edges without covering the scene.` +
+    (gaya ? ` Frame and theme hints: ${gaya}.` : "") +
+    ` Photorealistic real photograph result. NO text, no letters, no numbers, no logos, no watermarks anywhere.`
+  );
+}
+
 /** v1.0.52: KOMPOSIT "adegan asli + bg sinematik" — latar AI (plate kosong) atau
  * gradasi lokal bila AI gagal; ADEGAN ASLI dipasang besar di tengah (lebar ±96%,
  * tinggi maks ±66% kanvas) dgn keempat tepinya di-feather agar menyatu dgn latar
@@ -1442,7 +1451,7 @@ export function terjemahkanKesalahanAI(raw: string): string {
     (s.trim() ? s.slice(0, 160) : "AI tidak mengembalikan gambar")
   );
 }
-export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size: "1344x768" | "768x1344" = "1344x768", timeoutMs = 180000, opts?: { expand?: boolean; bgOnly?: boolean; direct?: boolean }): Promise<string | null> {
+export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size: "1344x768" | "768x1344" = "1344x768", timeoutMs = 180000, opts?: { expand?: boolean; bgOnly?: boolean; direct?: boolean; retouch?: boolean }): Promise<string | null> {
   if (typeof window === "undefined" || !window.novacutAI?.posterAI) {
     _kesalahanPosterAI = "";
     return null;
@@ -1487,7 +1496,7 @@ export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size:
       // v1.0.52: opts.bgOnly → main process langsung txt2img (plate latar kosong);
       // v1.0.54: opts.direct → txt2img langsung (poster kisah; CF), frame tetap
       // dikirim utk Z.ai/Mage (img2img referensi tokoh)
-      window.novacutAI.posterAI(frameUrl, prompt, size, provider, quality, opts?.expand, opts?.bgOnly, opts?.direct),
+      window.novacutAI.posterAI(frameUrl, prompt, size, provider, quality, opts?.expand, opts?.bgOnly, opts?.direct, opts?.retouch),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
     ]);
     if (res === null) {

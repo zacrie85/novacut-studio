@@ -66,7 +66,9 @@ export function posisiPartEfektif(
 ): number {
   if (judulTampil && texts.partFlip !== false) {
     const tv = typeof texts.titleV === "number" && isFinite(texts.titleV) ? texts.titleV : 100;
-    return tv >= 50 ? 0 : 100;
+    // v1.0.58: posisi bawah 100 → 92 (permintaan pengguna: part terlalu ke bawah,
+    // menempel tepi/strip — dinaikkan sedikit); posisi atas tetap 0
+    return tv >= 50 ? 0 : 92;
   }
   return typeof texts.partV === "number" && isFinite(texts.partV) ? Math.max(0, Math.min(100, texts.partV)) : 0;
 }

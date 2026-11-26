@@ -935,6 +935,36 @@ function registerFSIpc() {
         return { ok: false, error: String((err && err.message) || err).slice(0, 200) };
       }
     }
+    // v1.0.58: RETOUCH (mode "adegan asli + retouch AI") — CF edit LANGSUNG dgn
+    // prompt retouch (tanpa describe: instruksi keep-same + frame dekoratif desain
+    // AI); frame video asli dikirim sbg img2img → warna dipoles, adegan dipertahankan.
+    if (payload?.retouch && payload?.provider === "cloudflare") {
+      const cf = readCFKey();
+      if (!cf.account || !cf.token) return { ok: false, error: "Kredensial Cloudflare belum diisi" };
+      if (!image) return { ok: false, error: "frame video tidak tersedia untuk retouch" };
+      const { textFree: tfR, prompt: pR } = bersihTextFree(prompt);
+      const promptR = tfR ? `${pR} ${aturanTanpaTeks}` : prompt;
+      const retouchSekali = async () => {
+        const poster = await cfEditPoster(promptR, image, cf, payload?.size !== "768x1344");
+        return { ok: true, image: poster, via: "cloudflare-retouch", detail: "" };
+      };
+      try {
+        return await retouchSekali();
+      } catch (err1) {
+        const aR = String((err1 && err1.message) || err1);
+        // agreement BFL utk klein/dev — setujui sekali lalu ulang SEKALI
+        if (/agree|terms|agreement|licens/i.test(aR)) {
+          try {
+            await cfAgreeModel(cf, "@cf/black-forest-labs/flux-2-klein-4b");
+            await cfAgreeModel(cf, "@cf/black-forest-labs/flux-2-dev");
+            return await retouchSekali();
+          } catch (err2) {
+            return { ok: false, error: String((err2 && err2.message) || err2).slice(0, 200) };
+          }
+        }
+        return { ok: false, error: aR.slice(0, 200) };
+      }
+    }
     // v1.0.38: penyedia Cloudflare (GRATIS) — vision llama + FLUX.1 schnell;
     // gagal → ok:false (fallback grade lokal), TIDAK diam-diam pindah ke z.ai
     // supaya pengguna tidak terekspos biaya tanpa sengaja.
