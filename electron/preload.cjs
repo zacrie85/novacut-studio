@@ -57,6 +57,11 @@ contextBridge.exposeInMainWorld("novacutAI", {
   clearMiniMaxKey: () => ipcRenderer.invoke("minimax:clear-key"),
   testMiniMaxKey: () => ipcRenderer.invoke("minimax:test-key"),
   openMiniMaxAPI: () => ipcRenderer.invoke("app:open-url", { url: "https://platform.minimax.io/user-center/basic-information/interface-key" }),
+  // v1.0.56: JEMBATAN MIVO — semi-otomatis via web mivo.com (tanpa kunci API)
+  mivoBridgeStart: (image, prompt, size) => ipcRenderer.invoke("mivo:bridge-start", { image, prompt, size }),
+  mivoBridgePoll: (id) => ipcRenderer.invoke("mivo:bridge-poll", { id }),
+  openMivoFolder: () => ipcRenderer.invoke("mivo:open-folder"),
+  openMivoStudio: () => ipcRenderer.invoke("app:open-url", { url: "https://www.mivo.com/generate/studio" }),
   // v1.0.38: preferensi penyedia & kualitas poster (disimpan lokal)
   getAIPrefs: () => ipcRenderer.invoke("ai:get-prefs"),
   setAIPrefs: (prefs) => ipcRenderer.invoke("ai:set-prefs", prefs),

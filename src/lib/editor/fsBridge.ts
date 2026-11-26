@@ -63,6 +63,11 @@ interface NovacutAI {
   clearMiniMaxKey?: () => Promise<{ ok: boolean; error?: string }>;
   testMiniMaxKey?: () => Promise<{ ok: boolean; error?: string }>;
   openMiniMaxAPI?: () => Promise<{ ok: boolean; error?: string }>;
+  // v1.0.56: JEMBATAN MIVO — semi-otomatis via web mivo.com (tanpa kunci API)
+  mivoBridgeStart?: (image: string, prompt: string, size: string) => Promise<{ ok: boolean; id?: string; dir?: string; prompt?: string; error?: string }>;
+  mivoBridgePoll?: (id: string) => Promise<{ done: boolean; image?: string; error?: string }>;
+  openMivoFolder?: () => Promise<{ ok: boolean; dir?: string; error?: string }>;
+  openMivoStudio?: () => Promise<{ ok: boolean; error?: string }>;
   getAIPrefs?: () => Promise<{ provider: string; quality: string }>;
   setAIPrefs?: (prefs: { provider?: string; quality?: string }) => Promise<{ ok: boolean; error?: string }>;
 }

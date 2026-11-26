@@ -1372,8 +1372,38 @@ export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size:
     const prefs = await window.novacutAI?.getAIPrefs?.().catch(() => null);
     // v1.0.47: penyedia ke-3 Mage (mage.space — gpt-image, ±9 Gems/poster)
     // v1.0.55: penyedia ke-4 MiniMax H3 (platform.minimax.io — mesin "Minimax H3" di mivo.com)
-    const provider = prefs?.provider === "cloudflare" ? "cloudflare" : prefs?.provider === "mage" ? "mage" : prefs?.provider === "minimax" ? "minimax" : "zai";
+    // v1.0.56: penyedia ke-5 MIVO (jembatan semi-otomatis via web — kredit QRIS)
+    const provider = prefs?.provider === "cloudflare" ? "cloudflare" : prefs?.provider === "mage" ? "mage" : prefs?.provider === "minimax" ? "minimax" : prefs?.provider === "mivo" ? "mivo" : "zai";
     const quality = prefs?.quality === "standard" ? "standard" : "hd";
+    // v1.0.56: JEMBATAN MIVO — start (folder+clipboard+buka Mivo) lalu poll hasil
+    // dari folder NOVACUT-Mivo tiap 3 dtk, maks 12 menit (bukan Promise.race AI).
+    if (provider === "mivo" && window.novacutAI?.mivoBridgeStart) {
+      const st = await window.novacutAI.mivoBridgeStart(frameUrl, prompt, size);
+      if (!st?.ok) {
+        _kesalahanPosterAI = terjemahkanKesalahanAI(String(st?.error || "jembatan Mivo gagal dimulai"));
+        _jalurPosterAI = "";
+        return null;
+      }
+      _jalurPosterAI = "mivo-jembatan";
+      const t0 = Date.now();
+      while (Date.now() - t0 < 12 * 60 * 1000) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const p = await window.novacutAI.mivoBridgePoll?.(st.id || "");
+        if (p?.done) {
+          if (p.image) {
+            _kesalahanPosterAI = "";
+            _alasanJalur = "";
+            return p.image;
+          }
+          _kesalahanPosterAI = terjemahkanKesalahanAI(String(p.error || "jembatan Mivo gagal"));
+          _jalurPosterAI = "";
+          return null;
+        }
+      }
+      _kesalahanPosterAI = terjemahkanKesalahanAI("waktu tunggu jembatan Mivo habis (12 menit)");
+      _jalurPosterAI = "";
+      return null;
+    }
     const res = await Promise.race([
       // v1.0.52: opts.bgOnly → main process langsung txt2img (plate latar kosong);
       // v1.0.54: opts.direct → txt2img langsung (poster kisah; CF), frame tetap

@@ -1,7 +1,7 @@
 // NOVACUT Studio - Electron main process
 // Menyajikan build statis (folder out/) lewat HTTP lokal lalu membukanya di window.
 
-const { app, BrowserWindow, Menu, Notification, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, Menu, Notification, dialog, ipcMain, shell, clipboard } = require("electron");
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
@@ -378,7 +378,7 @@ function registerFSIpc() {
   });
   ipcMain.handle("app:open-url", (_e, payload) => {
     const url = String(payload?.url || "");
-    if (!/^https:\/\/(www\.)?(z\.ai|docs\.z\.ai|bigmodel\.cn|dash\.cloudflare\.com|developers\.cloudflare\.com|(docs\.)?mage\.space)/.test(url)) return { ok: false, error: "url tidak diizinkan" };
+    if (!/^https:\/\/(www\.)?(z\.ai|docs\.z\.ai|bigmodel\.cn|dash\.cloudflare\.com|developers\.cloudflare\.com|(docs\.)?mage\.space|platform\.minimax\.io|mivo\.com)/.test(url)) return { ok: false, error: "url tidak diizinkan" };
     return shell.openExternal(url).then(() => ({ ok: true })).catch((err) => ({ ok: false, error: String(err) }));
   });
 
@@ -792,6 +792,95 @@ function registerFSIpc() {
       return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
     } finally {
       clearTimeout(to);
+    }
+  });
+  // ===== v1.0.56: JEMBATAN MIVO — jalur semi-otomatis via web mivo.com =====
+  // Mivo tidak punya API publik, jadi: app menyiapkan SEMUA otomatis (folder
+  // NOVACUT-Mivo + frame referensi + prompt FINAL tersalin ke clipboard + buka
+  // studio Mivo), pengguna hanya paste → generate → unduh hasil ke folder;
+  // poll scan folder tiap 3 dtk otomatis mengambil gambar terbaru → lanjut jadi
+  // cover. Tanpa kunci API, memakai kredit Mivo (QRIS), sesuai ketentuan Mivo.
+  let mivoBridge = null; // { id, dir, startedAt } — satu jembatan aktif
+  const mivoDir = () => {
+    let base = app.getPath("userData");
+    try {
+      base = app.getPath("documents") || base;
+    } catch {}
+    const dir = path.join(base, "NOVACUT-Mivo");
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch {}
+    return dir;
+  };
+  ipcMain.handle("mivo:bridge-start", (_e, payload) => {
+    try {
+      const dir = mivoDir();
+      const { textFree: mf, prompt: mp } = bersihTextFree(String(payload?.prompt || ""));
+      const promptFinal =
+        mp +
+        (mf ? ` ${aturanTanpaTeks}` : "") +
+        ` The result must look like a REAL PHOTOGRAPH (photorealistic) — no cartoon, no anime, no illustration, no 3D render.`;
+      // frame referensi ditulis ke folder (awalan REFERENSI- agar tak dianggap hasil)
+      const src = String(payload?.image || "");
+      if (src.startsWith("data:")) {
+        const b64 = src.slice(src.indexOf(",") + 1);
+        if (b64) fs.writeFileSync(path.join(dir, "REFERENSI-frame.png"), Buffer.from(b64, "base64"));
+      }
+      clipboard.writeText(promptFinal.slice(0, 6000));
+      mivoBridge = { id: `mivo-${Date.now()}`, dir, startedAt: Date.now() };
+      return { ok: true, id: mivoBridge.id, dir, prompt: promptFinal.slice(0, 6000) };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
+    }
+  });
+  ipcMain.handle("mivo:bridge-poll", (_e, payload) => {
+    const b = mivoBridge;
+    if (!b || String(payload?.id || "") !== b.id) return { done: true, error: "jembatan Mivo tidak aktif — klik Buat Ulang Poster lagi" };
+    // scan folder: gambar TERBARU yang dibuat setelah jembatan dimulai
+    try {
+      const kandidat = fs
+        .readdirSync(b.dir)
+        .filter((f) => /\.(png|jpe?g|webp)$/i.test(f) && !f.startsWith("REFERENSI-") && !f.startsWith("."))
+        .map((f) => {
+          try {
+            const p = path.join(b.dir, f);
+            return { p, m: fs.statSync(p).mtimeMs };
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean)
+        .filter((x) => x.m >= b.startedAt - 2000)
+        .sort((a, z) => z.m - a.m);
+      if (kandidat.length) {
+        try {
+          const buf = fs.readFileSync(kandidat[0].p);
+          if (buf.length > 1024) {
+            const ext = path.extname(kandidat[0].p).toLowerCase();
+            const ct = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : ext === ".webp" ? "image/webp" : "image/png";
+            mivoBridge = null;
+            return { done: true, image: `data:${ct};base64,${buf.toString("base64")}` };
+          }
+        } catch {
+          // file masih ditulis (unduhan setengah jadi) — tunggu poll berikutnya
+        }
+      }
+    } catch {
+      // folder belum siap dibaca — tunggu poll berikutnya
+    }
+    if (Date.now() - b.startedAt > 12 * 60 * 1000) {
+      mivoBridge = null;
+      return { done: true, error: "waktu tunggu jembatan Mivo habis (12 menit) — klik Buat Ulang Poster lagi" };
+    }
+    return { done: false };
+  });
+  ipcMain.handle("mivo:open-folder", () => {
+    try {
+      const dir = mivoDir();
+      shell.openPath(dir);
+      return { ok: true, dir };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
     }
   });
   // Preferensi penyedia & kualitas poster (disimpan lokal, mode 0600).

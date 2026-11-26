@@ -9,7 +9,7 @@
 // yang sama dengan di mivo.com/generate/studio, via API resminya sendiri.
 import { useEffect, useState } from "react";
 
-type Provider = "zai" | "cloudflare" | "mage" | "minimax";
+type Provider = "zai" | "cloudflare" | "mage" | "minimax" | "mivo";
 type Quality = "hd" | "standard";
 
 export default function AIKeyCard() {
@@ -185,8 +185,8 @@ export default function AIKeyCard() {
     <div className="space-y-1.5 rounded-md border border-cyan-500/25 bg-cyan-500/[0.06] p-2">
       <div className="flex items-center justify-between gap-2">
         <div className="text-[11px] font-bold uppercase tracking-wider text-cyan-300/90">Mesin Poster AI</div>
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${provider === "cloudflare" ? (hasCF ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300") : provider === "mage" ? (hasMage ? "bg-emerald-500/15 text-emerald-300" : "bg-white/10 text-gray-400") : provider === "minimax" ? (hasMiniMax ? "bg-emerald-500/15 text-emerald-300" : "bg-white/10 text-gray-400") : hasKey ? "bg-emerald-500/15 text-emerald-300" : "bg-white/10 text-gray-400"}`}>
-          {provider === "cloudflare" ? (hasCF ? "● CF siap (gratis)" : "○ CF belum diisi") : provider === "mage" ? (hasMage ? "● Mage siap (±Rp145)" : "○ Mage belum ada kunci") : provider === "minimax" ? (hasMiniMax ? "● MiniMax siap (mesin Mivo)" : "○ MiniMax belum ada kunci") : hasKey ? "● Kunci Z.ai aktif" : "○ Z.ai belum ada kunci"}
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${provider === "cloudflare" ? (hasCF ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300") : provider === "mage" ? (hasMage ? "bg-emerald-500/15 text-emerald-300" : "bg-white/10 text-gray-400") : provider === "minimax" ? (hasMiniMax ? "bg-emerald-500/15 text-emerald-300" : "bg-white/10 text-gray-400") : provider === "mivo" ? "bg-emerald-500/15 text-emerald-300" : hasKey ? "bg-emerald-500/15 text-emerald-300" : "bg-white/10 text-gray-400"}`}>
+          {provider === "cloudflare" ? (hasCF ? "● CF siap (gratis)" : "○ CF belum diisi") : provider === "mage" ? (hasMage ? "● Mage siap (±Rp145)" : "○ Mage belum ada kunci") : provider === "minimax" ? (hasMiniMax ? "● MiniMax siap (mesin Mivo)" : "○ MiniMax belum ada kunci") : provider === "mivo" ? "● Jembatan Mivo siap (QRIS)" : hasKey ? "● Kunci Z.ai aktif" : "○ Z.ai belum ada kunci"}
         </span>
       </div>
 
@@ -195,6 +195,7 @@ export default function AIKeyCard() {
         <button onClick={() => gantiProvider("cloudflare")} className={pill(provider === "cloudflare")}>Cloudflare (GRATIS)</button>
         <button onClick={() => gantiProvider("mage")} className={pill(provider === "mage")}>Mage (±Rp145/poster)</button>
         <button onClick={() => gantiProvider("minimax")} className={pill(provider === "minimax")}>MiniMax H3 (mesin Mivo)</button>
+        <button onClick={() => gantiProvider("mivo")} className={pill(provider === "mivo")}>Mivo (QRIS · semi-otomatis)</button>
       </div>
 
       {provider === "zai" ? (
@@ -350,6 +351,36 @@ export default function AIKeyCard() {
             >
               🔑 Buka platform.minimax.io → API Keys ↗
             </button>
+          </>
+        )
+      ) : provider === "mivo" ? (
+        !window.novacutAI?.mivoBridgeStart ? (
+          <div className="text-[10px] leading-relaxed text-amber-300/80">
+            Jalur Mivo tersedia di NOVACUT Studio v1.0.56+ — update aplikasimu.
+          </div>
+        ) : (
+          <>
+            <div className="text-[10px] leading-relaxed text-gray-500">
+              <b className="text-lime-300/90">Tetap pakai kredit Mivo (top-up QRIS), tanpa kunci API</b> — app menyiapkan semuanya otomatis, kamu hanya 3 langkah di Mivo:
+              <br /><b>1.</b> Klik 🎨 <b>Buat Ulang Poster</b> → prompt final otomatis TERSALIN ke clipboard + frame tersimpan sebagai <b>REFERENSI-frame.png</b> di folder <b>NOVACUT-Mivo</b> + tab Mivo terbuka.
+              <br /><b>2.</b> Di Mivo: pilih <b>Minimax H3</b> → Aspect <b>9:16</b> → Resolution <b>1K</b> → paste prompt (Ctrl+V) → <b>Add reference images</b> → pilih REFERENSI-frame.png → Generate.
+              <br /><b>3.</b> Unduh hasilnya → simpan ke folder <b>NOVACUT-Mivo</b> (nama bebas).
+              <br /><b>4.</b> App otomatis mendeteksi (±3 dtk) → poster langsung jadi cover (tunggu maks 12 menit).
+            </div>
+            <div className="flex flex-wrap gap-x-3 gap-y-1">
+              <button
+                onClick={() => void window.novacutAI?.openMivoFolder?.()}
+                className="rounded-md border border-lime-500/40 bg-lime-500/10 px-2 py-1 text-[10px] font-semibold text-lime-100 transition hover:border-lime-400"
+              >
+                📁 Buka folder NOVACUT-Mivo
+              </button>
+              <button
+                onClick={() => void window.novacutAI?.openMivoStudio?.()}
+                className="rounded-md border border-lime-500/40 bg-lime-500/10 px-2 py-1 text-[10px] font-semibold text-lime-100 transition hover:border-lime-400"
+              >
+                🌐 Buka mivo.com → Studio ↗
+              </button>
+            </div>
           </>
         )
       ) : !window.novacutAI?.setCFKey ? (
