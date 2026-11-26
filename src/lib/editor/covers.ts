@@ -1155,14 +1155,17 @@ export function buildPosterPrompt(custom: string | undefined, title: string, tex
   return `${dasar}${judulPart}. PENTING: semua tulisan pada poster harus berada di dalam area gambar dan diberi jarak aman (margin) dari tepi — tidak boleh terpotong di tepi kiri, kanan, atas, atau bawah. Jangan menulis ulang takarir, caption, atau watermark dari gambar sumber.`;
 }
 
-/** v1.0.52: prompt LATAR KOSONG (bgOnly) utk komposit "adegan asli + bg sinematik" —
+/** v1.0.57: prompt LATAR KOSONG (bgOnly) utk komposit "adegan asli + bg sinematik" —
  * AI HANYA melukis plate lingkungan TANPA orang (identitas mustahil rusak: adegan
  * asli tidak pernah dikirim ke AI); adegan asli digambar renderer di atasnya.
- * Prompt Poster pengguna dipakai sebagai hint atmosfer/pencahayaan saja. */
+ * Permintaan pengguna v1.0.57 — "jadikan poster, sentuhan sinematik sebagai
+ * background, ada cahaya berkilau" → plate dipinta dgn berkas cahaya emas turun
+ * dari atas, kilau/bokeh, lens flare, dan glow terang di TENGAH (tempat tokoh
+ * akan dipasang). Prompt Poster pengguna dipakai sebagai hint atmosfer saja. */
 export function buildBackdropPrompt(custom: string | undefined): string {
   const gaya = (custom || "").trim().slice(0, 220);
   return (
-    `Vertical 9:16 cinematic BACKGROUND PLATE for a movie poster: an EMPTY moody concert stage environment — absolutely NO people, no faces, no silhouettes, no crowd; dramatic atmospheric haze, teal and orange stage lighting, glowing bokeh lights, deep shadows, subtle film grain, photorealistic photograph, dark cinematic mood, slightly darker at the very top and bottom edges (title space).` +
+    `Vertical 9:16 cinematic BACKGROUND PLATE for a movie poster: an EMPTY dramatic stage environment with SPARKLING CINEMATIC LIGHT — absolutely NO people, no faces, no silhouettes, no crowd; brilliant golden light rays and volumetric beams falling from above into a radiant glowing spot at the center (where the hero will be placed), shimmering bokeh particles, glittering sparkles, soft lens flare, teal and orange stage lighting, atmospheric haze, deep shadows, subtle film grain, photorealistic photograph, dark cinematic mood, slightly darker at the very top and bottom edges (title space).` +
     (gaya ? ` Atmosphere and lighting hints only (never add people or characters): ${gaya}.` : "") +
     ` NO text, no letters, no numbers, no logos, no watermarks anywhere.`
   );
@@ -1212,6 +1215,44 @@ export async function posterKompositCineDataURL(frameUrl: string, bgUrl: string 
     // gelapkan latar ±35% supaya adegan asli menonjol
     ctx.fillStyle = "rgba(3,6,12,0.35)";
     ctx.fillRect(0, 0, w, h);
+    // v1.0.57: CAHAYA BERKILAU — berkas cahaya volumetrik turun dari atas + glow
+    // hangat di tengah, digambar di BELAKANG adegan → tokoh tampak menyala dari
+    // belakang (spotlight panggung); blend "screen" agar luminous tanpa menutupi
+    // latar. Detail wajah TETAP 100% asli (semua efek hanya cahaya di sekitar).
+    const emas = (a: number) => `rgba(255,208,138,${a})`;
+    const tealC = (a: number) => `rgba(150,214,255,${a})`;
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+    const berkas = (sudut: number, lebar: number, panjang: number, warna: (a: number) => string, alphaPuncak: number) => {
+      ctx.save();
+      ctx.translate(w / 2, -h * 0.08);
+      ctx.rotate(sudut);
+      const g = ctx.createLinearGradient(0, 0, 0, panjang);
+      g.addColorStop(0, warna(alphaPuncak));
+      g.addColorStop(0.75, warna(alphaPuncak * 0.35));
+      g.addColorStop(1, warna(0));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(-lebar * 0.18, 0);
+      ctx.lineTo(lebar * 0.18, 0);
+      ctx.lineTo(lebar, panjang);
+      ctx.lineTo(-lebar, panjang);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    };
+    berkas(-0.55, w * 0.06, h * 0.95, emas, 0.16);
+    berkas(-0.22, w * 0.05, h, emas, 0.2);
+    berkas(0, w * 0.07, h * 1.05, emas, 0.22);
+    berkas(0.24, w * 0.05, h, tealC, 0.15);
+    berkas(0.58, w * 0.06, h * 0.95, emas, 0.14);
+    const halo = ctx.createRadialGradient(w / 2, h * 0.46, Math.min(w, h) * 0.04, w / 2, h * 0.46, Math.max(w, h) * 0.34);
+    halo.addColorStop(0, emas(0.3));
+    halo.addColorStop(0.45, emas(0.1));
+    halo.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = halo;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
     // ADEGAN ASLI: contain lebar ±96%, tinggi maks ±66%, pusat di 46% tinggi kanvas
     const sw = img.naturalWidth || 2;
     const sh = img.naturalHeight || 2;
@@ -1266,6 +1307,44 @@ export async function posterKompositCineDataURL(frameUrl: string, bgUrl: string 
     ctx.globalCompositeOperation = "overlay";
     ctx.fillStyle = gradeU;
     ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+    // v1.0.57: PARTIKEL KILAU — bokeh + bintang kecil di atas komposit, menumpuk
+    // di sekitar tokoh & pita tengah, jarang di zona judul bawah → "cahaya berkilau"
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+    const kilau = (x: number, y: number, r: number, warna: (a: number) => string, a: number, bintang: boolean) => {
+      if (bintang) {
+        ctx.strokeStyle = warna(a * 0.85);
+        ctx.lineWidth = Math.max(1, r * 0.28);
+        ctx.beginPath();
+        ctx.moveTo(x - r * 3.2, y);
+        ctx.lineTo(x + r * 3.2, y);
+        ctx.moveTo(x, y - r * 3.2);
+        ctx.lineTo(x, y + r * 3.2);
+        ctx.stroke();
+      }
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, warna(a));
+      g.addColorStop(0.55, warna(a * 0.45));
+      g.addColorStop(1, warna(0));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    for (let i = 0; i < 110; i++) {
+      const y = h * (0.1 + Math.random() * 0.58);
+      const x = w * (0.05 + Math.random() * 0.9);
+      const dekat = 1 - Math.min(1, Math.hypot((x - w / 2) / (w * 0.5), (y - h * 0.46) / (h * 0.4)));
+      const r = (1.2 + Math.random() * 4.2) * (0.6 + dekat * 0.9);
+      const a = Math.min(0.85, (0.18 + Math.random() * 0.5) * (0.55 + dekat * 0.75));
+      kilau(x, y, r, Math.random() < 0.7 ? emas : tealC, a, Math.random() < 0.22 && r > 2.4);
+    }
+    for (let i = 0; i < 9; i++) {
+      const x = w * (0.08 + Math.random() * 0.84);
+      const y = h * (0.12 + Math.random() * 0.5);
+      kilau(x, y, w * (0.018 + Math.random() * 0.03), Math.random() < 0.6 ? emas : tealC, 0.1 + Math.random() * 0.08, false);
+    }
     ctx.restore();
     // vignette + fade bawah utk zona judul template
     const vg = ctx.createRadialGradient(w / 2, h * 0.46, Math.min(w, h) * 0.3, w / 2, h * 0.46, Math.max(w, h) * 0.75);

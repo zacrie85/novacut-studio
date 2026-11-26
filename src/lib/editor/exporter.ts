@@ -950,9 +950,10 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
  * selamanya walau pengguna sudah ganti gaya → cover poster keluar hitam. */
 export function coverSignature(c: CoverConfig): string {
   return [
-    // v1.0.52: bump versi gaya — mode aslihitam kini KOMPOSIT (AI hanya latar
-    // kosong + adegan asli di atasnya) → cover aslihitam lama dibuat ulang
-    "v52",
+    // v1.0.57: bump versi gaya — mode aslihitam kini dgn CAHAYA BERKILAU (berkas
+    // cahaya + glow tengah + partikel kilau di komposit; prompt plate diperbarui)
+    // → cover aslihitam lama dibuat ulang otomatis saat export
+    "v57",
     c.mode,
     c.bgStyle,
     (c.posterPrompt ?? "").trim() ? "prompt" : "default",
