@@ -7,7 +7,7 @@
 //  2) MODE KOMPATIBEL: rekam real-time via MediaRecorder (jalur lama).
 // Fitur: cover otomatis, teks judul/deskripsi/part, subtitle AI (bahasa Indonesia).
 
-import { bersihkanJudul, grabFrame, aiRecommendTemplates, analyzeVideoFrames, buildBackdropPrompt, buildKisahPrompt, buildPosterPrompt, buildRetouchPrompt, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, posterKompositCineDataURL, posterFallbackDataURL, posterTimeRange, renderCoverToDataURL, renderPosterTextDataURL, aiPosterizeDataURL, resolvePosterTemplateId } from "./covers";
+import { bersihkanJudul, grabFrame, aiRecommendTemplates, analyzeVideoFrames, buildBackdropPrompt, buildKisahPrompt, buildPosterPrompt, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, posterKompositCineDataURL, posterFallbackDataURL, posterRetouchLokalDataURL, posterTimeRange, renderCoverToDataURL, renderPosterTextDataURL, aiPosterizeDataURL, resolvePosterTemplateId } from "./covers";
 import { COVER_TEMPLATES, partLabel, slugify, uid } from "./constants";
 import { engine } from "./engine";
 import { adjustRangesToSilence, exportRangeFast, fastSupported, AudioDecodeCache } from "./fastExport";
@@ -389,7 +389,9 @@ export function buildSplitProject(
   const posterTplIdP = resolvePosterTemplateId(st.cover, st.texts.title || st.project.name || "");
   const judulPosterAtas = !(posterTplIdP === "poster-gala" || posterTplIdP === "poster-neon");
   const judulMesinTampil = s.showTitleText && !!st.texts.title;
-  const partVCover = posterAdaJudulTpl && st.texts.partFlip !== false ? (judulPosterAtas ? 100 : 0) : typeof st.texts.partV === "number" ? st.texts.partV : 0;
+  // v1.0.59: posisi bawah 100 → 84 (v1.0.58 kelupaan — klip COVER punya logika
+  // posisi sendiri terpisah dari posisiPartEfektif video → part di cover masih 100)
+  const partVCover = posterAdaJudulTpl && st.texts.partFlip !== false ? (judulPosterAtas ? 84 : 0) : typeof st.texts.partV === "number" ? st.texts.partV : 0;
   const posisiPartVideo = judulMesinTampil
     ? posisiPartEfektif(st.texts, true)
     : posterAdaJudulTpl && st.texts.partFlip !== false
@@ -881,27 +883,15 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
           }
           // frame gagal di-decode → jatuh ke fallback klasik di bawah
         }
-        // v1.0.58: mode "asli" kini DIPROSES AI (img2img Cloudflare dkk.) — retouch
-        // warna + lebih terang + kilau + FRAME dekoratif desain AI sesuai tema,
-        // TANPA mengubah adegan asli (prompt wajib keep-same). Gagal → grade
-        // studio lokal di bawah (fallback lama, cover tetap jadi).
-        if (st.cover.posterArtMode === "asli") {
-          const textFreeR = (st.cover.posterTextMode ?? "app") === "app";
-          const aiUrlR = await aiPosterizeDataURL(frameUrl, buildRetouchPrompt(st.cover.posterPrompt), width > height ? "1344x768" : "768x1344", 180000, { retouch: true });
-          if (aiUrlR) {
-            if (textFreeR && !tanpaJudul) {
-              const posterTplIdR = resolvePosterTemplateId(st.cover, title);
-              const imgR = await loadImage(aiUrlR).catch(() => null);
-              if (imgR) {
-                const composedR = renderPosterTextDataURL({ img: imgR, title, posterTplId: posterTplIdR, frame: st.cover.frameStyle }, width, height);
-                if (composedR) return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: composedR, duration: 0, width, height, aiMade: true };
-              }
-            }
-            return { id: uid("as"), name: `Cover - ${title}`, type: "image", url: aiUrlR, duration: 0, width, height, aiMade: true };
-          }
-          // AI gagal → jatuh ke grade studio lokal di bawah
-        }
-        const dasar = await posterFallbackDataURL(frameUrl, width, height);
+        // v1.0.59: mode "asli" kembali 100% LOKAL — jalur AI edit CF (v1.0.58)
+        // TERBUKTI MENGUBAH gambar asli (flux-2 klein/dev melukis ulang adegan
+        // mengikuti teks prompt: penyanyi diganti orang lain — pelajaran sama
+        // dgn v1.0.51). Retouch studio digambar kanvas: lebih terang + warna
+        // dipoles + kilau + BINGKAI EMAS DEKORATIF di tepi — identitas 100%
+        // terjamin (piksel tokoh asli dipakai langsung), 0 Neuron.
+        const dasar =
+          (st.cover.posterArtMode === "asli" ? await posterRetouchLokalDataURL(frameUrl, width, height) : null) ||
+          (await posterFallbackDataURL(frameUrl, width, height));
         if (dasar) {
           // part saja: gambar polos + aiMade:true → mesin render hanya menulis
           // label PART di atas poster (judul tidak dobel)
@@ -970,9 +960,9 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
  * selamanya walau pengguna sudah ganti gaya → cover poster keluar hitam. */
 export function coverSignature(c: CoverConfig): string {
   return [
-    // v1.0.58: bump versi gaya — strip kuning komik dihapus, posisi part dinaikkan,
-    // mode "asli" kini retouch AI dgn frame dekoratif → cover lama dibuat ulang
-    "v58",
+    // v1.0.59: bump versi gaya — mode "asli" retouch studio lokal + bingkai emas,
+    // huruf part diperbesar & posisi dinaikkan → cover lama dibuat ulang otomatis
+    "v59",
     c.mode,
     c.bgStyle,
     (c.posterPrompt ?? "").trim() ? "prompt" : "default",

@@ -1556,6 +1556,156 @@ export async function posterFallbackDataURL(frameUrl: string, w: number, h: numb
   }
 }
 
+/** v1.0.59: RETOUCH STUDIO LOKAL — pengganti jalur AI edit CF utk mode "asli"
+ * (v1.0.58 TERBUKTI GAGAL: flux-2 klein/dev melukis ulang adegan mengikuti teks
+ * prompt — penyanyi diganti orang lain; pelajaran sama dgn v1.0.51). Semua
+ * kecantikan dibuat kanvas lokal: gambar ASLI cover-fit penuh + lebih terang
+ * (filter brightness/saturasi/kontras) + glow & berkas cahaya + partikel kilau
+ * + grade teal-orange lembut + BINGKAI EMAS DEKORATIF (garis ganda + braket
+ * sudut + berlian) di keempat tepi + vignette + fade bawah zona judul + grain.
+ * Identitas 100% — piksel tokoh asli langsung dipakai, 0 Neuron, cepat utk batch. */
+export async function posterRetouchLokalDataURL(frameUrl: string, w: number, h: number): Promise<string | null> {
+  try {
+    const img = await loadImage(frameUrl);
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d");
+    if (!ctx) return null;
+    // gambar ASLI cover-fit penuh + retouch warna via filter kanvas (lebih terang,
+    // warna lebih hidup, kontras halus — tanpa mengubah isi gambar sama sekali)
+    const sw = img.naturalWidth || 2;
+    const sh = img.naturalHeight || 2;
+    const s = Math.max(w / sw, h / sh);
+    ctx.filter = "brightness(1.13) saturate(1.16) contrast(1.04)";
+    ctx.drawImage(img, (w - sw * s) / 2, (h - sh * s) / 2, sw * s, sh * s);
+    ctx.filter = "none";
+    const emas = (a: number) => `rgba(255,208,138,${a})`;
+    // glow hangat + berkas cahaya lembut (screen) — panggung berkilau di sekitar tokoh
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+    const halo = ctx.createRadialGradient(w / 2, h * 0.28, Math.min(w, h) * 0.05, w / 2, h * 0.28, Math.max(w, h) * 0.4);
+    halo.addColorStop(0, emas(0.22));
+    halo.addColorStop(0.5, emas(0.08));
+    halo.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = halo;
+    ctx.fillRect(0, 0, w, h);
+    for (const [ang, alp] of [
+      [-0.4, 0.1],
+      [0, 0.14],
+      [0.4, 0.1],
+    ] as const) {
+      ctx.save();
+      ctx.translate(w / 2, -h * 0.06);
+      ctx.rotate(ang);
+      const g = ctx.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0, emas(alp));
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      const bw = w * 0.07;
+      ctx.fillRect(-bw / 2, 0, bw, h * 1.1);
+      ctx.restore();
+    }
+    ctx.restore();
+    // grade teal-orange penyatu di seluruh kanvas
+    ctx.save();
+    const gradeU = ctx.createLinearGradient(0, 0, 0, h);
+    gradeU.addColorStop(0, "rgba(18,55,90,0.16)");
+    gradeU.addColorStop(0.5, "rgba(0,0,0,0)");
+    gradeU.addColorStop(1, "rgba(150,80,15,0.15)");
+    ctx.globalCompositeOperation = "overlay";
+    ctx.fillStyle = gradeU;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+    // partikel kilau + bokeh (band tengah, hindari zona judul bawah)
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+    const kilau = (x: number, y: number, r: number, a: number, bintang: boolean) => {
+      if (bintang) {
+        ctx.strokeStyle = emas(a * 0.85);
+        ctx.lineWidth = Math.max(1, r * 0.28);
+        ctx.beginPath();
+        ctx.moveTo(x - r * 3.2, y);
+        ctx.lineTo(x + r * 3.2, y);
+        ctx.moveTo(x, y - r * 3.2);
+        ctx.lineTo(x, y + r * 3.2);
+        ctx.stroke();
+      }
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, emas(a));
+      g.addColorStop(0.55, emas(a * 0.45));
+      g.addColorStop(1, emas(0));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    for (let i = 0; i < 80; i++) {
+      const y = h * (0.08 + Math.random() * 0.6);
+      const x = w * (0.04 + Math.random() * 0.92);
+      const dekat = 1 - Math.min(1, Math.hypot((x - w / 2) / (w * 0.5), (y - h * 0.42) / (h * 0.42)));
+      const r = (1.1 + Math.random() * 3.8) * (0.6 + dekat * 0.9);
+      kilau(x, y, r, Math.min(0.8, (0.16 + Math.random() * 0.45) * (0.55 + dekat * 0.75)), Math.random() < 0.24 && r > 2.2);
+    }
+    for (let i = 0; i < 7; i++) {
+      kilau(w * (0.08 + Math.random() * 0.84), h * (0.1 + Math.random() * 0.5), w * (0.016 + Math.random() * 0.026), 0.09 + Math.random() * 0.07, false);
+    }
+    ctx.restore();
+    // vignette + fade bawah utk zona judul template
+    const vg = ctx.createRadialGradient(w / 2, h * 0.44, Math.min(w, h) * 0.32, w / 2, h * 0.44, Math.max(w, h) * 0.78);
+    vg.addColorStop(0, "rgba(0,0,0,0)");
+    vg.addColorStop(1, "rgba(0,0,0,0.42)");
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, w, h);
+    const fade = ctx.createLinearGradient(0, h * 0.66, 0, h);
+    fade.addColorStop(0, "rgba(4,6,10,0)");
+    fade.addColorStop(1, "rgba(4,6,10,0.82)");
+    ctx.fillStyle = fade;
+    ctx.fillRect(0, h * 0.66, w, h * 0.34);
+    // BINGKAI EMAS DEKORATIF: garis luar + garis dalam + braket sudut + berlian
+    const e1 = "#e8c56f";
+    const e2 = "#b8893b";
+    const m = w * 0.026;
+    ctx.save();
+    ctx.strokeStyle = e1;
+    ctx.lineWidth = Math.max(2, w * 0.005);
+    ctx.strokeRect(m, m, w - 2 * m, h - 2 * m);
+    const m2 = m + w * 0.014;
+    ctx.strokeStyle = e2;
+    ctx.lineWidth = Math.max(1, w * 0.0022);
+    ctx.strokeRect(m2, m2, w - 2 * m2, h - 2 * m2);
+    const braket = (cx: number, cy: number, sx: number, sy: number) => {
+      ctx.strokeStyle = e1;
+      ctx.lineWidth = Math.max(3, w * 0.0065);
+      ctx.beginPath();
+      ctx.moveTo(cx + sx * w * 0.075, cy);
+      ctx.lineTo(cx, cy);
+      ctx.lineTo(cx, cy + sy * h * 0.05);
+      ctx.stroke();
+      ctx.save();
+      ctx.translate(cx + sx * w * 0.024, cy + sy * w * 0.024);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = e1;
+      const r = w * 0.009;
+      ctx.fillRect(-r, -r, 2 * r, 2 * r);
+      ctx.restore();
+    };
+    braket(m, m, 1, 1);
+    braket(w - m, m, -1, 1);
+    braket(m, h - m, 1, -1);
+    braket(w - m, h - m, -1, -1);
+    ctx.restore();
+    // grain film halus (menyatukan semua lapisan)
+    ctx.globalAlpha = 0.04;
+    ctx.fillStyle = "#ffffff";
+    for (let i = 0; i < 900; i++) ctx.fillRect(Math.random() * w, Math.random() * h, 1.4, 1.4);
+    ctx.globalAlpha = 1;
+    return c.toDataURL("image/jpeg", 0.92);
+  } catch {
+    return null;
+  }
+}
+
 /** v1.0.50: ADEGAN ASLI + BACKGROUND HITAM SINEMATIK + BINGKAI FILM (0 Neuron,
  * permintaan pengguna — grade studio dianggap terlalu biasa). Frame video dipasang
  * UTUH tanpa crop di atas kanvas hitam, glow lembut di belakang foto, grade

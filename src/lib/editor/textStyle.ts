@@ -14,8 +14,9 @@ export const TEXT_STYLE_DEFAULTS = {
   titleSize: 0.042,
   /** ukuran huruf deskripsi: 2.6% tinggi layar */
   descSize: 0.026,
-  /** ukuran huruf part/episode: 5.2% tinggi layar (sebelumnya 7.5–12% — terlalu besar) */
-  partSize: 0.052,
+  /** ukuran huruf part/episode: 6.8% tinggi layar (v1.0.59: 5.2% → 6.8% — huruf
+   * part DIPERBESAR permintaan pengguna; era awal 7.5–12% terlalu besar) */
+  partSize: 0.068,
   /** font tulisan otomatis */
   fontAuto: "condensed",
   /** posisi judul: geser horizontal/vertikal % lebar/tinggi layar (0 = posisi bawaan) */
@@ -66,9 +67,9 @@ export function posisiPartEfektif(
 ): number {
   if (judulTampil && texts.partFlip !== false) {
     const tv = typeof texts.titleV === "number" && isFinite(texts.titleV) ? texts.titleV : 100;
-    // v1.0.58: posisi bawah 100 → 92 (permintaan pengguna: part terlalu ke bawah,
-    // menempel tepi/strip — dinaikkan sedikit); posisi atas tetap 0
-    return tv >= 50 ? 0 : 92;
+    // v1.0.58/59: posisi bawah 100 → 92 → 84 (pengguna minta naik "sedikit lagi");
+    // posisi atas tetap 0
+    return tv >= 50 ? 0 : 84;
   }
   return typeof texts.partV === "number" && isFinite(texts.partV) ? Math.max(0, Math.min(100, texts.partV)) : 0;
 }
@@ -86,7 +87,9 @@ export function loadTextStyle(): TextStyle {
     const merged: TextStyle = {
       titleSize: clampSize(parsed.titleSize, TEXT_STYLE_DEFAULTS.titleSize),
       descSize: clampSize(parsed.descSize, TEXT_STYLE_DEFAULTS.descSize),
-      partSize: clampSize(parsed.partSize, TEXT_STYLE_DEFAULTS.partSize),
+      // v1.0.59: setelan lama yang masih memakai default lama 0.052 otomatis naik
+      // ke default baru 0.068 (huruf part diperbesar) — slider tetap dihormati
+      partSize: clampSize(parsed.partSize === 0.052 ? undefined : parsed.partSize, TEXT_STYLE_DEFAULTS.partSize),
       fontAuto: typeof parsed.fontAuto === "string" && parsed.fontAuto ? parsed.fontAuto : TEXT_STYLE_DEFAULTS.fontAuto,
       titleX: clampOffset(parsed.titleX),
       titleY: clampOffset(parsed.titleY),
