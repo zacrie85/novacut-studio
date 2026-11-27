@@ -7,7 +7,7 @@
 //  2) MODE KOMPATIBEL: rekam real-time via MediaRecorder (jalur lama).
 // Fitur: cover otomatis, teks judul/deskripsi/part, subtitle AI (bahasa Indonesia).
 
-import { bersihkanJudul, grabFrame, aiRecommendTemplates, analyzeVideoFrames, buildBackdropPrompt, buildKisahPrompt, buildPosterPrompt, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, posterKompositCineDataURL, posterFallbackDataURL, posterRetouchLokalDataURL, posterTimeRange, renderCoverToDataURL, renderPosterTextDataURL, aiPosterizeDataURL, resolvePosterTemplateId } from "./covers";
+import { bersihkanJudul, grabFrame, aiRecommendTemplates, analyzeVideoFrames, buildBackdropPrompt, buildKisahPrompt, buildPosterPrompt, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, posterKompositCineDataURL, posterFallbackDataURL, posterRetouchLokalDataURL, posterTimeRange, renderCoverToDataURL, renderPosterTextDataURL, aiPosterizeDataURL, resolvePosterTemplateId, jalurPosterAI } from "./covers";
 import { COVER_TEMPLATES, partLabel, slugify, uid } from "./constants";
 import { engine } from "./engine";
 import { adjustRangesToSilence, exportRangeFast, fastSupported, AudioDecodeCache } from "./fastExport";
@@ -845,9 +845,15 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
       // Neuron). Judul tetap ditulis template app → tidak mungkin hilang.
       if (st.cover.posterArtMode === "kisah") {
         const textFreeK = (st.cover.posterTextMode ?? "app") === "app";
-        const aiUrlK = await aiPosterizeDataURL(frameUrl, buildKisahPrompt(st.cover.posterPrompt, title), width > height ? "1344x768" : "768x1344", 180000, { direct: true });
+        // v1.0.61: judul video dibawa ke jalur Mivo → prompt template "buat gambar
+        // ini menjadi sebuah poster untuk film dengan judul …" diisi otomatis
+        const aiUrlK = await aiPosterizeDataURL(frameUrl, buildKisahPrompt(st.cover.posterPrompt, title), width > height ? "1344x768" : "768x1344", 180000, { direct: true, judul: title });
         if (aiUrlK) {
-          if (textFreeK && !tanpaJudul) {
+          // v1.0.61: jalur Mivo — template prompt sudah memerintahkan Mivo menulis
+          // judul di dalam poster (huruf besar/kecil estetik) → JANGAN ditimpa judul
+          // template app lagi (akan dobel)
+          const viaMivoK = jalurPosterAI().includes("mivo");
+          if (textFreeK && !tanpaJudul && !viaMivoK) {
             const posterTplIdK = resolvePosterTemplateId(st.cover, title);
             const imgK = await loadImage(aiUrlK).catch(() => null);
             if (imgK) {
@@ -918,11 +924,15 @@ async function makeCoverAsset(sourceAsset: MediaAsset | undefined, frameTime?: n
       // aplikasi via template (ejaan 100% benar); mode "ai" = perilaku lama
       const textFree = (st.cover.posterTextMode ?? "app") === "app";
       const prompt = buildPosterPrompt(st.cover.posterPrompt, title, textFree);
-      const aiUrl = await aiPosterizeDataURL(frameUrl, prompt, size);
+      // v1.0.61: judul video dibawa ke jalur Mivo → prompt template judul otomatis
+      const aiUrl = await aiPosterizeDataURL(frameUrl, prompt, size, 180000, { judul: title });
       if (aiUrl) {
+        // v1.0.61: jalur Mivo — judul sudah ditulis Mivo di dalam poster (template
+        // prompt) → jangan tulis judul template app lagi (dobel)
+        const viaMivo = jalurPosterAI().includes("mivo");
         // v1.0.50: "part saja" — art polos tanpa judul template; label part tetap
         // ditulis mesin render di atas poster (aiMade:true)
-        if (textFree && !tanpaJudul) {
+        if (textFree && !tanpaJudul && !viaMivo) {
           // v1.0.46: art AI polos + frame tulisan gaya referensi (judul = nama video)
           const posterTplId = resolvePosterTemplateId(st.cover, title);
           const imgAI = await loadImage(aiUrl).catch(() => null);

@@ -1451,7 +1451,7 @@ export function terjemahkanKesalahanAI(raw: string): string {
     (s.trim() ? s.slice(0, 160) : "AI tidak mengembalikan gambar")
   );
 }
-export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size: "1344x768" | "768x1344" = "1344x768", timeoutMs = 180000, opts?: { expand?: boolean; bgOnly?: boolean; direct?: boolean; retouch?: boolean }): Promise<string | null> {
+export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size: "1344x768" | "768x1344" = "1344x768", timeoutMs = 180000, opts?: { expand?: boolean; bgOnly?: boolean; direct?: boolean; retouch?: boolean; judul?: string }): Promise<string | null> {
   if (typeof window === "undefined" || !window.novacutAI?.posterAI) {
     _kesalahanPosterAI = "";
     return null;
@@ -1469,7 +1469,17 @@ export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size:
       // v1.0.60: pilihan model Mivo (localStorage novacut.mivoModel — diatur di
       // kartu AI: film → FLUX Klein, musik → Minimax H3) dibawa ke Studio Mivo
       const modelMivo = (typeof localStorage !== "undefined" && localStorage.getItem("novacut.mivoModel")) === "musik" ? "musik" : "film";
-      const st = await window.novacutAI.mivoBridgeStart(frameUrl, prompt, size, modelMivo);
+      // v1.0.61: PROMPT OTOMATIS KE MIVO — permintaan pengguna: "aplikasi belum
+      // bisa mengirim prompt ke mivo… aku ingin aplikasi bisa mengirim prompt
+      // otomatis ke mivo dan seperti ini prompt nya … untuk bagian judul nya
+      // aplikasi buat secara otomatis memakai judul dari setiap video". Jadi bila
+      // judul video tersedia (opts.judul dari exporter), prompt yang dikirim ke
+      // studio Mivo memakai template PERSIS permintaan pengguna dgn judul video
+      // diisi otomatis (kutip di judul dibuang agar aman di dalam template).
+      const promptMivo = opts?.judul
+        ? `buat gambar ini menjadi sebuah poster untuk film dengan judul "${String(opts.judul).replace(/["\\]/g, "").trim().slice(0, 300)}" dengan huruf besar dan kecil yang estetik dan dengan background cerah Estetik cinematik bokeh`
+        : prompt;
+      const st = await window.novacutAI.mivoBridgeStart(frameUrl, promptMivo, size, modelMivo);
       if (!st?.ok) {
         _kesalahanPosterAI = terjemahkanKesalahanAI(String(st?.error || "jembatan Mivo gagal dimulai"));
         _jalurPosterAI = "";

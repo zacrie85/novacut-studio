@@ -38,6 +38,9 @@ export default function AIKeyCard() {
       if (p?.provider === "cloudflare") setProvider("cloudflare");
       if (p?.provider === "mage") setProvider("mage");
       if (p?.provider === "minimax") setProvider("minimax");
+      // v1.0.61: pill Mivo kini dipulihkan saat app dibuka (dulu tidak ada di
+      // sini → tampilan pil kembali ke Z.ai padahal jalur Mivo tersimpan)
+      if (p?.provider === "mivo") setProvider("mivo");
       if (p?.quality === "standard") setQuality("standard");
     });
   }, []);

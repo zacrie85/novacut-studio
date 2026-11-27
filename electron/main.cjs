@@ -433,7 +433,8 @@ function registerFSIpc() {
   const readAIPrefs = () => {
     try {
       const j = JSON.parse(fs.readFileSync(prefsPath, "utf-8"));
-      return { provider: j.provider === "cloudflare" ? "cloudflare" : j.provider === "mage" ? "mage" : j.provider === "minimax" ? "minimax" : "zai", quality: j.quality === "standard" ? "standard" : "hd" };
+      // v1.0.61: "mivo" juga dikenali saat dibaca (dulu jatuh ke "zai")
+      return { provider: j.provider === "cloudflare" ? "cloudflare" : j.provider === "mage" ? "mage" : j.provider === "minimax" ? "minimax" : j.provider === "mivo" ? "mivo" : "zai", quality: j.quality === "standard" ? "standard" : "hd" };
     } catch {
       return { provider: "zai", quality: "hd" };
     }
@@ -943,8 +944,17 @@ function registerFSIpc() {
       jendelaUtama?.webContents?.send?.("mivo:studio-status", { pesan, ok: !!ok, t: Date.now() });
     } catch {}
   };
-  const skripOtomasi = (regModel, promptJson, imgJson) => `(() => {
-    const res = { model: false, prompt: false, image: false, generate: false, catatan: [] };
+  // v1.0.61: skrip otomasi dirombak mengikuti ALUR ASLI studio Mivo (panduan
+  // pengguna): pilih "AI Image" → "add reference image to enable edit mode"
+  // (unggah frame) → pilih model FLUX 3 Klein / Minimax H3 → isi prompt →
+  // scroll ke paling bawah → klik "Generate image". KOTAK PROMPT BARU AKTIF
+  // SETELAH GAMBAR REFERENSI DITAMBAHKAN — dulu prompt diisi duluan (sebelum
+  // unggah) sehingga selalu gagal, itulah sebabnya prompt tak pernah sampai ke
+  // Mivo. Kini unggah dulu, tunggu edit mode, baru prompt diisi (dicoba ulang
+  // sampai 4× selagi UI siap). Semua langkah best-effort async di satu skrip.
+  const skripOtomasi = (regModel, promptJson, imgJson) => `(async () => {
+    const res = { aiImage: false, model: false, prompt: false, image: false, generate: false, catatan: [] };
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const tampil = (e) => e && e.offsetParent !== null;
     const klik = (re) => {
       const els = [...document.querySelectorAll('button,[role="button"],li,div,span,label')].filter((e) => tampil(e) && re.test((e.textContent || "").trim()) && (e.textContent || "").trim().length < 90);
@@ -952,38 +962,52 @@ function registerFSIpc() {
       if (els[0]) { els[0].click(); return true; }
       return false;
     };
-    try { res.model = klik(${regModel}); } catch (e) { res.catatan.push("model: " + e.message); }
+    const ungguh = (inp) => {
+      const b64 = ${imgJson};
+      if (!inp || !b64) return false;
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const f = new File([bytes], "REFERENSI-frame.png", { type: "image/png" });
+      const dt = new DataTransfer();
+      dt.items.add(f);
+      inp.files = dt.files;
+      inp.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    };
+    try { res.aiImage = klik(/ai\\s*image/i); } catch (e) { res.catatan.push("ai-image: " + e.message); }
+    await sleep(1200);
     try {
-      const ta = [...document.querySelectorAll('textarea,[contenteditable="true"],[contenteditable=""],input[type="text"]')].filter(tampil)[0];
+      if (ungguh([...document.querySelectorAll('input[type="file"]')].filter(tampil)[0] || document.querySelector('input[type="file"]'))) {
+        res.image = true;
+      } else {
+        try { if (klik(/add\\s*reference/i)) await sleep(1500); } catch {}
+        res.image = ungguh(document.querySelector('input[type="file"]'));
+      }
+    } catch (e) { res.catatan.push("gambar: " + e.message); }
+    await sleep(2500);
+    try { res.model = klik(${regModel}); } catch (e) { res.catatan.push("model: " + e.message); }
+    await sleep(800);
+    try {
       const val = ${promptJson};
-      if (ta && val) {
-        if (ta.tagName === "TEXTAREA" || ta.tagName === "INPUT") {
-          const proto = ta.tagName === "TEXTAREA" ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
-          Object.getOwnPropertyDescriptor(proto, "value").set.call(ta, val);
-        } else { ta.textContent = val; }
-        ta.dispatchEvent(new Event("input", { bubbles: true }));
-        ta.dispatchEvent(new Event("change", { bubbles: true }));
-        res.prompt = true;
+      for (let i = 0; i < 4 && !res.prompt && val; i++) {
+        const ta = [...document.querySelectorAll('textarea,[contenteditable="true"],[contenteditable=""],input[type="text"]')].filter(tampil)[0];
+        if (ta) {
+          if (ta.tagName === "TEXTAREA" || ta.tagName === "INPUT") {
+            const proto = ta.tagName === "TEXTAREA" ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+            Object.getOwnPropertyDescriptor(proto, "value").set.call(ta, val);
+          } else { ta.textContent = val; }
+          ta.dispatchEvent(new Event("input", { bubbles: true }));
+          ta.dispatchEvent(new Event("change", { bubbles: true }));
+          res.prompt = true;
+        } else await sleep(2000);
       }
     } catch (e) { res.catatan.push("prompt: " + e.message); }
     try {
-      const b64 = ${imgJson};
-      if (b64) {
-        const inp = [...document.querySelectorAll('input[type="file"]')].filter(tampil)[0] || document.querySelector('input[type="file"]');
-        if (inp) {
-          const bin = atob(b64);
-          const bytes = new Uint8Array(bin.length);
-          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-          const f = new File([bytes], "REFERENSI-frame.png", { type: "image/png" });
-          const dt = new DataTransfer();
-          dt.items.add(f);
-          inp.files = dt.files;
-          inp.dispatchEvent(new Event("change", { bubbles: true }));
-          res.image = true;
-        }
-      }
-    } catch (e) { res.catatan.push("gambar: " + e.message); }
-    try { res.generate = klik(/generate\\s*image|generate/i); } catch (e) { res.catatan.push("generate: " + e.message); }
+      window.scrollTo(0, document.body.scrollHeight);
+      await sleep(700);
+      res.generate = klik(/generate\\s*image|generate/i);
+    } catch (e) { res.catatan.push("generate: " + e.message); }
     return res;
   })()`;
   const jalankanOtomasi = async () => {
@@ -998,14 +1022,15 @@ function registerFSIpc() {
       }
       if (o.selesai.has("otomasi")) return;
       o.selesai.add("otomasi");
-      statusMivo("🤖 Otomasi dimulai: pilih model → isi prompt → unggah frame → Generate…", true);
+      statusMivo("🤖 Otomasi dimulai: AI Image → unggah referensi → model → prompt → Generate…", true);
       const regModel = o.model === "musik" ? "/minimax\\s*h3|minimax/i" : "/flux\\s*3?\\s*klein|flux/i";
       const r = await mivoStudioWin.webContents.executeJavaScript(skripOtomasi(regModel, JSON.stringify(o.prompt || ""), JSON.stringify(o.imageB64 || "")), true);
       if (r) {
+        statusMivo(r.aiImage ? "✓ Mode AI Image dipilih otomatis" : "○ Tab AI Image tak diklik (kemungkinan sudah aktif)", !!r.aiImage);
+        statusMivo(r.image ? "✓ Frame referensi terunggah — edit mode aktif" : "⚠ Upload manual: Add reference image → REFERENSI-frame.png di folder NOVACUT-Mivo", !!r.image);
         statusMivo(r.model ? "✓ Model dipilih otomatis" : "⚠ Pilih model manual (klik namanya di daftar model)", !!r.model);
-        statusMivo(r.prompt ? "✓ Prompt terisi otomatis" : "⚠ Paste prompt manual (Ctrl+V — sudah di clipboard)", !!r.prompt);
-        statusMivo(r.image ? "✓ Frame terunggah otomatis" : "⚠ Upload manual: Add reference images → pilih REFERENSI-frame.png di folder NOVACUT-Mivo", !!r.image);
-        statusMivo(r.generate ? "✓ Generate diklik — menunggu hasil…" : "⚠ Klik Generate manual bila belum jalan", true);
+        statusMivo(r.prompt ? "✓ Prompt terkirim ke studio Mivo otomatis" : "⚠ Paste prompt manual (Ctrl+V — prompt sudah di clipboard)", !!r.prompt);
+        statusMivo(r.generate ? "✓ Generate image diklik — menunggu hasil…" : "⚠ Klik \"Generate image\" manual di bagian paling bawah", true);
         if (Array.isArray(r.catatan) && r.catatan.length) statusMivo("catatan: " + r.catatan.join("; "), false);
       }
       // catat semua img besar yang SUDAH ada → hanya img BARU yang dianggap hasil
@@ -1062,7 +1087,11 @@ function registerFSIpc() {
     try {
       const cur = readAIPrefs();
       const next = {
-        provider: payload?.provider === "cloudflare" ? "cloudflare" : payload?.provider === "mage" ? "mage" : payload?.provider === "minimax" ? "minimax" : payload?.provider === "zai" ? "zai" : cur.provider,
+        // v1.0.61: BUG DIPERBAIKI — "mivo" tidak ada di whitelist ini, jadi klik
+        // pill "Mivo (QRIS)" DIABAIKAN dan penyimpanan diam-diam kembali ke
+        // cur.provider (Cloudflare lama) → poster selalu lewat Cloudflare padahal
+        // pengguna memilih Mivo. Kini "mivo" disimpan sungguhan.
+        provider: payload?.provider === "cloudflare" ? "cloudflare" : payload?.provider === "mage" ? "mage" : payload?.provider === "minimax" ? "minimax" : payload?.provider === "mivo" ? "mivo" : payload?.provider === "zai" ? "zai" : cur.provider,
         quality: payload?.quality === "standard" ? "standard" : payload?.quality === "hd" ? "hd" : cur.quality,
       };
       fs.mkdirSync(path.dirname(prefsPath), { recursive: true });
