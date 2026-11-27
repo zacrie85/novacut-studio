@@ -818,6 +818,7 @@ function registerFSIpc() {
   // poll scan folder tiap 3 dtk otomatis mengambil gambar terbaru → lanjut jadi
   // cover. Tanpa kunci API, memakai kredit Mivo (QRIS), sesuai ketentuan Mivo.
   let mivoBridge = null; // { id, dir, startedAt } — satu jembatan aktif
+  let mivoGiliranN = 0; // v1.0.63: penghitung giliran poster Mivo sesi ini (batch = bergilir satu per satu)
   const mivoDir = () => {
     let base = app.getPath("userData");
     try {
@@ -843,6 +844,12 @@ function registerFSIpc() {
       if (b64) fs.writeFileSync(path.join(dir, "REFERENSI-frame.png"), Buffer.from(b64, "base64"));
       clipboard.writeText(promptFinal.slice(0, 6000));
       mivoBridge = { id: `mivo-${Date.now()}`, dir, startedAt: Date.now() };
+      // v1.0.63: giliran poster — batch 3 video kini diproses SATU per satu
+      // (antrean FIFO di renderer) → frame yang dikirim dijamin milik video yang
+      // sedang digiliran; judul video ditampilkan agar pengguna tahu giliran siapa
+      mivoGiliranN += 1;
+      const mJudul = (promptFinal.match(/dengan judul "([^"]{1,300})"/) || [])[1] || "";
+      statusMivo(`🎬 Poster Mivo giliran #${mivoGiliranN}${mJudul ? ` — video "${mJudul.slice(0, 70)}"` : ""} — frame + prompt dikirim ke studio…`, true);
       // v1.0.60: buka STUDIO MIVO DALAM APP (login tersimpan) + otomasi best-effort:
       // pilih model (film → FLUX Klein, musik → Minimax H3), isi prompt, unggah
       // frame, klik Generate — langkah yang selector-nya tidak kena lanjut manual
@@ -886,6 +893,9 @@ function registerFSIpc() {
               try { fs.writeFileSync(path.join(b.dir, `HASIL-${Date.now()}.${extH}`), Buffer.from(ab)); } catch {}
               mivoBridge = null;
               statusMivo("✓ Hasil Mivo dipanen otomatis + disimpan ke folder NOVACUT-Mivo!", true);
+              // v1.0.63: hasil sudah masuk app → tutup studio otomatis (giliran
+              // berikutnya membuka lagi sendiri; export/split lanjut tanpa menunggu)
+              tutupStudioMivoOtomatis();
               return { done: true, image: `data:${ct};base64,${Buffer.from(ab).toString("base64")}` };
             }
           }
@@ -915,6 +925,8 @@ function registerFSIpc() {
             const ext = path.extname(kandidat[0].p).toLowerCase();
             const ct = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : ext === ".webp" ? "image/webp" : "image/png";
             mivoBridge = null;
+            // v1.0.63: hasil dari folder juga berarti selesai → tutup studio otomatis
+            tutupStudioMivoOtomatis();
             return { done: true, image: `data:${ct};base64,${buf.toString("base64")}` };
           }
         } catch {
@@ -952,6 +964,25 @@ function registerFSIpc() {
     try {
       jendelaUtama?.webContents?.send?.("mivo:studio-status", { pesan, ok: !!ok, t: Date.now() });
     } catch {}
+  };
+  // v1.0.63: TUTUP STUDIO MIVO OTOMATIS setelah hasil poster masuk ke app —
+  // permintaan pengguna: "begitu sudah selesai gambarnya dan masuk ke aplikasi
+  // maka browsernya otomatis ter-close dan proses export & split berjalan".
+  // Sesi login tetap tersimpan di partisi persist:mivo → giliran poster
+  // berikutnya (video ke-2, ke-3, …) membuka studio lagi otomatis. Jendela yang
+  // dibuka manual tanpa otomasi (tombol "Studio Mivo dalam app" saja) tidak ikut
+  // ditutup — hanya jendela yang sedang menjalankan otomasi jembatan.
+  const tutupStudioMivoOtomatis = (tundaMs = 4000) => {
+    const w = mivoStudioWin;
+    if (!w || w.isDestroyed() || !mivoStudioOtomasi) return;
+    setTimeout(() => {
+      try {
+        if (!w.isDestroyed()) {
+          w.close();
+          statusMivo("✓ Studio Mivo ditutup otomatis — hasil sudah masuk app (login tersimpan utk giliran berikutnya)", false);
+        }
+      } catch {}
+    }, tundaMs);
   };
   // v1.0.61: skrip otomasi dirombak mengikuti ALUR ASLI studio Mivo (panduan
   // pengguna): pilih "AI Image" → "add reference image to enable edit mode"

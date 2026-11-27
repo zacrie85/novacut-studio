@@ -1432,6 +1432,24 @@ export function alasanJalurPosterAI(): string {
 export function jalurPosterAI(): string {
   return _jalurPosterAI;
 }
+// v1.0.63: ANTREAN MIVO GLOBAL (FIFO) — SATU poster Mivo pada satu waktu.
+// Bug batch 3 video: ketiga cover dipanggil hampir bersamaan → jembatan &
+// otomasi Mivo di main process (tunggal) saling tertimpa → frame yang terkirim
+// ke studio semuanya frame video PERTAMA → poster ketiga video identik (bukti
+// tangkapan layar pengguna). Kini tiap permintaan masuk rantai: giliran 1
+// (frame video 1) → hasil masuk app → Studio Mivo ditutup otomatis (di main) →
+// giliran 2 (frame video 2) → dst. Timer 12 menit tiap giliran baru berjalan
+// saat gilirannya AKTIF (bukan sejak mengantri), jadi antre 3 video pun tiap
+// video tetap mendapat jatah penuh 12 menit.
+let _mivoAntre: Promise<unknown> = Promise.resolve();
+const mivoGiliran = <T>(kerja: () => Promise<T>): Promise<T> => {
+  const hasil = _mivoAntre.then(kerja, kerja);
+  _mivoAntre = hasil.then(
+    () => undefined,
+    () => undefined,
+  );
+  return hasil;
+};
 /** v1.0.44: ubah pesan kegagalan API menjadi bahasa Indonesia + LANGKAH solusi.
  * Dulu pesan mentah (mis. "Insufficient balance") hanya tampil di toast ±4 detik
  * — pengguna tidak sempat membacanya dan bingung kenapa poster Z.ai tidak jadi. */
@@ -1479,31 +1497,39 @@ export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size:
       const promptMivo = opts?.judul
         ? `buat gambar ini menjadi sebuah poster untuk film dengan judul "${String(opts.judul).replace(/["\\]/g, "").trim().slice(0, 300)}" dengan huruf besar dan kecil yang estetik dan dengan background cerah Estetik cinematik bokeh`
         : prompt;
-      const st = await window.novacutAI.mivoBridgeStart(frameUrl, promptMivo, size, modelMivo);
-      if (!st?.ok) {
-        _kesalahanPosterAI = terjemahkanKesalahanAI(String(st?.error || "jembatan Mivo gagal dimulai"));
-        _jalurPosterAI = "";
-        return null;
-      }
-      _jalurPosterAI = "mivo-jembatan";
-      const t0 = Date.now();
-      while (Date.now() - t0 < 12 * 60 * 1000) {
-        await new Promise((r) => setTimeout(r, 3000));
-        const p = await window.novacutAI.mivoBridgePoll?.(st.id || "");
-        if (p?.done) {
-          if (p.image) {
-            _kesalahanPosterAI = "";
-            _alasanJalur = "";
-            return p.image;
-          }
-          _kesalahanPosterAI = terjemahkanKesalahanAI(String(p.error || "jembatan Mivo gagal"));
+      // v1.0.63: giliranMivo — seluruh proses start→poll→panen dibungkus antrean
+      // global mivoGiliran: mulai HANYA setelah poster Mivo sebelumnya selesai.
+      // frameUrl/promptMivo/modelMivo milik panggilan ini dibawa utuh ke
+      // gilirannya (closure) → frame yang diunggah PASTI frame video yang sedang
+      // diproses, bukan frame video pertama.
+      const giliranMivo = async (): Promise<string | null> => {
+        const st = await window.novacutAI.mivoBridgeStart(frameUrl, promptMivo, size, modelMivo);
+        if (!st?.ok) {
+          _kesalahanPosterAI = terjemahkanKesalahanAI(String(st?.error || "jembatan Mivo gagal dimulai"));
           _jalurPosterAI = "";
           return null;
         }
-      }
-      _kesalahanPosterAI = terjemahkanKesalahanAI("waktu tunggu jembatan Mivo habis (12 menit)");
-      _jalurPosterAI = "";
-      return null;
+        _jalurPosterAI = "mivo-jembatan";
+        const t0 = Date.now();
+        while (Date.now() - t0 < 12 * 60 * 1000) {
+          await new Promise((r) => setTimeout(r, 3000));
+          const p = await window.novacutAI.mivoBridgePoll?.(st.id || "");
+          if (p?.done) {
+            if (p.image) {
+              _kesalahanPosterAI = "";
+              _alasanJalur = "";
+              return p.image;
+            }
+            _kesalahanPosterAI = terjemahkanKesalahanAI(String(p.error || "jembatan Mivo gagal"));
+            _jalurPosterAI = "";
+            return null;
+          }
+        }
+        _kesalahanPosterAI = terjemahkanKesalahanAI("waktu tunggu jembatan Mivo habis (12 menit)");
+        _jalurPosterAI = "";
+        return null;
+      };
+      return mivoGiliran(giliranMivo);
     }
     const res = await Promise.race([
       // v1.0.52: opts.bgOnly → main process langsung txt2img (plate latar kosong);

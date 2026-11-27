@@ -384,7 +384,8 @@ export default function AIKeyCard() {
               <b className="text-lime-300/90">Tetap pakai kredit Mivo (top-up QRIS), tanpa kunci API</b> — kini dengan <b className="text-lime-300/90">STUDIO MIVO DALAM APP</b> (login tersimpan, cukup sekali) + otomasi:
               <br /><b>1.</b> Pilih model di bawah (🎬 Film → FLUX Klein / 🎵 Musik → Minimax H3), login sekali di jendela Studio.
               <br /><b>2.</b> Klik 🎨 <b>Buat Ulang Poster</b> → app otomatis: buka studio, pilih model, isi prompt, unggah <b>REFERENSI-frame.png</b>, klik Generate — langkah yang gagal dilanjutkan manual (prompt di clipboard, frame di folder <b>NOVACUT-Mivo</b>).
-              <br /><b>3.</b> App memanen hasil otomatis (dari halaman ATAU folder) ±3 dtk → langsung jadi cover (tunggu maks 12 menit).
+              <br /><b>3.</b> App memanen hasil otomatis (dari halaman ATAU folder) ±3 dtk → langsung jadi cover (tunggu maks 12 menit) → <b>Studio Mivo ditutup otomatis</b>.
+              <br /><b>4.</b> <b>Banyak video sekaligus? Poster dibuat BERGILIRAN satu per satu</b> — video 1 pakai frame video 1, selesai & masuk app → lanjut video 2 dengan frame-nya sendiri (tidak ada lagi cover kembar).
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-[10px] font-semibold text-gray-400">Model Mivo:</span>
