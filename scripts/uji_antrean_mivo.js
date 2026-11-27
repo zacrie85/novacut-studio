@@ -41,6 +41,18 @@ harus(main.includes("mivoGiliranN += 1;"), "penghitung giliran bertambah tiap mu
 harus(/dengan judul "\(\[\^"\]\{1,300\}\)"/.test(main), "judul video diekstrak dr prompt utk status giliran");
 harus(main.includes("🎬 Poster Mivo giliran #"), "status 'giliran #N' dipush ke kartu AI");
 
+console.log("(1b) statis main.cjs — siklus penuh per video (v1.0.64):");
+harus(/HASIL-\|REFERENSI-/.test(main) || main.includes("/^HASIL-|^REFERENSI-/"), "folder NOVACUT-Mivo dibersihkan tiap awal giliran (HASIL-* + REFERENSI-* dihapus)");
+harus(main.includes("fs.unlinkSync(path.join(dir, f));"), "file lama benar-benar dihapus (unlinkSync)");
+const blokBuka = main.slice(main.indexOf("const bukaStudioMivo"), main.indexOf("mivo:studio-open"));
+harus(blokBuka.includes("mivoStudioWin.close();") && blokBuka.includes("mivoStudioWin = null;"), "giliran baru MENUTUP jendela studio lama sebelum membuka yang baru");
+harus(blokBuka.includes("new BrowserWindow"), "jendela segar dibuat per giliran (bukan loadURL pakai ulang)");
+harus(main.includes("const snapshotImgLama = async () =>"), "snapshot dini img lama ada (poster lama tak terpanen lagi)");
+const nSnap = (main.match(/snapshotImgLama\(\);/g) || []).length;
+harus(nSnap >= 4, `snapshot dini dipasang di did-navigate + tunggu 4/9/14 dtk (ditemukan ${nSnap}×)`);
+harus(main.includes("selesaiImg?.add(baru.s);"), "URL hasil terpanen dicatat SELAMANYA — poster sama tak bisa dipanen 2×");
+harus(!/dulu jendela lama dipakai ulang/i.test(main.split("v1.0.64")[1] || ""), "komentar menjelaskan celah v1.0.63");
+
 console.log("(2) perilaku antrean FIFO (simulasi):");
 const buatRantai = () => {
   let rantai = Promise.resolve();

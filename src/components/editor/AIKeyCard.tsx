@@ -385,7 +385,7 @@ export default function AIKeyCard() {
               <br /><b>1.</b> Pilih model di bawah (🎬 Film → FLUX Klein / 🎵 Musik → Minimax H3), login sekali di jendela Studio.
               <br /><b>2.</b> Klik 🎨 <b>Buat Ulang Poster</b> → app otomatis: buka studio, pilih model, isi prompt, unggah <b>REFERENSI-frame.png</b>, klik Generate — langkah yang gagal dilanjutkan manual (prompt di clipboard, frame di folder <b>NOVACUT-Mivo</b>).
               <br /><b>3.</b> App memanen hasil otomatis (dari halaman ATAU folder) ±3 dtk → langsung jadi cover (tunggu maks 12 menit) → <b>Studio Mivo ditutup otomatis</b>.
-              <br /><b>4.</b> <b>Banyak video sekaligus? Poster dibuat BERGILIRAN satu per satu</b> — video 1 pakai frame video 1, selesai & masuk app → lanjut video 2 dengan frame-nya sendiri (tidak ada lagi cover kembar).
+              <br /><b>4.</b> <b>Banyak video sekaligus? Siklus penuh tiap video</b> — poster video 1 jadi → <b>folder NOVACUT-Mivo dibersihkan</b> → <b>browser Mivo dibuka BARU</b> → frame video 2 diunggah → poster baru → dst. Poster lama tak mungkin terpakai ulang (URL tercatat + folder dibersihkan tiap giliran).
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-[10px] font-semibold text-gray-400">Model Mivo:</span>

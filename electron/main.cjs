@@ -841,6 +841,18 @@ function registerFSIpc() {
       // frame referensi ditulis ke folder (awalan REFERENSI- agar tak dianggap hasil)
       const src = String(payload?.image || "");
       const b64 = src.startsWith("data:") ? src.slice(src.indexOf(",") + 1) : "";
+      // v1.0.64: BERSIHKAN FOLDER NOVACUT-Mivo di awal TIAP giliran (permintaan
+      // pengguna: "gambar poster yang sudah dipakai di video pertama dihapus dulu
+      // dari dalam folder NOVACUT-Mivo, baru kemudian buka browser Mivo untuk
+      // buat poster baru untuk video ke dua") — HASIL-* lama + REFERENSI-* lama
+      // dihapus → folder bersih, poster lama tak mungkin terpanen lagi
+      try {
+        for (const f of fs.readdirSync(dir)) {
+          if (/^HASIL-|^REFERENSI-/.test(f)) {
+            try { fs.unlinkSync(path.join(dir, f)); } catch {}
+          }
+        }
+      } catch {}
       if (b64) fs.writeFileSync(path.join(dir, "REFERENSI-frame.png"), Buffer.from(b64, "base64"));
       clipboard.writeText(promptFinal.slice(0, 6000));
       mivoBridge = { id: `mivo-${Date.now()}`, dir, startedAt: Date.now() };
@@ -888,6 +900,11 @@ function registerFSIpc() {
             const ab = await r.arrayBuffer();
             if (ab.byteLength > 30000) {
               const ct = (r.headers.get("content-type") || "image/jpeg").split(";")[0];
+              // v1.0.64: URL hasil yang SUDAH dipanen dicatat SELAMANYA — poster
+              // yang sama tak bisa terpanen dua kali walau tampil lagi di halaman
+              // baru giliran berikutnya (celah utama v1.0.63: video ke-2 dapat
+              // poster video pertama dalam hitungan detik)
+              try { mivoStudioOtomasi?.selesaiImg?.add(baru.s); } catch {}
               // v1.0.62: hasil juga DISIMPAN ke folder NOVACUT-Mivo (HASIL-*.jpg/png)
               const extH = ct.indexOf("png") >= 0 ? "png" : ct.indexOf("webp") >= 0 ? "webp" : "jpg";
               try { fs.writeFileSync(path.join(b.dir, `HASIL-${Date.now()}.${extH}`), Buffer.from(ab)); } catch {}
@@ -1118,6 +1135,21 @@ function registerFSIpc() {
       statusMivo("otomasi: " + String((e && e.message) || e).slice(0, 120), false);
     }
   };
+  // v1.0.64: SNAPSHOT DINI — segera setelah halaman studio terbuka, catat semua
+  // img besar yang SUDAH tampil (poster hasil giliran sebelumnya di kanvas/
+  // History, hasil generasi lama) → tak mungkin terpanen lagi sebagai "hasil
+  // baru" giliran ini. Menutup celah v1.0.63: halaman studio dipakai ulang/
+  // di-reload → poster video pertama masih tampil → poll giliran ke-2 memanen
+  // poster lama itu dalam hitungan detik → video ke-2 "langsung selesai" dengan
+  // cover video pertama, tanpa generasi baru (keluhan pengguna v1.0.63).
+  const snapshotImgLama = async () => {
+    try {
+      if (!mivoStudioWin || mivoStudioWin.isDestroyed()) return;
+      const snap = await mivoStudioWin.webContents.executeJavaScript('(() => { const out = []; try { for (const img of document.querySelectorAll("img")) { try { if (img.naturalWidth >= 512 && img.naturalHeight >= 512 && /^https?:/i.test(img.src)) out.push(img.src); } catch {} } } catch {} return out; })()', true);
+      const himpun = mivoStudioOtomasi?.selesaiImg;
+      if (himpun && Array.isArray(snap)) for (const s of snap) himpun.add(s);
+    } catch {}
+  };
   const bukaStudioMivo = (model, prompt, imageB64) => {
     try {
       if (model) {
@@ -1127,8 +1159,18 @@ function registerFSIpc() {
         if (imageB64) mivoStudioOtomasi.imageB64 = imageB64;
         mivoStudioOtomasi.selesai.delete("otomasi");
         mivoStudioOtomasi.selesaiImg = mivoStudioOtomasi.selesaiImg || new Set();
+        // v1.0.64: JENDELA BARU utk TIAP giliran poster (keluhan pengguna:
+        // "tanpa ada nya pembukaan baru untuk browser mivo nya" — dulu jendela
+        // lama dipakai ulang dgn loadURL → halaman penuh sisa giliran sebelumnya).
+        // Tutup jendela lama, buka jendela segar: halaman bersih tanpa frame/
+        // prompt/hasil lama. Login tetap tersimpan (partisi persist:mivo).
+        try {
+          if (mivoStudioWin && !mivoStudioWin.isDestroyed()) mivoStudioWin.close();
+        } catch {}
+        mivoStudioWin = null;
       }
       if (mivoStudioWin && !mivoStudioWin.isDestroyed()) {
+        // jalur pakai-ulang hanya tersisa utk pembukaan MANUAL (tanpa otomasi)
         mivoStudioWin.focus();
         mivoStudioWin.webContents.loadURL("https://www.mivo.com/generate/studio").catch(() => {});
       } else {
@@ -1140,16 +1182,30 @@ function registerFSIpc() {
           title: "Studio Mivo — dalam NOVACUT (login tersimpan)",
           webPreferences: { partition: "persist:mivo", contextIsolation: true, nodeIntegration: false, backgroundThrottling: false },
         });
-        mivoStudioWin.webContents.on("did-navigate", () => jalankanOtomasi());
-        mivoStudioWin.webContents.on("did-navigate-in-page", () => jalankanOtomasi());
+        mivoStudioWin.webContents.on("did-navigate", () => {
+          snapshotImgLama();
+          jalankanOtomasi();
+        });
+        mivoStudioWin.webContents.on("did-navigate-in-page", () => {
+          snapshotImgLama();
+          jalankanOtomasi();
+        });
         mivoStudioWin.on("closed", () => {
           mivoStudioWin = null;
         });
         mivoStudioWin.webContents.loadURL("https://www.mivo.com/generate/studio").catch(() => {});
       }
       statusMivo(model ? "🌐 Studio Mivo dibuka dalam app — otomasi menunggu halaman studio…" : "🌐 Studio Mivo dibuka dalam app — loginmu tersimpan (cukup sekali)", true);
-      setTimeout(() => jalankanOtomasi(), 4000);
-      setTimeout(() => jalankanOtomasi(), 9000);
+      setTimeout(() => {
+        snapshotImgLama();
+        jalankanOtomasi();
+      }, 4000);
+      setTimeout(() => {
+        snapshotImgLama();
+        jalankanOtomasi();
+      }, 9000);
+      // v1.0.64: snapshot susulan — img History/pratinjau yang baru selesai dimuat
+      setTimeout(() => snapshotImgLama(), 14000);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
