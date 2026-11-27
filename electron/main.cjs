@@ -164,6 +164,18 @@ function registerFSIpc() {
       return { ok: false };
     }
   });
+  // v1.0.60: ukuran file di path absolut (preset kualitas pas/pasSetengah — total
+  // hasil split mengikuti file asli); awalan file:// otomatis ditelanjangi
+  ipcMain.handle("fs:file-size", async (_event, payload) => {
+    try {
+      const p = String(payload?.path || "").replace(/^file:\/\//, "").trim();
+      if (!p) return { ok: false, size: -1 };
+      const st = await fs.promises.stat(p);
+      return { ok: true, size: st.size };
+    } catch {
+      return { ok: false, size: -1 };
+    }
+  });
 
   // Notifikasi Windows — tampil walau jendela NOVACUT diminimalkan, jadi user
   // yang menjalankan batch semalaman tahu kapan batch selesai.
@@ -794,6 +806,10 @@ function registerFSIpc() {
       clearTimeout(to);
     }
   });
+  // v1.0.60: referensi jendela utama (diisi saat createWindow) utk push status
+  // Studio Mivo ke renderer
+  let jendelaUtama = null;
+
   // ===== v1.0.56: JEMBATAN MIVO — jalur semi-otomatis via web mivo.com =====
   // Mivo tidak punya API publik, jadi: app menyiapkan SEMUA otomatis (folder
   // NOVACUT-Mivo + frame referensi + prompt FINAL tersalin ke clipboard + buka
@@ -822,20 +838,50 @@ function registerFSIpc() {
         ` The result must look like a REAL PHOTOGRAPH (photorealistic) — no cartoon, no anime, no illustration, no 3D render.`;
       // frame referensi ditulis ke folder (awalan REFERENSI- agar tak dianggap hasil)
       const src = String(payload?.image || "");
-      if (src.startsWith("data:")) {
-        const b64 = src.slice(src.indexOf(",") + 1);
-        if (b64) fs.writeFileSync(path.join(dir, "REFERENSI-frame.png"), Buffer.from(b64, "base64"));
-      }
+      const b64 = src.startsWith("data:") ? src.slice(src.indexOf(",") + 1) : "";
+      if (b64) fs.writeFileSync(path.join(dir, "REFERENSI-frame.png"), Buffer.from(b64, "base64"));
       clipboard.writeText(promptFinal.slice(0, 6000));
       mivoBridge = { id: `mivo-${Date.now()}`, dir, startedAt: Date.now() };
+      // v1.0.60: buka STUDIO MIVO DALAM APP (login tersimpan) + otomasi best-effort:
+      // pilih model (film → FLUX Klein, musik → Minimax H3), isi prompt, unggah
+      // frame, klik Generate — langkah yang selector-nya tidak kena lanjut manual
+      // (prompt sudah di clipboard, frame sudah di folder).
+      const modelMivo = String(payload?.model || "film") === "musik" ? "musik" : "film";
+      bukaStudioMivo(modelMivo, promptFinal.slice(0, 6000), b64);
       return { ok: true, id: mivoBridge.id, dir, prompt: promptFinal.slice(0, 6000) };
     } catch (err) {
       return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
     }
   });
-  ipcMain.handle("mivo:bridge-poll", (_e, payload) => {
+  ipcMain.handle("mivo:bridge-poll", async (_e, payload) => {
     const b = mivoBridge;
     if (!b || String(payload?.id || "") !== b.id) return { done: true, error: "jembatan Mivo tidak aktif — klik Buat Ulang Poster lagi" };
+    // v1.0.60: PANEN HASIL dari halaman studio — img besar BARU (bukan yang sudah
+    // tampil saat otomasi dimulai) → unduh langsung dari CDN; tak perlu simpan manual
+    if (mivoStudioWin && !mivoStudioWin.isDestroyed()) {
+      try {
+        const urls = await mivoStudioWin.webContents.executeJavaScript(
+          '(() => { const out = []; try { for (const img of document.querySelectorAll("img")) { try { if (img.naturalWidth >= 512 && img.naturalHeight >= 512 && /^https?:/i.test(img.src)) out.push({ s: img.src, a: img.naturalWidth * img.naturalHeight }); } catch {} } } catch {} return out; })()',
+          true,
+        );
+        const lama = mivoStudioOtomasi?.selesaiImg;
+        const baru = (urls || [])
+          .filter((u) => u && u.s && !(lama && lama.has(u.s)) && !/logo|icon|avatar|banner|thumb|sprite/i.test(u.s))
+          .sort((a, z) => z.a - a.a)[0];
+        if (baru) {
+          const r = await fetch(baru.s, { signal: AbortSignal.timeout(30000) });
+          if (r.ok) {
+            const ab = await r.arrayBuffer();
+            if (ab.byteLength > 30000) {
+              const ct = (r.headers.get("content-type") || "image/jpeg").split(";")[0];
+              mivoBridge = null;
+              statusMivo("✓ Hasil Mivo dipanen otomatis dari halaman studio!", true);
+              return { done: true, image: `data:${ct};base64,${Buffer.from(ab).toString("base64")}` };
+            }
+          }
+        }
+      } catch {}
+    }
     // scan folder: gambar TERBARU yang dibuat setelah jembatan dimulai
     try {
       const kandidat = fs
@@ -883,6 +929,133 @@ function registerFSIpc() {
       return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
     }
   });
+  // ===== v1.0.60: STUDIO MIVO DALAM APP — browser mandiri dgn sesi persist =====
+  // Jendela Electron biasa yang memuat mivo.com; sesi login disimpan di partisi
+  // persist:mivo → login cukup SEKALI. Saat jembatan Mivo membawa prompt+frame,
+  // otomasi best-effort berjalan di /generate/studio: pilih model, isi prompt,
+  // unggah REFERENSI-frame.png, klik Generate. Langkah yang selector-nya tidak
+  // kena → pengguna lanjut manual (clipboard & folder sudah disiapkan). Hasil
+  // dipanen 2 cara: scan folder (sudah ada) + panen img besar baru di halaman.
+  let mivoStudioWin = null;
+  let mivoStudioOtomasi = null; // { model, prompt, imageB64, selesai:Set, selesaiImg:Set }
+  const statusMivo = (pesan, ok) => {
+    try {
+      jendelaUtama?.webContents?.send?.("mivo:studio-status", { pesan, ok: !!ok, t: Date.now() });
+    } catch {}
+  };
+  const skripOtomasi = (regModel, promptJson, imgJson) => `(() => {
+    const res = { model: false, prompt: false, image: false, generate: false, catatan: [] };
+    const tampil = (e) => e && e.offsetParent !== null;
+    const klik = (re) => {
+      const els = [...document.querySelectorAll('button,[role="button"],li,div,span,label')].filter((e) => tampil(e) && re.test((e.textContent || "").trim()) && (e.textContent || "").trim().length < 90);
+      els.sort((a, b) => (a.textContent || "").length - (b.textContent || "").length);
+      if (els[0]) { els[0].click(); return true; }
+      return false;
+    };
+    try { res.model = klik(${regModel}); } catch (e) { res.catatan.push("model: " + e.message); }
+    try {
+      const ta = [...document.querySelectorAll('textarea,[contenteditable="true"],[contenteditable=""],input[type="text"]')].filter(tampil)[0];
+      const val = ${promptJson};
+      if (ta && val) {
+        if (ta.tagName === "TEXTAREA" || ta.tagName === "INPUT") {
+          const proto = ta.tagName === "TEXTAREA" ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+          Object.getOwnPropertyDescriptor(proto, "value").set.call(ta, val);
+        } else { ta.textContent = val; }
+        ta.dispatchEvent(new Event("input", { bubbles: true }));
+        ta.dispatchEvent(new Event("change", { bubbles: true }));
+        res.prompt = true;
+      }
+    } catch (e) { res.catatan.push("prompt: " + e.message); }
+    try {
+      const b64 = ${imgJson};
+      if (b64) {
+        const inp = [...document.querySelectorAll('input[type="file"]')].filter(tampil)[0] || document.querySelector('input[type="file"]');
+        if (inp) {
+          const bin = atob(b64);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          const f = new File([bytes], "REFERENSI-frame.png", { type: "image/png" });
+          const dt = new DataTransfer();
+          dt.items.add(f);
+          inp.files = dt.files;
+          inp.dispatchEvent(new Event("change", { bubbles: true }));
+          res.image = true;
+        }
+      }
+    } catch (e) { res.catatan.push("gambar: " + e.message); }
+    try { res.generate = klik(/generate\\s*image|generate/i); } catch (e) { res.catatan.push("generate: " + e.message); }
+    return res;
+  })()`;
+  const jalankanOtomasi = async () => {
+    if (!mivoStudioWin || mivoStudioWin.isDestroyed() || !mivoStudioOtomasi) return;
+    const o = mivoStudioOtomasi;
+    try {
+      const url = mivoStudioWin.webContents.getURL() || "";
+      if (!/mivo\.com/i.test(url)) return;
+      if (!/studio/i.test(url)) {
+        statusMivo("⏳ Menunggu halaman studio — login dulu bila diminta (login tersimpan)…", false);
+        return;
+      }
+      if (o.selesai.has("otomasi")) return;
+      o.selesai.add("otomasi");
+      statusMivo("🤖 Otomasi dimulai: pilih model → isi prompt → unggah frame → Generate…", true);
+      const regModel = o.model === "musik" ? "/minimax\\s*h3|minimax/i" : "/flux\\s*3?\\s*klein|flux/i";
+      const r = await mivoStudioWin.webContents.executeJavaScript(skripOtomasi(regModel, JSON.stringify(o.prompt || ""), JSON.stringify(o.imageB64 || "")), true);
+      if (r) {
+        statusMivo(r.model ? "✓ Model dipilih otomatis" : "⚠ Pilih model manual (klik namanya di daftar model)", !!r.model);
+        statusMivo(r.prompt ? "✓ Prompt terisi otomatis" : "⚠ Paste prompt manual (Ctrl+V — sudah di clipboard)", !!r.prompt);
+        statusMivo(r.image ? "✓ Frame terunggah otomatis" : "⚠ Upload manual: Add reference images → pilih REFERENSI-frame.png di folder NOVACUT-Mivo", !!r.image);
+        statusMivo(r.generate ? "✓ Generate diklik — menunggu hasil…" : "⚠ Klik Generate manual bila belum jalan", true);
+        if (Array.isArray(r.catatan) && r.catatan.length) statusMivo("catatan: " + r.catatan.join("; "), false);
+      }
+      // catat semua img besar yang SUDAH ada → hanya img BARU yang dianggap hasil
+      try {
+        const snap = await mivoStudioWin.webContents.executeJavaScript('(() => { const out = []; try { for (const img of document.querySelectorAll("img")) { try { if (img.naturalWidth >= 512 && /^https?:/i.test(img.src)) out.push(img.src); } catch {} } } catch {} return out; })()', true);
+        o.selesaiImg = o.selesaiImg || new Set();
+        for (const s of snap || []) o.selesaiImg.add(s);
+      } catch {}
+    } catch (e) {
+      statusMivo("otomasi: " + String((e && e.message) || e).slice(0, 120), false);
+    }
+  };
+  const bukaStudioMivo = (model, prompt, imageB64) => {
+    try {
+      if (model) {
+        mivoStudioOtomasi = mivoStudioOtomasi || { selesai: new Set() };
+        mivoStudioOtomasi.model = model;
+        if (prompt) mivoStudioOtomasi.prompt = prompt;
+        if (imageB64) mivoStudioOtomasi.imageB64 = imageB64;
+        mivoStudioOtomasi.selesai.delete("otomasi");
+        mivoStudioOtomasi.selesaiImg = mivoStudioOtomasi.selesaiImg || new Set();
+      }
+      if (mivoStudioWin && !mivoStudioWin.isDestroyed()) {
+        mivoStudioWin.focus();
+        mivoStudioWin.webContents.loadURL("https://www.mivo.com/generate/studio").catch(() => {});
+      } else {
+        mivoStudioWin = new BrowserWindow({
+          width: 1180,
+          height: 860,
+          backgroundColor: "#0b0d14",
+          autoHideMenuBar: true,
+          title: "Studio Mivo — dalam NOVACUT (login tersimpan)",
+          webPreferences: { partition: "persist:mivo", contextIsolation: true, nodeIntegration: false, backgroundThrottling: false },
+        });
+        mivoStudioWin.webContents.on("did-navigate", () => jalankanOtomasi());
+        mivoStudioWin.webContents.on("did-navigate-in-page", () => jalankanOtomasi());
+        mivoStudioWin.on("closed", () => {
+          mivoStudioWin = null;
+        });
+        mivoStudioWin.webContents.loadURL("https://www.mivo.com/generate/studio").catch(() => {});
+      }
+      statusMivo(model ? "🌐 Studio Mivo dibuka dalam app — otomasi menunggu halaman studio…" : "🌐 Studio Mivo dibuka dalam app — loginmu tersimpan (cukup sekali)", true);
+      setTimeout(() => jalankanOtomasi(), 4000);
+      setTimeout(() => jalankanOtomasi(), 9000);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
+    }
+  };
+  ipcMain.handle("mivo:studio-open", (_e, payload) => bukaStudioMivo(payload?.model ? String(payload.model) : "", "", ""));
   // Preferensi penyedia & kualitas poster (disimpan lokal, mode 0600).
   ipcMain.handle("ai:get-prefs", () => readAIPrefs());
   ipcMain.handle("ai:set-prefs", (_e, payload) => {
@@ -1232,6 +1405,7 @@ if (!gotLock) {
     });
     win.setMenuBarVisibility(false);
     win.once("ready-to-show", () => win.show());
+    jendelaUtama = win;
     await win.loadURL(`http://127.0.0.1:${port}/`);
   });
 

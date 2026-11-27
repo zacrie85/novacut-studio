@@ -1466,7 +1466,10 @@ export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size:
     // v1.0.56: JEMBATAN MIVO — start (folder+clipboard+buka Mivo) lalu poll hasil
     // dari folder NOVACUT-Mivo tiap 3 dtk, maks 12 menit (bukan Promise.race AI).
     if (provider === "mivo" && window.novacutAI?.mivoBridgeStart) {
-      const st = await window.novacutAI.mivoBridgeStart(frameUrl, prompt, size);
+      // v1.0.60: pilihan model Mivo (localStorage novacut.mivoModel — diatur di
+      // kartu AI: film → FLUX Klein, musik → Minimax H3) dibawa ke Studio Mivo
+      const modelMivo = (typeof localStorage !== "undefined" && localStorage.getItem("novacut.mivoModel")) === "musik" ? "musik" : "film";
+      const st = await window.novacutAI.mivoBridgeStart(frameUrl, prompt, size, modelMivo);
       if (!st?.ok) {
         _kesalahanPosterAI = terjemahkanKesalahanAI(String(st?.error || "jembatan Mivo gagal dimulai"));
         _jalurPosterAI = "";

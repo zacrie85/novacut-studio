@@ -29,6 +29,8 @@ interface NovacutFS {
   openFolder: (dir: string) => Promise<SaveResult>;
   /** v1.0.16: cek keberadaan & ukuran file di folder (resume batch) */
   statFile?: (dir: string, name: string) => Promise<SaveResult & { size?: number }>;
+  /** v1.0.60: ukuran file di path absolut (preset kualitas pas/pasSetengah) */
+  fileSize?: (path: string) => Promise<number>;
   /** v1.0.16: notifikasi Windows dari main process */
   notify?: (title: string, body: string) => Promise<SaveResult>;
   /** v1.0.16: matikan PC (Windows) dengan jeda 60 detik */
@@ -64,8 +66,11 @@ interface NovacutAI {
   testMiniMaxKey?: () => Promise<{ ok: boolean; error?: string }>;
   openMiniMaxAPI?: () => Promise<{ ok: boolean; error?: string }>;
   // v1.0.56: JEMBATAN MIVO — semi-otomatis via web mivo.com (tanpa kunci API)
-  mivoBridgeStart?: (image: string, prompt: string, size: string) => Promise<{ ok: boolean; id?: string; dir?: string; prompt?: string; error?: string }>;
+  // v1.0.60: +model + studio dalam app (login tersimpan) + status langkah otomasi
+  mivoBridgeStart?: (image: string, prompt: string, size: string, model?: string) => Promise<{ ok: boolean; id?: string; dir?: string; prompt?: string; error?: string }>;
   mivoBridgePoll?: (id: string) => Promise<{ done: boolean; image?: string; error?: string }>;
+  mivoStudioOpen?: (model?: string) => Promise<{ ok: boolean; error?: string }>;
+  onMivoStudioStatus?: (cb: (d: { pesan: string; ok?: boolean; t?: number }) => void) => void;
   openMivoFolder?: () => Promise<{ ok: boolean; dir?: string; error?: string }>;
   openMivoStudio?: () => Promise<{ ok: boolean; error?: string }>;
   getAIPrefs?: () => Promise<{ provider: string; quality: string }>;

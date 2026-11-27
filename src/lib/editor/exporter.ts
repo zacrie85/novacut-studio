@@ -1615,14 +1615,28 @@ export async function runBatchExport(assetIds: string[]) {
         // audio asli disalin (bitrate sumber tak diketahui, aman s.d. 320k).
         const segDur = Math.max(1, r.end - r.start);
         const cepatReserve = pr.audioCopy ? 320_000 : 192_000;
-        const bitrate =
-          pl.quality === "cepat"
-            ? Math.round(Math.min(4_500_000, Math.max(600_000, (47_000_000 * 8 - cepatReserve * segDur) / segDur)))
-            : pl.quality === "ringan"
-              ? 4_500_000
-              : pl.quality === "maksimal"
-                ? 14_000_000
-                : 9_000_000;
+        // v1.0.60: preset "pas" / "pasSetengah" — TOTAL ukuran semua split mengikuti
+        // file asli (atau setengahnya), dibagi rata per bagian: bitrate video =
+        // (targetTotal ×8 × 0.97 margin container ÷ durasi total) − reservasi audio.
+        // Ukuran file asli dibaca dari disk (desktop); tak tersedia → target 47 MB.
+        let bitrate: number;
+        if (pl.quality === "pas" || pl.quality === "pasSetengah") {
+          let sizeAsli = -1;
+          try {
+            if (isDesktopFS() && job.asset?.url) sizeAsli = (await window.novacutFS?.fileSize?.(String(job.asset.url).replace(/^file:\/\//, ""))) ?? -1;
+          } catch {}
+          const durTotal = Math.max(1, pr.ranges.reduce((a, z) => a + Math.max(0.1, z.end - z.start), 0));
+          const targetTotal = sizeAsli > 0 ? sizeAsli * (pl.quality === "pasSetengah" ? 0.5 : 1) : 47_000_000;
+          bitrate = Math.round(Math.min(20_000_000, Math.max(600_000, (targetTotal * 8 * 0.97) / durTotal - cepatReserve)));
+        } else if (pl.quality === "cepat") {
+          bitrate = Math.round(Math.min(4_500_000, Math.max(600_000, (47_000_000 * 8 - cepatReserve * segDur) / segDur)));
+        } else if (pl.quality === "ringan") {
+          bitrate = 4_500_000;
+        } else if (pl.quality === "maksimal") {
+          bitrate = 14_000_000;
+        } else {
+          bitrate = 9_000_000;
+        }
         // v1.0.23 ANTI-KEDIP: panjang cover (shift) diambil dari KLIP VIDEO proyek
         // yang baru dibangun — satu sumber kebenaran. Dulu dihitung ulang dari
         // snapshot setelan `s` yang sudah BASI (includeCover ditimpa dari

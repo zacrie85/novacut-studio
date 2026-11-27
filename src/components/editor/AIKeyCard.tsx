@@ -42,6 +42,23 @@ export default function AIKeyCard() {
     });
   }, []);
 
+  // v1.0.60: model Mivo (film → FLUX Klein / musik → Minimax H3) + status langkah
+  // otomasi yang di-push dari main process saat Studio Mivo dalam app berjalan
+  const [mivoModel, setMivoModel] = useState<"film" | "musik">(() => {
+    try {
+      return localStorage.getItem("novacut.mivoModel") === "musik" ? "musik" : "film";
+    } catch {
+      return "film";
+    }
+  });
+  const [statusMivo, setStatusMivo] = useState<string[]>([]);
+  useEffect(() => {
+    window.novacutAI?.onMivoStudioStatus?.((d) => {
+      if (!d?.pesan) return;
+      setStatusMivo((prev) => [`${d.ok ? "✓" : "⚠"} ${d.pesan}`, ...prev].slice(0, 6));
+    });
+  }, []);
+
   if (!mounted || !window.novacutAI?.setAIKey) return null;
 
   const gantiProvider = (p: Provider) => {
@@ -361,13 +378,35 @@ export default function AIKeyCard() {
         ) : (
           <>
             <div className="text-[10px] leading-relaxed text-gray-500">
-              <b className="text-lime-300/90">Tetap pakai kredit Mivo (top-up QRIS), tanpa kunci API</b> — app menyiapkan semuanya otomatis, kamu hanya 3 langkah di Mivo:
-              <br /><b>1.</b> Klik 🎨 <b>Buat Ulang Poster</b> → prompt final otomatis TERSALIN ke clipboard + frame tersimpan sebagai <b>REFERENSI-frame.png</b> di folder <b>NOVACUT-Mivo</b> + tab Mivo terbuka.
-              <br /><b>2.</b> Di Mivo: pilih <b>Minimax H3</b> → Aspect <b>9:16</b> → Resolution <b>1K</b> → paste prompt (Ctrl+V) → <b>Add reference images</b> → pilih REFERENSI-frame.png → Generate.
-              <br /><b>3.</b> Unduh hasilnya → simpan ke folder <b>NOVACUT-Mivo</b> (nama bebas).
-              <br /><b>4.</b> App otomatis mendeteksi (±3 dtk) → poster langsung jadi cover (tunggu maks 12 menit).
+              <b className="text-lime-300/90">Tetap pakai kredit Mivo (top-up QRIS), tanpa kunci API</b> — kini dengan <b className="text-lime-300/90">STUDIO MIVO DALAM APP</b> (login tersimpan, cukup sekali) + otomasi:
+              <br /><b>1.</b> Pilih model di bawah (🎬 Film → FLUX Klein / 🎵 Musik → Minimax H3), login sekali di jendela Studio.
+              <br /><b>2.</b> Klik 🎨 <b>Buat Ulang Poster</b> → app otomatis: buka studio, pilih model, isi prompt, unggah <b>REFERENSI-frame.png</b>, klik Generate — langkah yang gagal dilanjutkan manual (prompt di clipboard, frame di folder <b>NOVACUT-Mivo</b>).
+              <br /><b>3.</b> App memanen hasil otomatis (dari halaman ATAU folder) ±3 dtk → langsung jadi cover (tunggu maks 12 menit).
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-semibold text-gray-400">Model Mivo:</span>
+              {([["film", "🎬 Film → FLUX Klein"], ["musik", "🎵 Musik → Minimax H3"]] as const).map(([v, l]) => (
+                <button
+                  key={v}
+                  onClick={() => {
+                    setMivoModel(v);
+                    try {
+                      localStorage.setItem("novacut.mivoModel", v);
+                    } catch {}
+                  }}
+                  className={mivoModel === v ? "rounded-md border border-lime-400/70 bg-lime-500/20 px-2 py-1 text-[10px] font-semibold text-lime-200" : "rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-semibold text-gray-400 hover:border-lime-500/40"}
+                >
+                  {l}
+                </button>
+              ))}
             </div>
             <div className="flex flex-wrap gap-x-3 gap-y-1">
+              <button
+                onClick={() => void window.novacutAI?.mivoStudioOpen?.(mivoModel)}
+                className="rounded-md border border-lime-500/50 bg-lime-500/15 px-2 py-1 text-[10px] font-semibold text-lime-100 transition hover:border-lime-400"
+              >
+                🌐 Studio Mivo dalam app (login tersimpan)
+              </button>
               <button
                 onClick={() => void window.novacutAI?.openMivoFolder?.()}
                 className="rounded-md border border-lime-500/40 bg-lime-500/10 px-2 py-1 text-[10px] font-semibold text-lime-100 transition hover:border-lime-400"
@@ -378,9 +417,16 @@ export default function AIKeyCard() {
                 onClick={() => void window.novacutAI?.openMivoStudio?.()}
                 className="rounded-md border border-lime-500/40 bg-lime-500/10 px-2 py-1 text-[10px] font-semibold text-lime-100 transition hover:border-lime-400"
               >
-                🌐 Buka mivo.com → Studio ↗
+                🌐 Buka mivo.com ↗ (browser luar)
               </button>
             </div>
+            {statusMivo.length > 0 && (
+              <div className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1.5 text-[10px] leading-relaxed text-gray-300">
+                {statusMivo.map((s, i) => (
+                  <div key={i}>{s}</div>
+                ))}
+              </div>
+            )}
           </>
         )
       ) : !window.novacutAI?.setCFKey ? (

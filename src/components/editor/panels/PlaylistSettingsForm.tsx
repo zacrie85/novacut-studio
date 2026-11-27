@@ -234,12 +234,15 @@ export function PlaylistSettingsForm({ showSave = true, hideTitleScreen = false 
             "cepat" menjaga ukuran file ≤ ~50 MB (bitrate dihitung dari durasi). */}
         <div className="space-y-1">
           <Label className="text-xs text-gray-300">Kualitas hasil</Label>
-          <div className="grid grid-cols-4 gap-1.5">
+          {/* v1.0.60: 6 preset — pas/pasSetengah menjaga TOTAL ukuran semua split ≈ file asli (atau ½-nya) */}
+          <div className="grid grid-cols-3 gap-1.5">
             {([
               ["cepat", "Cepat", "720p · ≤50 MB"],
               ["ringan", "Ringan", "720p · file kecil"],
               ["tajam", "Tajam", "1080p · disarankan"],
               ["maksimal", "Maksimal", "1080p · terbaik"],
+              ["pas", "Pas Asli", "1080p · total ≈ asli"],
+              ["pasSetengah", "Pas ½ Asli", "1080p · total ≈ ½ asli"],
             ] as const).map(([val, lab, sub]) => (
               <button
                 key={val}
@@ -251,7 +254,7 @@ export function PlaylistSettingsForm({ showSave = true, hideTitleScreen = false 
               </button>
             ))}
           </div>
-          <p className="text-[11px] leading-relaxed text-gray-500">Cepat = file SANGAT kecil (≤ ~50 MB per bagian — bitrate video disesuaikan otomatis dari durasi; cocok untuk WhatsApp). Ringan = 720p file kecil. Tajam = 1080p seimbang. Maksimal = 1080p terbaik, file terbesar.</p>
+          <p className="text-[11px] leading-relaxed text-gray-500">Cepat = file SANGAT kecil (≤ ~50 MB per bagian — bitrate video disesuaikan otomatis dari durasi; cocok untuk WhatsApp). Ringan = 720p file kecil. Tajam = 1080p seimbang. Maksimal = 1080p terbaik, file terbesar. <b className="text-gray-400">Pas Asli</b> = TOTAL semua split ≈ besar file asli dibagi rata (1 GB → 10 split ≈ 100 MB/split; 20 split ≈ 50 MB/split). <b className="text-gray-400">Pas ½ Asli</b> = TOTAL ≈ setengah file asli (1 GB → 10 split ≈ 50 MB/split). Keduanya otomatis membaca ukuran file asli + durasi video.</p>
         </div>
         {pl.ratio === "9:16" && (
           <div className="space-y-1">

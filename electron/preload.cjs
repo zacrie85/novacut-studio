@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("novacutFS", {
   openFolder: (dir) => ipcRenderer.invoke("fs:open-folder", dir),
   // v1.0.16: cek keberadaan & ukuran file di folder (resume batch) -> { ok, size? }
   statFile: (dir, name) => ipcRenderer.invoke("fs:stat-file", { dir, name }),
+  fileSize: (path) => ipcRenderer.invoke("fs:file-size", { path }).then((r) => (r && r.ok ? Number(r.size) || 0 : -1)),
   // v1.0.16: notifikasi Windows (tampil walau jendela diminimalkan)
   notify: (title, body) => ipcRenderer.invoke("app:notify", { title, body }),
   // v1.0.16: matikan PC otomatis setelah batch selesai (jeda 60 detik)
@@ -58,10 +59,15 @@ contextBridge.exposeInMainWorld("novacutAI", {
   testMiniMaxKey: () => ipcRenderer.invoke("minimax:test-key"),
   openMiniMaxAPI: () => ipcRenderer.invoke("app:open-url", { url: "https://platform.minimax.io/user-center/basic-information/interface-key" }),
   // v1.0.56: JEMBATAN MIVO — semi-otomatis via web mivo.com (tanpa kunci API)
-  mivoBridgeStart: (image, prompt, size) => ipcRenderer.invoke("mivo:bridge-start", { image, prompt, size }),
+  // v1.0.60: +model (film → FLUX Klein / musik → Minimax H3) + studio dalam app
+  mivoBridgeStart: (image, prompt, size, model) => ipcRenderer.invoke("mivo:bridge-start", { image, prompt, size, model }),
   mivoBridgePoll: (id) => ipcRenderer.invoke("mivo:bridge-poll", { id }),
   openMivoFolder: () => ipcRenderer.invoke("mivo:open-folder"),
   openMivoStudio: () => ipcRenderer.invoke("app:open-url", { url: "https://www.mivo.com/generate/studio" }),
+  mivoStudioOpen: (model) => ipcRenderer.invoke("mivo:studio-open", { model }),
+  onMivoStudioStatus: (cb) => {
+    ipcRenderer.on("mivo:studio-status", (_e, d) => cb?.(d));
+  },
   // v1.0.38: preferensi penyedia & kualitas poster (disimpan lokal)
   getAIPrefs: () => ipcRenderer.invoke("ai:get-prefs"),
   setAIPrefs: (prefs) => ipcRenderer.invoke("ai:set-prefs", prefs),
