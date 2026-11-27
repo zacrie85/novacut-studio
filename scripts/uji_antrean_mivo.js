@@ -58,6 +58,18 @@ harus(blokBuka.includes('on("did-navigate-in-page", () => jalankanOtomasi())'), 
 harus(main.includes("cobaOtomasiT") && main.includes("!mivoStudioOtomasi.selesai.has(\"otomasi\")"), "poll memicu ulang otomasi tiap ±15 dtk bila belum jalan — studio tak bisa terbuka kosong selamanya");
 harus(!/dulu jendela lama dipakai ulang/i.test(main.split("v1.0.64")[1] || ""), "komentar menjelaskan celah v1.0.63");
 
+console.log("(1d) statis — sidik piksel poster + batch BERURUTAN saat Mivo (v1.0.66):");
+harus(main.includes("const skripSidik = `(async (u)") || main.includes("const skripSidik = `(async (u) =>"), "skrip sidik piksel (aHash 8×8) ada di main.cjs");
+harus(main.includes("createImageBitmap") && main.includes("getImageData"), "hash dihitung dari piksel asli (fetch → bitmap → kanvas 8×8)");
+harus(main.includes("const hashJauh = (a, b)") && main.includes("beda <= 8"), "pencocokan hash dgn jarak Hamming ≤ 8 (tahan resampling)");
+harus(main.includes("const hashSudahAda = (h)") && main.includes("selesaiHash"), "kandidat panen ditolak bila sidik pikselnya sudah pernah tercatat");
+harus(main.includes("selesaiHash.push(baru.h);"), "sidik poster terpanen dicatat SELAMANYA (bukan cuma URL)");
+harus(main.includes("h: await ("), "snapshot dini juga merekam sidik piksel (bukan hanya URL)");
+const exp = fs.readFileSync("src/lib/editor/exporter.ts", "utf8");
+harus(exp.includes("const mivoUrut = prefsAI?.provider === \"mivo\";"), "penyedia Mivo terdeteksi di runBatchExport");
+harus(exp.includes("const MAX_CONC = mivoUrut ? 1 :") && exp.includes("const PREP_CONC = mivoUrut ? 1 :"), "batch Mivo BERURUTAN: 1 pekerja + 1 prep (tanpa paralel antar video)");
+harus(exp.includes("Jeda 3 dtk — memberi waktu poster Mivo video sebelumnya"), "jeda 3 dtk antar video (permintaan pengguna)");
+
 console.log("(2) perilaku antrean FIFO (simulasi):");
 const buatRantai = () => {
   let rantai = Promise.resolve();

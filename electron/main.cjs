@@ -897,13 +897,17 @@ function registerFSIpc() {
     // tampil saat otomasi dimulai) → unduh langsung dari CDN; tak perlu simpan manual
     if (mivoStudioWin && !mivoStudioWin.isDestroyed()) {
       try {
+        // v1.0.66: filter URL lama dijalan-kan DI DALAM HALAMAN, tiap kandidat
+        // dihitung SIDIK PIKSELNYA → poster lama (History/kanvas, URL berapa pun)
+        // ditolak bila sidiknya sudah pernah tercatat — inilah penjaga utama agar
+        // cover TIDAK SALING TERTUKAR antar video
+        const lamaUrl = mivoStudioOtomasi?.selesaiImg;
         const urls = await mivoStudioWin.webContents.executeJavaScript(
-          '(() => { const out = []; try { for (const img of document.querySelectorAll("img")) { try { if (img.naturalWidth >= 512 && img.naturalHeight >= 512 && /^https?:/i.test(img.src)) out.push({ s: img.src, a: img.naturalWidth * img.naturalHeight }); } catch {} } } catch {} return out; })()',
+          `(async () => { const lama = new Set(${JSON.stringify(lamaUrl ? [...lamaUrl] : [])}); const out = []; try { for (const img of document.querySelectorAll("img")) { try { if (img.naturalWidth >= 512 && img.naturalHeight >= 512 && /^https?:/i.test(img.src) && !lama.has(img.src)) out.push({ s: img.src, a: img.naturalWidth * img.naturalHeight, h: await (${skripSidik})(img.src) }); } catch {} } } catch {} return out; })()`,
           true,
         );
-        const lama = mivoStudioOtomasi?.selesaiImg;
         const baru = (urls || [])
-          .filter((u) => u && u.s && !(lama && lama.has(u.s)) && !/logo|icon|avatar|banner|thumb|sprite/i.test(u.s))
+          .filter((u) => u && u.s && !/logo|icon|avatar|banner|thumb|sprite/i.test(u.s) && !hashSudahAda(u.h))
           .sort((a, z) => z.a - a.a)[0];
         if (baru) {
           const r = await fetch(baru.s, { signal: AbortSignal.timeout(30000) });
@@ -911,11 +915,15 @@ function registerFSIpc() {
             const ab = await r.arrayBuffer();
             if (ab.byteLength > 30000) {
               const ct = (r.headers.get("content-type") || "image/jpeg").split(";")[0];
-              // v1.0.64: URL hasil yang SUDAH dipanen dicatat SELAMANYA — poster
-              // yang sama tak bisa terpanen dua kali walau tampil lagi di halaman
-              // baru giliran berikutnya (celah utama v1.0.63: video ke-2 dapat
-              // poster video pertama dalam hitungan detik)
+              // v1.0.64/66: URL + SIDIK PIKSEL hasil yang SUDAH dipanen dicatat
+              // SELAMANYA — poster yang sama tak bisa terpanen dua kali, kapan pun
+              // dan dalam URL apa pun ia tampil lagi (celah utama v1.0.63/65:
+              // video berikutnya dapat poster video sebelumnya dalam hitungan detik)
               try { mivoStudioOtomasi?.selesaiImg?.add(baru.s); } catch {}
+              if (baru.h) {
+                mivoStudioOtomasi.selesaiHash = mivoStudioOtomasi.selesaiHash || [];
+                mivoStudioOtomasi.selesaiHash.push(baru.h);
+              }
               // v1.0.62: hasil juga DISIMPAN ke folder NOVACUT-Mivo (HASIL-*.jpg/png)
               const extH = ct.indexOf("png") >= 0 ? "png" : ct.indexOf("webp") >= 0 ? "webp" : "jpg";
               try { fs.writeFileSync(path.join(b.dir, `HASIL-${Date.now()}.${extH}`), Buffer.from(ab)); } catch {}
@@ -1136,15 +1144,39 @@ function registerFSIpc() {
         statusMivo(r.generate ? "✓ Tombol Generate 1 image diklik — menunggu gambar jadi (dipanen otomatis)…" : "⚠ Klik \"Generate 1 image (2 credits)\" manual di dasar panel (gagal diklik otomatis)", true);
         if (Array.isArray(r.catatan) && r.catatan.length) statusMivo("catatan: " + r.catatan.join("; "), false);
       }
-      // catat semua img besar yang SUDAH ada → hanya img BARU yang dianggap hasil
-      try {
-        const snap = await mivoStudioWin.webContents.executeJavaScript('(() => { const out = []; try { for (const img of document.querySelectorAll("img")) { try { if (img.naturalWidth >= 512 && /^https?:/i.test(img.src)) out.push(img.src); } catch {} } } catch {} return out; })()', true);
-        o.selesaiImg = o.selesaiImg || new Set();
-        for (const s of snap || []) o.selesaiImg.add(s);
-      } catch {}
+      // catat semua img besar yang SUDAH ada (URL + SIDIK PIKSEL) → hanya img
+      // BENAR-BENAR BARU yang dianggap hasil
+      await snapshotImgLama();
     } catch (e) {
       statusMivo("otomasi: " + String((e && e.message) || e).slice(0, 120), false);
     }
+  };
+  // v1.0.66: SIDIK JARI PIKSEL — hash rata-rata 8×8 (aHash 64-bit) dari gambar.
+  // URL string TIDAK CUKUP: poster yang sama tampil lagi di History/kanvas halaman
+  // segar dengan URL BERBEDA (ukuran/param beda) → lolos cek URL → giliran
+  // berikutnya memanen poster lama → cover SALING TERTUKAR antar video (keluhan
+  // pengguna v1.0.65: "posternya tercetak 3 tapi cover yang dipakai saling
+  // tertukar"). aHash: fetch CORS → createImageBitmap → kanvas 8×8 grayscale →
+  // banding tiap piksel dgn rata-rata → 64 bit → 16 heksa. Gambar yang sama
+  // dalam ukuran apa pun menghasilkan hash yang sama.
+  const skripSidik = `(async (u) => { try { const r = await fetch(u, { mode: "cors" }); if (!r.ok) return ""; const bmp = await createImageBitmap(await r.blob()); const c = document.createElement("canvas"); c.width = 8; c.height = 8; const x = c.getContext("2d"); if (!x) return ""; x.drawImage(bmp, 0, 0, 8, 8); bmp.close && bmp.close(); const d = x.getImageData(0, 0, 8, 8).data; const g = []; for (let i = 0; i < 64; i++) { const j = i * 4; g.push((d[j] + d[j + 1] + d[j + 2]) / 3); } let av = 0; for (let i = 0; i < 64; i++) av += g[i]; av /= 64; let h = ""; for (let k = 0; k < 16; k++) { let n = 0; for (let b = 0; b < 4; b++) if (g[k * 4 + b] >= av) n |= (1 << b); h += n.toString(16); } return h; } catch (e) { return ""; } })`;
+  // jarak Hamming ≤ 8 dari 64 bit → gambar sama walau di-resample/tajam beda tipis
+  const hashJauh = (a, b) => {
+    if (!a || !b || a.length !== b.length) return false;
+    let beda = 0;
+    for (let i = 0; i < a.length; i++) {
+      let x = (parseInt(a[i], 16) || 0) ^ (parseInt(b[i], 16) || 0);
+      while (x) {
+        beda += x & 1;
+        x >>= 1;
+      }
+    }
+    return beda <= 8;
+  };
+  const hashSudahAda = (h) => {
+    const daftar = mivoStudioOtomasi?.selesaiHash;
+    if (!h || !daftar || !daftar.length) return false;
+    return daftar.some((x) => hashJauh(x, h));
   };
   // v1.0.64: SNAPSHOT DINI — segera setelah halaman studio terbuka, catat semua
   // img besar yang SUDAH tampil (poster hasil giliran sebelumnya di kanvas/
@@ -1156,9 +1188,16 @@ function registerFSIpc() {
   const snapshotImgLama = async () => {
     try {
       if (!mivoStudioWin || mivoStudioWin.isDestroyed()) return;
-      const snap = await mivoStudioWin.webContents.executeJavaScript('(() => { const out = []; try { for (const img of document.querySelectorAll("img")) { try { if (img.naturalWidth >= 512 && img.naturalHeight >= 512 && /^https?:/i.test(img.src)) out.push(img.src); } catch {} } } catch {} return out; })()', true);
-      const himpun = mivoStudioOtomasi?.selesaiImg;
-      if (himpun && Array.isArray(snap)) for (const s of snap) himpun.add(s);
+      const snap = await mivoStudioWin.webContents.executeJavaScript(`(async () => { const out = []; try { for (const img of document.querySelectorAll("img")) { try { if (img.naturalWidth >= 512 && img.naturalHeight >= 512 && /^https?:/i.test(img.src)) out.push({ s: img.src, h: await (${skripSidik})(img.src) }); } catch {} } } catch {} return out; })()`, true);
+      const o = mivoStudioOtomasi;
+      if (o && Array.isArray(snap)) {
+        o.selesaiImg = o.selesaiImg || new Set();
+        o.selesaiHash = o.selesaiHash || [];
+        for (const p of snap) {
+          if (p && p.s) o.selesaiImg.add(p.s);
+          if (p && p.h && !(o.selesaiHash.some((x) => hashJauh(x, p.h)))) o.selesaiHash.push(p.h);
+        }
+      }
     } catch {}
   };
   const bukaStudioMivo = (model, prompt, imageB64) => {
@@ -1170,6 +1209,9 @@ function registerFSIpc() {
         if (imageB64) mivoStudioOtomasi.imageB64 = imageB64;
         mivoStudioOtomasi.selesai.delete("otomasi");
         mivoStudioOtomasi.selesaiImg = mivoStudioOtomasi.selesaiImg || new Set();
+        // v1.0.66: daftar sidik piksel poster yang SUDAH dipanen/tampil — bertahan
+        // sepanjang sesi agar poster lama tak mungkin terpanen utk video lain
+        mivoStudioOtomasi.selesaiHash = mivoStudioOtomasi.selesaiHash || [];
         // v1.0.64: JENDELA BARU utk TIAP giliran poster (keluhan pengguna:
         // "tanpa ada nya pembukaan baru untuk browser mivo nya" — dulu jendela
         // lama dipakai ulang dgn loadURL → halaman penuh sisa giliran sebelumnya).

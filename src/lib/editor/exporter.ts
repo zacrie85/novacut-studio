@@ -1194,6 +1194,19 @@ export async function runBatchExport(assetIds: string[]) {
   // setelan teks khusus Playlist Export (judul otomatis, deskripsi, teks part)
   const pl = st0.playlistExport;
 
+  // v1.0.66: penyedia poster MIVO → SELURUH batch berjalan BERURUTAN satu per
+  // satu (permintaan pengguna: "proses export&split banyak video diproses nya
+  // benar-benar secara berurutan, dari video pertama ke video kedua di beri jeda
+  // dulu agar video ke dua bisa ada waktu untuk memproses posternya di mivo").
+  // Dulu 2 film disiapkan BERSAMAAN (PREP_CONC 2) + segmen paralel → prep video
+  // berikutnya menumpuk di atas video yang sedang dirender → cover bisa tertukar.
+  // Penyedia lain (Z.ai/Mage/Minimax) tetap paralel seperti biasa.
+  const prefsAI = await window.novacutAI?.getAIPrefs?.().catch(() => null);
+  const mivoUrut = prefsAI?.provider === "mivo";
+  if (mivoUrut) {
+    useEditor.getState().patchExportState({ label: "Mode MIVO: video diproses BERURUTAN satu per satu — poster tiap video dibuat di studio Mivo..." });
+  }
+
   // status per video (progres per baris di panel) — diinisialisasi dari daftar video
   const initJobs: BatchJobView[] = assetIds
     .map((id) => ({ id, asset: snapshot.assets.find((a) => a.id === id) }))
@@ -1480,6 +1493,14 @@ export async function runBatchExport(assetIds: string[]) {
     const prepFilm = async (job: BatchJob, vi: number): Promise<void> => {
       const jid = job.origId;
       markJob(jid, { status: "jalan", progress: 0, label: "Menyiapkan..." });
+      // v1.0.66: JEDA ANTAR VIDEO saat penyedia Mivo — video N+1 tak langsung
+      // menindak video N (permintaan pengguna: "dari video pertama ke video kedua
+      // di beri jeda dulu agar video ke dua bisa ada waktu untuk memproses
+      // posternya di mivo"); studio Mivo juga sempat tertutup rapi dulu
+      if (mivoUrut && vi > 0) {
+        markJob(jid, { label: "Jeda 3 dtk — memberi waktu poster Mivo video sebelumnya..." });
+        await new Promise((r) => setTimeout(r, 3000));
+      }
       const direct = s.exportDir && isDesktopFS() ? { dir: s.exportDir } : null;
       const { clip, tracks } = buildBatchClip(job);
       let ranges = rangesFor(clip);
@@ -1716,8 +1737,10 @@ export async function runBatchExport(assetIds: string[]) {
       const RAM_BUDGET_MB = 1500;
       // v1.0.24: hormati setelan PARALEL pengguna (dulu selalu 5 paksa dan setelan
       // tidak pernah dipakai — makin besar paralel makin banyak dekoder aktif)
-      const MAX_CONC = Math.max(1, Math.min(5, Math.round(Number(pl.parallel) || 3)));
-      const PREP_CONC = Math.min(2, Math.max(1, jobs.length));
+      // v1.0.66: penyedia Mivo → 1 pekerja tunggal: video diproses BENAR-BENAR
+      // berurutan (prep → cover Mivo → export & split tuntas → baru video berikutnya)
+      const MAX_CONC = mivoUrut ? 1 : Math.max(1, Math.min(5, Math.round(Number(pl.parallel) || 3)));
+      const PREP_CONC = mivoUrut ? 1 : Math.min(2, Math.max(1, jobs.length));
       let prepNext = 0;
       let prepRunning = 0;
       let segRunning = 0;
