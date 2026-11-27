@@ -882,6 +882,17 @@ function registerFSIpc() {
       b.pushWait = Date.now();
       statusMivo(`⏳ Menunggu Mivo menggambar… (${Math.round((Date.now() - b.startedAt) / 1000)} dtk — hasil dipanen otomatis begitu jadi)`, false);
     }
+    // v1.0.65: OTOMASI COBA ULANG — bila jendela studio terbuka tetapi otomasi
+    // belum pernah menyala (pemicu did-navigate terlewat / halaman lambat dimuat),
+    // picu ulang dari poll tiap ±15 dtk. Dulu studio bisa terbuka kosong SELAMANYA
+    // (tanpa unggahan frame, tanpa prompt, tanpa Generate — persis video bukti
+    // pengguna v1.0.64) sambil export & split menunggu terblokir di "Menyiapkan cover".
+    if (mivoStudioWin && !mivoStudioWin.isDestroyed() && mivoStudioOtomasi && !mivoStudioOtomasi.selesai.has("otomasi")) {
+      if (Date.now() - (mivoStudioOtomasi.cobaOtomasiT || 0) > 15000) {
+        mivoStudioOtomasi.cobaOtomasiT = Date.now();
+        jalankanOtomasi();
+      }
+    }
     // v1.0.60: PANEN HASIL dari halaman studio — img besar BARU (bukan yang sudah
     // tampil saat otomasi dimulai) → unduh langsung dari CDN; tak perlu simpan manual
     if (mivoStudioWin && !mivoStudioWin.isDestroyed()) {
@@ -1186,12 +1197,23 @@ function registerFSIpc() {
           snapshotImgLama();
           jalankanOtomasi();
         });
-        mivoStudioWin.webContents.on("did-navigate-in-page", () => {
-          snapshotImgLama();
-          jalankanOtomasi();
-        });
-        mivoStudioWin.on("closed", () => {
-          mivoStudioWin = null;
+        // v1.0.65: did-navigate-in-page TANPA snapshotImgLama — studio Mivo SPA
+        // bisa memicu navigasi-in-page JUSTRU SAAT hasil generasi tampil; snapshot
+        // pada momen itu memasukkan HASIL BARU ke daftar "img lama" → hasil tak
+        // pernah terpanen → menunggu 12 menit sia-sia. Snapshot cukup di
+        // did-navigate (pemuatan halaman penuh) + timer 4/9/14 dtk (sebelum generasi).
+        mivoStudioWin.webContents.on("did-navigate-in-page", () => jalankanOtomasi());
+        // v1.0.65: PENJAGA IDENTITAS — referensi hanya di-nol-kan bila yang
+        // tertutup MEMANG jendela terakhir yang dibuat. BUG v1.0.64 (bukti video
+        // pengguna): giliran baru menutup jendela lama lalu langsung membuat
+        // jendela segar → event 'closed' jendela LAMA menyala belakangan →
+        // mivoStudioWin = null MENIMPA referensi jendela BARU → otomasi tak jalan
+        // (halaman studio kosong: tanpa unggahan/prompt/Generate) + panen tak
+        // bisa jalan (mivoStudioWin null) + studio tak pernah ditutup otomatis →
+        // export & split terblokir di "Menyiapkan cover…" sampai habis 12 menit.
+        const winMivo = mivoStudioWin;
+        winMivo.on("closed", () => {
+          if (mivoStudioWin === winMivo) mivoStudioWin = null;
         });
         mivoStudioWin.webContents.loadURL("https://www.mivo.com/generate/studio").catch(() => {});
       }
