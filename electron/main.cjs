@@ -857,6 +857,12 @@ function registerFSIpc() {
   ipcMain.handle("mivo:bridge-poll", async (_e, payload) => {
     const b = mivoBridge;
     if (!b || String(payload?.id || "") !== b.id) return { done: true, error: "jembatan Mivo tidak aktif — klik Buat Ulang Poster lagi" };
+    // v1.0.62: info tunggu tiap 30 dtk — pengguna tahu app masih menunggu gambar
+    // jadi di studio Mivo (bukan diam tak berarti)
+    if (Date.now() - (b.pushWait || 0) > 30000) {
+      b.pushWait = Date.now();
+      statusMivo(`⏳ Menunggu Mivo menggambar… (${Math.round((Date.now() - b.startedAt) / 1000)} dtk — hasil dipanen otomatis begitu jadi)`, false);
+    }
     // v1.0.60: PANEN HASIL dari halaman studio — img besar BARU (bukan yang sudah
     // tampil saat otomasi dimulai) → unduh langsung dari CDN; tak perlu simpan manual
     if (mivoStudioWin && !mivoStudioWin.isDestroyed()) {
@@ -875,8 +881,11 @@ function registerFSIpc() {
             const ab = await r.arrayBuffer();
             if (ab.byteLength > 30000) {
               const ct = (r.headers.get("content-type") || "image/jpeg").split(";")[0];
+              // v1.0.62: hasil juga DISIMPAN ke folder NOVACUT-Mivo (HASIL-*.jpg/png)
+              const extH = ct.indexOf("png") >= 0 ? "png" : ct.indexOf("webp") >= 0 ? "webp" : "jpg";
+              try { fs.writeFileSync(path.join(b.dir, `HASIL-${Date.now()}.${extH}`), Buffer.from(ab)); } catch {}
               mivoBridge = null;
-              statusMivo("✓ Hasil Mivo dipanen otomatis dari halaman studio!", true);
+              statusMivo("✓ Hasil Mivo dipanen otomatis + disimpan ke folder NOVACUT-Mivo!", true);
               return { done: true, image: `data:${ct};base64,${Buffer.from(ab).toString("base64")}` };
             }
           }
@@ -1004,9 +1013,44 @@ function registerFSIpc() {
       }
     } catch (e) { res.catatan.push("prompt: " + e.message); }
     try {
-      window.scrollTo(0, document.body.scrollHeight);
-      await sleep(700);
-      res.generate = klik(/generate\\s*image|generate/i);
+      // v1.0.62: TOMBOL GENERATE DITARGET PASTI + SCROLL KE TOMBOL + KLIK NYATA
+      // (video pengguna: panel studio menggulir di KONTAINER DALAM, jadi
+      // window.scrollTo tak berguna; klik elemen terpendek yg mengandung
+      // "generate" juga mudah salah sasaran → tombol "Generate 1 image
+      // (2 credits)" tidak pernah tertekan). Kini: cari tombol persis
+      // /generate <angka> image/, scrollIntoView ke tombolnya, klik dgn urutan
+      // event pointer+mouse+click, lalu pastikan tombol berubah/disabled —
+      // dicoba ulang sampai 3× sebelum menyerah.
+      const tombolGen = () => {
+        const k = [...document.querySelectorAll('button,[role="button"],input[type="button"],input[type="submit"]')].filter((e) => tampil(e) && /generate\\s*(\\d+)?\\s*image/i.test((e.textContent || e.value || "").trim()));
+        k.sort((a, b) => (a.textContent || "").length - (b.textContent || "").length);
+        return k[0] || null;
+      };
+      const klikNyata = (el) => {
+        const r = el.getBoundingClientRect();
+        const o = { bubbles: true, cancelable: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, view: window };
+        for (const t of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+          try { el.dispatchEvent(t.indexOf("pointer") === 0 && window.PointerEvent ? new PointerEvent(t, o) : new MouseEvent(t, o)); } catch {}
+        }
+      };
+      let tb = tombolGen();
+      if (!tb) {
+        const gen = [...document.querySelectorAll('button,[role="button"]')].filter((e) => tampil(e) && /^generate/i.test((e.textContent || "").trim()));
+        gen.sort((a, b) => (a.textContent || "").length - (b.textContent || "").length);
+        tb = gen[0] || null;
+      }
+      if (tb) {
+        try { tb.scrollIntoView({ behavior: "smooth", block: "center" }); } catch {}
+        await sleep(900);
+        const teks0 = (tb.textContent || "").trim();
+        for (let i = 0; i < 3 && !res.generate; i++) {
+          klikNyata(tb);
+          await sleep(1500);
+          const el2 = tombolGen();
+          const teks2 = el2 ? (el2.textContent || "").trim() : "";
+          if (!el2 || el2.disabled || teks2 !== teks0) res.generate = true;
+        }
+      }
     } catch (e) { res.catatan.push("generate: " + e.message); }
     return res;
   })()`;
@@ -1030,7 +1074,7 @@ function registerFSIpc() {
         statusMivo(r.image ? "✓ Frame referensi terunggah — edit mode aktif" : "⚠ Upload manual: Add reference image → REFERENSI-frame.png di folder NOVACUT-Mivo", !!r.image);
         statusMivo(r.model ? "✓ Model dipilih otomatis" : "⚠ Pilih model manual (klik namanya di daftar model)", !!r.model);
         statusMivo(r.prompt ? "✓ Prompt terkirim ke studio Mivo otomatis" : "⚠ Paste prompt manual (Ctrl+V — prompt sudah di clipboard)", !!r.prompt);
-        statusMivo(r.generate ? "✓ Generate image diklik — menunggu hasil…" : "⚠ Klik \"Generate image\" manual di bagian paling bawah", true);
+        statusMivo(r.generate ? "✓ Tombol Generate 1 image diklik — menunggu gambar jadi (dipanen otomatis)…" : "⚠ Klik \"Generate 1 image (2 credits)\" manual di dasar panel (gagal diklik otomatis)", true);
         if (Array.isArray(r.catatan) && r.catatan.length) statusMivo("catatan: " + r.catatan.join("; "), false);
       }
       // catat semua img besar yang SUDAH ada → hanya img BARU yang dianggap hasil

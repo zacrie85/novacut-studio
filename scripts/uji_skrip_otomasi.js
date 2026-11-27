@@ -55,12 +55,22 @@ for (const [nama, reg] of [["film", regModelFilm], ["musik", regModelMusik]]) {
     console.error("GAGAL: regex AI Image tidak mencocokkan 'AI Image'");
     process.exit(1);
   }
-  const genEmit = out.match(/res\.generate = klik\((\/generate[^/]*\/i)\)/);
-  const rg = eval(genEmit[1]);
-  if (!rg.test("Generate image") || !rg.test("generate")) {
-    console.error("GAGAL: regex Generate tidak mencocokkan 'Generate image'");
+  // v1.0.62: regex tombol generate — /generate\s*(\d+)?\s*image/i harus cocok
+  // dengan teks tombol asli studio Mivo "Generate 1 image (2 credits)"
+  const targetGen = "/generate\\s*(\\d+)?\\s*image/i"; // nilai: /generate\s*(\d+)?\s*image/i
+  if (!out.includes(targetGen)) {
+    console.error("GAGAL: regex tombolGen /generate\\s*(\\d+)?\\s*image/i tidak ditemukan di skrip hasil");
     process.exit(1);
   }
-  console.log(`regex valid & cocok (${aiImageEmit[1]}, ${genEmit[1]}) ✓`);
+  const rg = eval(targetGen);
+  if (!rg.test("Generate 1 image (2 credits)") || !rg.test("Generate image") || !rg.test("generate 2 image")) {
+    console.error("GAGAL: regex tombol generate tidak mencocokkan 'Generate 1 image (2 credits)'");
+    process.exit(1);
+  }
+  if (!/scrollIntoView/.test(out) || !/pointerdown/.test(out) || !/tombolGen/.test(out)) {
+    console.error("GAGAL: scrollIntoView/klik nyata/tombolGen tidak ada di skrip hasil");
+    process.exit(1);
+  }
+  console.log(`regex valid & cocok (${aiImageEmit[1]}, /generate\\s*(\\d+)?\\s*image/i) + scrollIntoView + klik nyata ✓`);
 }
 console.log("=== SEMUA UJI SKRIP OTOMASI LULUS ✓ ===");
