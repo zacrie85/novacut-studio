@@ -1560,6 +1560,73 @@ export async function aiPosterizeDataURL(frameUrl: string, prompt: string, size:
   }
 }
 
+/** v1.0.67: THUMBNAIL PART/EPISODE — poster/cover video + label part/episode
+ * BESAR dgn FRAME mengelilinginya, posisinya sedikit di bawah tengah poster
+ * (permintaan pengguna: "ketika video sebelum di putar orang sudah tau bahwa
+ * video tersebut judulnya apa dan part/episode ke berapa"). Judul sudah
+ * tertulis di poster AI; thumbnail hanya menambahkan badge part di atasnya.
+ * Dipakai utk SETIAP bagian hasil export & split (disimpan sbg *-thumb.jpg). */
+export async function thumbnailPartDataURL(coverUrl: string, badge: string, maxW = 1600): Promise<string | null> {
+  try {
+    const img = await loadImage(coverUrl);
+    if (!img || !img.naturalWidth) return null;
+    const scale = Math.min(1, maxW / img.naturalWidth);
+    const w = Math.max(2, Math.round(img.naturalWidth * scale));
+    const h = Math.max(2, Math.round(img.naturalHeight * scale));
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, w, h);
+    const teks = String(badge || "").trim().toUpperCase();
+    if (teks) {
+      const rr = (ctx as CanvasRenderingContext2D & { roundRect?: (x: number, y: number, w: number, h: number, r: number) => void }).roundRect;
+      const kotakBulat = (x: number, y: number, bw: number, bh: number, r: number) => {
+        ctx.beginPath();
+        if (rr) rr.call(ctx, x, y, bw, bh, r);
+        else ctx.rect(x, y, bw, bh);
+      };
+      const fs = Math.max(44, Math.round(w * 0.082)); // tulisan "sedikit besar"
+      ctx.font = `800 ${fs}px "Segoe UI", "Noto Sans SC", Arial, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const tw = ctx.measureText(teks).width;
+      const padX = fs * 0.55;
+      const padY = fs * 0.42;
+      const bw = tw + padX * 2;
+      const bh = fs + padY * 2;
+      const bx = Math.round((w - bw) / 2);
+      const by = Math.round(h * 0.58 - bh / 2); // sedikit di bawah tengah
+      const r = Math.min(bh / 2, fs * 0.55);
+      ctx.save();
+      ctx.shadowColor = "rgba(0,0,0,0.55)";
+      ctx.shadowBlur = fs * 0.35;
+      ctx.shadowOffsetY = fs * 0.08;
+      kotakBulat(bx, by, bw, bh, r);
+      ctx.fillStyle = "rgba(10,12,20,0.72)";
+      ctx.fill();
+      ctx.restore();
+      // frame ganda mengelilingi tulisan (permintaan: "frame yang mengelilinginya")
+      kotakBulat(bx, by, bw, bh, r);
+      ctx.lineWidth = Math.max(3, fs * 0.085);
+      ctx.strokeStyle = "#ffffff";
+      ctx.stroke();
+      kotakBulat(bx + fs * 0.14, by + fs * 0.14, bw - fs * 0.28, bh - fs * 0.28, Math.max(2, r - fs * 0.14));
+      ctx.lineWidth = Math.max(1.5, fs * 0.035);
+      ctx.strokeStyle = "rgba(255,255,255,0.55)";
+      ctx.stroke();
+      ctx.fillStyle = "#ffffff";
+      ctx.shadowColor = "rgba(0,0,0,0.6)";
+      ctx.shadowBlur = fs * 0.2;
+      ctx.fillText(teks, w / 2, by + bh / 2 + fs * 0.03);
+    }
+    return c.toDataURL("image/jpeg", 0.92);
+  } catch {
+    return null;
+  }
+}
+
 /** v1.0.35: fallback poster saat AI gagal (tanpa kredensial/internet) — frame video
  * diberi grade sinematik + vignette TANPA tulisan apa pun (judul ditulis overlay
  * mesin render; aiMade=false sehingga overlay judul otomatis aktif). */

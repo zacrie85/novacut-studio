@@ -386,6 +386,7 @@ export default function AIKeyCard() {
               <br /><b>2.</b> Klik 🎨 <b>Buat Ulang Poster</b> → app otomatis: buka studio, pilih model, isi prompt, unggah <b>REFERENSI-frame.png</b>, klik Generate — langkah yang gagal dilanjutkan manual (prompt di clipboard, frame di folder <b>NOVACUT-Mivo</b>).
               <br /><b>3.</b> App memanen hasil otomatis (dari halaman ATAU folder) ±3 dtk → langsung jadi cover (tunggu maks 12 menit) → <b>Studio Mivo ditutup otomatis</b>.
               <br /><b>4.</b> <b>Banyak video sekaligus? BERURUTAN satu per satu</b> — video 1 tuntas (poster → export & split) → <b>jeda 3 dtk</b> → folder NOVACUT-Mivo dibersihkan → <b>browser Mivo dibuka BARU</b> → frame video 2 → poster baru → dst. Poster lama tak mungkin terpakai ulang: <b>sidik piksel</b> tiap poster tercatat (bukan cuma URL).
+              <br /><b>5.</b> <b>Thumbnail tiap bagian</b> — setiap hasil export & split dapat <b>-thumb.jpg</b> di folder yang sama: poster/cover video itu + tulisan <b>part/episode BESAR ber-frame</b> sedikit di bawah tengah → sebelum diputar orang sudah tahu judulnya apa dan part ke berapa.
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-[10px] font-semibold text-gray-400">Model Mivo:</span>

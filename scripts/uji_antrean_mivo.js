@@ -70,6 +70,17 @@ harus(exp.includes("const mivoUrut = prefsAI?.provider === \"mivo\";"), "penyedi
 harus(exp.includes("const MAX_CONC = mivoUrut ? 1 :") && exp.includes("const PREP_CONC = mivoUrut ? 1 :"), "batch Mivo BERURUTAN: 1 pekerja + 1 prep (tanpa paralel antar video)");
 harus(exp.includes("Jeda 3 dtk — memberi waktu poster Mivo video sebelumnya"), "jeda 3 dtk antar video (permintaan pengguna)");
 
+console.log("(1e) statis — thumbnail part/episode dari poster (v1.0.67):");
+const cov2 = fs.readFileSync("src/lib/editor/covers.ts", "utf8");
+harus(cov2.includes("export async function thumbnailPartDataURL"), "fungsi thumbnailPartDataURL ada di covers.ts");
+harus(cov2.includes("h * 0.58 - bh / 2"), "badge posisinya sedikit di bawah tengah poster (0.58)");
+harus(cov2.includes("kotakBulat(bx, by, bw, bh, r);") && cov2.includes("strokeStyle = \"#ffffff\";"), "badge diberi FRAME mengelilingi tulisan (frame ganda putih)");
+harus(exp.includes("async function simpanThumbnailPart"), "helper simpanThumbnailPart ada di exporter.ts");
+harus(exp.includes("partLabel(labelStyle, idx, total, false)"), "teks badge memakai label part/episode pilihan pengguna");
+const nPanggil = (exp.match(/simpanThumbnailPart\(/g) || []).length;
+harus(nPanggil >= 3, `thumbnail disimpan di jalur Turbo + jalur Legacy setelah tiap part tersimpan (ditemukan ${nPanggil}×)`);
+harus(exp.includes("thumbnailPartDataURL(asset.url, badge)"), "thumbnail diambil dari ASSET poster/cover video itu sendiri");
+
 console.log("(2) perilaku antrean FIFO (simulasi):");
 const buatRantai = () => {
   let rantai = Promise.resolve();

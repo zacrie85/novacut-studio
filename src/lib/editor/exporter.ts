@@ -7,7 +7,7 @@
 //  2) MODE KOMPATIBEL: rekam real-time via MediaRecorder (jalur lama).
 // Fitur: cover otomatis, teks judul/deskripsi/part, subtitle AI (bahasa Indonesia).
 
-import { bersihkanJudul, grabFrame, aiRecommendTemplates, analyzeVideoFrames, buildBackdropPrompt, buildKisahPrompt, buildPosterPrompt, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, posterKompositCineDataURL, posterFallbackDataURL, posterRetouchLokalDataURL, posterTimeRange, renderCoverToDataURL, renderPosterTextDataURL, aiPosterizeDataURL, resolvePosterTemplateId, jalurPosterAI } from "./covers";
+import { bersihkanJudul, grabFrame, aiRecommendTemplates, analyzeVideoFrames, buildBackdropPrompt, buildKisahPrompt, buildPosterPrompt, drawCoverFrame, gradientImage, loadImage, plainCoverDataURL, posterKompositCineDataURL, posterFallbackDataURL, posterRetouchLokalDataURL, posterTimeRange, renderCoverToDataURL, renderPosterTextDataURL, thumbnailPartDataURL, aiPosterizeDataURL, resolvePosterTemplateId, jalurPosterAI } from "./covers";
 import { COVER_TEMPLATES, partLabel, slugify, uid } from "./constants";
 import { engine } from "./engine";
 import { adjustRangesToSilence, exportRangeFast, fastSupported, AudioDecodeCache } from "./fastExport";
@@ -620,6 +620,26 @@ async function blobResult(blob: Blob | null, name: string, part: number, total: 
   const url = savedPath || !blob ? "" : URL.createObjectURL(blob);
   useEditor.getState().addExportResult({ id: uid("exp"), name, url, size: size ?? blob?.size ?? 0, part, total, duration, savedPath });
   if (!savedPath && url) triggerDownload(url, name);
+}
+
+/** v1.0.67: THUMBNAIL PART — diambil dari poster/cover video itu sendiri (judul
+ * sudah ada di poster) + label part/episode BESAR dgn frame mengelilinginya,
+ * sedikit di bawah tengah (permintaan pengguna: "sebelum di putar orang sudah
+ * tau bahwa video tersebut judulnya apa dan part/episode ke berapa"). Disimpan
+ * sbg <nama-part>-thumb.jpg di folder yang sama dgn video bagian tersebut. */
+async function simpanThumbnailPart(dir: string | null, coverAssetId: string | undefined, labelStyle: string, idx: number, total: number, baseName: string) {
+  try {
+    if (!dir || !coverAssetId) return;
+    const asset = useEditor.getState().assets.find((a) => a.id === coverAssetId);
+    if (!asset?.url) return;
+    const badge = partLabel(labelStyle, idx, total, false);
+    const dataUrl = await thumbnailPartDataURL(asset.url, badge);
+    if (!dataUrl) return;
+    const blob = await (await fetch(dataUrl)).blob();
+    await saveBlobToDir(dir, `${baseName}-thumb.jpg`, blob);
+  } catch {
+    /* thumbnail gagal → abaikan; video bagian tetap tersimpan */
+  }
 }
 
 /** true bila hasil render otomatis tersimpan ke folder pilihan pengguna */
@@ -1721,6 +1741,8 @@ export async function runBatchExport(assetIds: string[]) {
           res = await exportRangeFast({ start: 0, end: proj.duration, rs, audioCache: pr.audio, bitrate, ...(directSave ? { directSave } : {}), onProgress });
         }
         await blobResult(res.blob, `${slugify(job.title)}-${slugify(partTxt)}${res.ext}`, i + 1, total, proj.duration, res.savedPath, res.size);
+        // v1.0.67: thumbnail part/episode dari poster/cover video ini
+        await simpanThumbnailPart(direct?.dir || null, coverAssetId, pl.labelStyle, i + 1, total, `${slugify(job.title)}-${slugify(partTxt)}`);
         markSegDone(vi, i, total);
       } catch (e) {
         console.error(`Export gagal: ${job.title} ${partTxt}`, e);
@@ -1851,6 +1873,15 @@ export async function runBatchExport(assetIds: string[]) {
           });
           const label = partLabel(pl.labelStyle, i + 1, ranges.length, true);
           await blobResult(blob, `${slugify(job.title)}-${slugify(label)}${fmt.ext}`, i + 1, ranges.length, proj.duration);
+          // v1.0.67: thumbnail part/episode dari poster/cover video ini (jalur legacy)
+          await simpanThumbnailPart(
+            s.exportDir && isDesktopFS() ? s.exportDir : null,
+            coverAssetId,
+            pl.labelStyle,
+            i + 1,
+            ranges.length,
+            `${slugify(job.title)}-${slugify(label)}`,
+          );
         }
         jobProgress[vi] = 1;
         doneCount++;
